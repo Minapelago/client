@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.2](https://github.com/Minapelago/client/compare/v1.2.1...v1.2.2) (2026-11-06)
+
+
+### Bug fixes
+
+* defer deathlink deaths until player exits sensitive states ([5cb57c2](https://github.com/Minapelago/client/commit/5cb57c20b3f0971a016f57d8a64ce785172c761f))
+* read the host CA store inside the Steam container ([301fb78](https://github.com/Minapelago/client/commit/301fb78e6958d992cb58a466cdfab723616288cd))
+* report why an AP connect actually failed ([f5a0ca7](https://github.com/Minapelago/client/commit/f5a0ca75bd2676f98b6852d6ef817459cce6bcbd))
+
+
+### Build and CI
+
+* add Nexus crosspost to release ci ([2f5d085](https://github.com/Minapelago/client/commit/2f5d0854029f22af0554a4e0f63664072387fc85))
+
+
+### Documentation
+
+* add PR template ([6c3102d](https://github.com/Minapelago/client/commit/6c3102db33d97ede0b4fbcacca77cf86a75da14a))
+
 ## [1.2.1](https://github.com/Axertin/mth-apclient/compare/v1.2.0...v1.2.1) (2026-09-02)
 
 
