@@ -10,7 +10,8 @@ name: release
 # The only manual step in either lane is merging a PR. The stable lane's extra-files write the graduated version back into the beta manifest,
 # which restarts the beta counter from the new base.
 #
-# Nothing is tagged or published unless the ci gate (format check, tests, both builds) is green.
+# Nothing is tagged or published unless the ci gate (format check, tests, both builds) is green. On a release commit the gate's builds are the
+# release builds, and its tests are skipped when the parent commit's run already passed them on the same code (see build.yml).
 
 on:
   push:
@@ -18,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the gate looks up the parent commit's run
 
 # Two pushes close together would race to create the same release PR.
 concurrency:
@@ -75,17 +77,10 @@ jobs:
           manifest-file: .github/release-manifest.json
           skip-github-release: true
 
-  build:
-    name: Build
-    needs: beta
-    if: needs.beta.outputs.released == 'true'
-    uses: ./.github/workflows/build.yml
-    with:
-      tag: ${{ needs.beta.outputs.tag }}
-
   publish:
     name: Attach the drop-ins to the release
-    needs: [beta, build]
+    needs: beta
+    if: needs.beta.outputs.released == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -93,15 +88,18 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
-          pattern: release-*
-      # Each artifact extracts to dist/<name>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform so the release asset unpacks to
-      # an apclient/ drop-in folder.
+          pattern: mod-*
+      # Each artifact extracts to dist/mod-<platform>-<version>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform so the
+      # release asset unpacks to an apclient/ drop-in folder. A gate build that stamped another version has no folder for this tag.
       - name: Package drop-in zips
         env:
           TAG: ${{ needs.beta.outputs.tag }}
         run: |
-          ( cd dist/release-linux && zip -r "$GITHUB_WORKSPACE/mth-apclient-${TAG}-linux.zip" apclient )
-          ( cd dist/release-windows && zip -r "$GITHUB_WORKSPACE/mth-apclient-${TAG}-windows.zip" apclient )
+          for p in linux windows; do
+            d="dist/mod-$p-${TAG#v}"
+            [ -d "$d" ] || { echo "::error::no $p drop-in stamped ${TAG#v}; found: $(ls dist)"; exit 1; }
+            ( cd "$d" && zip -r "$GITHUB_WORKSPACE/mth-apclient-${TAG}-$p.zip" apclient )
+          done
       - name: Upload assets
         env:
           GH_TOKEN: ${{ github.token }}

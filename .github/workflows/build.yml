@@ -1,15 +1,10 @@
 name: build
 
-# Reusable build of the mod drop-in for both platforms. The Linux leg also builds and runs the native tests. Called by ci.yml for pull requests and
-# by release.yml, which passes the release tag.
+# Reusable build of the mod drop-in for both platforms. The Linux leg also builds and runs the native tests. Called by ci.yml, for pull requests
+# and as release.yml's gate; on a release commit, the gate's drop-ins are the ones release.yml publishes.
 
 on:
   workflow_call:
-    inputs:
-      tag:
-        description: Release tag (vX.Y.Z). When set, the build must stamp that version and the artifact is named release-<platform> instead of mod-<platform>-<version>.
-        type: string
-        default: ""
 
 # Reuse vcpkg-built binaries across runs via a workspace-local file cache.
 env:
@@ -43,46 +38,43 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
-      # The release call skips the tests: release.yml already ran them through ci.yml.
+      # A merged release PR changes only the release-please manifests and CHANGELOG.md, so its code is its parent's. Tagging it locally makes git
+      # describe stamp the version release-please is about to tag, so release.yml can publish these drop-ins without building again. The tests
+      # are skipped when the parent's release run already passed them on the same code.
+      - name: Detect a release commit
+        id: release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet HEAD^ HEAD -- .github/prerelease-manifest.json && exit 0
+          git tag -f "v$(sed -n 's/.*"\.": *"\([^"]*\)".*/\1/p' .github/prerelease-manifest.json)"
+          parent=$(gh run list -w release.yml -c "$(git rev-parse HEAD^)" --json conclusion -q '.[0].conclusion')
+          if git diff --quiet HEAD^ HEAD -- . ':!CHANGELOG.md' ':!.github/*-manifest.json' && [ "$parent" = success ]; then
+            echo "tested=1" >> "$GITHUB_OUTPUT"
+          fi
       - name: Configure and build tests
-        if: runner.os == 'Linux' && inputs.tag == ''
+        if: runner.os == 'Linux' && steps.release.outputs.tested != '1'
         run: cmake --preset clang-x64-tests && cmake --build --preset clang-x64-tests
       - name: Test
-        if: runner.os == 'Linux' && inputs.tag == ''
+        if: runner.os == 'Linux' && steps.release.outputs.tested != '1'
         run: ctest --preset clang-x64-tests --output-on-failure --output-junit "$GITHUB_WORKSPACE/test-results.xml"
       - name: Upload test results (JUnit)
-        if: always() && runner.os == 'Linux' && inputs.tag == ''
+        if: always() && runner.os == 'Linux' && steps.release.outputs.tested != '1'
         uses: actions/upload-artifact@v7
         with:
           name: junit-native-tests
           path: test-results.xml
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
-      - name: Check the build picked up the release tag
-        if: inputs.tag != ''
-        shell: bash
-        run: |
-          built=$(cat build/${{ matrix.preset }}/version.txt)
-          want="${TAG#v}"
-          if [ "$built" != "$want" ]; then
-            echo "::error::drop-in stamped $built but the release is $want"
-            exit 1
-          fi
-        env:
-          TAG: ${{ inputs.tag }}
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
+      # release.yml finds the drop-ins by this name, so a release commit that stamped the wrong version fails there.
       - name: Name the artifact
         id: artifact
         shell: bash
-        run: |
-          if [ -n "$TAG" ]; then
-            echo "name=release-${{ matrix.platform }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=mod-${{ matrix.platform }}-$(cat build/${{ matrix.preset }}/version.txt)" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          TAG: ${{ inputs.tag }}
+        run: echo "name=mod-${{ matrix.platform }}-$(cat build/${{ matrix.preset }}/version.txt)" >> "$GITHUB_OUTPUT"
       - name: Upload mod drop-in
         uses: actions/upload-artifact@v7
         with:
