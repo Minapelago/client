@@ -15,7 +15,7 @@ inline constexpr int kGameStateProfileSelect = GAMESTATE_PROFILE_SELECT_MENU;
 // The Mirrors End mirror hub: its own gamestate (separate from the Orrery) and small enough to gate the shortcut switches on. The apworld lists
 // six rooms in it, all but one Mirrors End proper.
 inline constexpr int kGameStateMirrorHub = GAMESTATE_ASTRAL_ORRERY_MIRROR_HUB;
-// The mirror hub's switch room, the only room the switch gate applies to.
+// Mirror hub room 0, on the path to the Orrery. The switch gate skips it.
 inline constexpr int kGameStateMirrorHubPathToAO = 0;
 // The death screen, reached only when a death sequence runs to its end. A Proto Spark save revives in place first, so this separates a death
 // that stuck from a cushioned one.

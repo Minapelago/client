@@ -1,9 +1,9 @@
 #include "mth/features/mirror_switches.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <string>
-#include <vector>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
@@ -35,6 +35,17 @@ constexpr int kMaxSwitchId = 0x40; // the game's own bound on SwitchID, and the 
 // Ticks before a failed walk is retried, as in the other scene walks. An established list is reused every frame without walking.
 constexpr int kRetryCooldownTicks = 60;
 
+// Each shortcut switch's SwitchID by game color, from the Mirrors End level data (r149150). IDs are per level and every room builds a fresh manager seeded
+// from each switch's saved state, so purple platforms in the switch room follow the purple switch alone in the Coltrane Peak mirror room. apply() therefore
+// writes every color by ID, not only the switches the room holds.
+constexpr std::array<int, mth::kAstralPlatformCount> kSwitchIdByColor{
+    5, // yellow
+    3, // green
+    4, // blue
+    6, // purple
+    2, // red
+};
+
 // Level-data order, which is what the palette table pins the Color property to.
 const char *color_name(std::uint32_t c)
 {
@@ -55,30 +66,23 @@ const char *color_name(std::uint32_t c)
     }
 }
 
-// One switch this feature drives, held through the game's weak pointer so its death is reported. The id and color are copied so a reused slot can be told from
-// the original.
-struct Managed
-{
-    void *weak;
-    int id;
-    std::uint32_t color;
-};
-
 std::atomic<bool> g_probe_requested{false};
 std::atomic<bool> g_console_override{false};
 std::uint32_t g_logged_granted{0xffffffffu}; // impossible mask, so the first pass always logs
 bool g_logged_inert{false};
-std::vector<Managed> g_managed;
-void *g_managed_world{nullptr}; // the world g_managed was walked from; null means the list is cold
+// One switch in the room, through which apply() reaches the SwitchManager all of the room's switches share. Held through the game's weak pointer so its death
+// with the room is reported.
+void *g_anchor{nullptr};
+void *g_managed_world{nullptr}; // the world g_anchor was walked from; null means no switch is anchored yet
 int g_retry_cooldown{0};
 bool g_warned_api{false};
 mth::SceneWalker g_walker{"switches", "a rainbow switch", " (#28)"};
 
 void forget()
 {
-    for (const Managed &m : g_managed)
-        mod::weak_ptr_destroy(m.weak);
-    g_managed.clear();
+    if (g_anchor != nullptr)
+        mod::weak_ptr_destroy(g_anchor);
+    g_anchor = nullptr;
     g_managed_world = nullptr;
 }
 
@@ -108,14 +112,6 @@ int *manager_entry(const void *component, int id)
     return reinterpret_cast<int *>(static_cast<char *>(mgr) + kStateArrayOff + id * 4);
 }
 
-// The shortcut switches are the permanent, untimed ones; a CantTurnOff switch with a timer would fight its own auto-off. This is the whole discriminator and an
-// assumption, since only the four switches of one mirror-hub room have been seen, so every switch taken over is logged.
-bool is_shortcut_switch(const void *component)
-{
-    const char *sw = static_cast<const char *>(component);
-    return *reinterpret_cast<const std::uint8_t *>(sw + kCanTurnOffOff) == 0 && *reinterpret_cast<const float *>(sw + kTimerOff) < 0.0f;
-}
-
 void dump_switch(void *component, int n)
 {
     const char *sw = static_cast<const char *>(component);
@@ -127,23 +123,25 @@ void dump_switch(void *component, int n)
               *reinterpret_cast<const std::uint8_t *>(sw + kCanTurnOffOff) != 0 ? 1 : 0, static_cast<double>(*reinterpret_cast<const float *>(sw + kTimerOff)));
 }
 
-// Drives every managed switch to the granted set. false means the list no longer describes the room, so the caller drops it and walks again.
+// Drives every color's entry to the granted set through the anchor's manager. false means the anchor no longer describes the room, so the caller drops it and
+// walks again.
 bool apply(std::uint32_t granted)
 {
-    for (const Managed &m : g_managed)
+    void *component = mod::weak_ptr_get(g_anchor);
+    if (component == nullptr)
+        return false; // the switch died with its room
+    for (std::uint32_t c = 0; c < static_cast<std::uint32_t>(mth::kAstralPlatformCount); ++c)
     {
-        void *component = mod::weak_ptr_get(m.weak);
-        if (component == nullptr)
-            return false; // the switch died with its room
-        int *entry = manager_entry(component, m.id);
+        const int id = kSwitchIdByColor[c];
+        int *entry = manager_entry(component, id);
         if (entry == nullptr)
             return false;
-        const int want = ((granted >> m.color) & 1u) != 0 ? 1 : 0;
+        const int want = ((granted >> c) & 1u) != 0 ? 1 : 0;
         if (*entry == want)
             continue;
         // Only a real transition logs: the grant, or a hand-hit switch going back to shut.
         *entry = want;
-        pal::logf(pal::LogLevel::Info, "switches: %s switch (id %d) forced %s (#28)", color_name(m.color), m.id, want != 0 ? "open" : "shut");
+        pal::logf(pal::LogLevel::Info, "switches: %s switch (id %d) forced %s (#28)", color_name(c), id, want != 0 ? "open" : "shut");
     }
     return true;
 }
@@ -169,34 +167,19 @@ std::uint32_t granted_colors(const mth::ApState &state)
     return mask;
 }
 
-// Takes charge of one switch found by the walk. Every refusal is logged, since this feature fails by a switch quietly not being driven.
-void manage(void *component)
+// Called for every switch the walk finds in a room not yet anchored. Any switch can be the anchor. A shortcut switch, whose ID is its color's entry in
+// kSwitchIdByColor, is logged as it comes under AP control, so a room that logs none shows a drifted layout or ID table without the probe.
+void take(void *component)
 {
     const int id = switch_id(component);
     const std::uint32_t color = switch_color(component);
-    // Bounds the shift in apply(), and a permanent switch reporting anything else is layout drift.
-    if (color >= static_cast<std::uint32_t>(mth::kAstralPlatformCount))
-    {
-        pal::logf(pal::LogLevel::Warn, "switches: permanent switch id %d reports color %u, out of range; left vanilla (#28)", id, color);
+    if (color < static_cast<std::uint32_t>(mth::kAstralPlatformCount) && id == kSwitchIdByColor[color])
+        pal::logf(pal::LogLevel::Info, "switches: driving the %s switch (id %d) from AP (#28)", color_name(color), id);
+    if (g_anchor != nullptr)
         return;
-    }
-    for (const Managed &m : g_managed)
-        if (m.color == color)
-        {
-            // One AP item would drive both, which this feature cannot honor.
-            pal::logf(pal::LogLevel::Warn, "switches: a second %s switch (id %d) shares this room; left vanilla (#28)", color_name(color), id);
-            return;
-        }
-    void *weak = mod::weak_ptr_create(component);
-    if (weak == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "switches: no weak pointer for the %s switch (id %d); left vanilla (#28)", color_name(color), id);
-        return;
-    }
-    g_managed.push_back({weak, id, color});
-    // Logged per switch as it is taken over. The discriminator is an assumption and one of the five has never been seen, so a room that logs nothing surfaces
-    // either problem without the probe.
-    pal::logf(pal::LogLevel::Info, "switches: driving the %s switch (id %d) from AP (#28)", color_name(color), id);
+    g_anchor = mod::weak_ptr_create(component);
+    if (g_anchor == nullptr)
+        pal::logf(pal::LogLevel::Warn, "switches: no weak pointer for switch id %d; trying the next (#28)", id);
 }
 
 } // namespace
@@ -292,14 +275,14 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
                                                  {
                                                      if (probe)
                                                          dump_switch(c, found++);
-                                                     if (enforce && g_managed_world == nullptr && is_shortcut_switch(c))
-                                                         manage(c);
+                                                     if (enforce && g_managed_world == nullptr)
+                                                         take(c);
                                                  });
         g_walker.report(walk);
-        // Latched only on a room that held some, so a walk before the room finished building is retried.
+        // Latched only once a switch is anchored, so a walk before the room finished building is retried.
         if (enforce && g_managed_world == nullptr)
         {
-            if (g_managed.empty())
+            if (g_anchor == nullptr)
                 g_retry_cooldown = kRetryCooldownTicks;
             else
                 g_managed_world = world;
@@ -321,7 +304,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
     }
     if (g_managed_world != nullptr && !apply(granted))
     {
-        forget(); // the list stopped describing the room
+        forget(); // the anchor stopped describing the room
         g_retry_cooldown = kRetryCooldownTicks;
     }
 }
