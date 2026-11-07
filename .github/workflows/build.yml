@@ -6,9 +6,12 @@ name: build
 on:
   workflow_call:
 
-# Reuse vcpkg-built binaries across runs via a workspace-local file cache.
+# Reuse vcpkg-built binaries across runs via a workspace-local file cache. CMake reads the launcher variables on a fresh configure, so every
+# compile goes through ccache; a build that only moves the version recompiles the two files that include mth_version.h.
 env:
   VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite"
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
   build:
@@ -59,6 +62,14 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
         with:
           arch: x64
+      # Only master pushes save. Pull requests restore master's cache, and an entry one saves is visible only to that same pull request.
+      - name: Set up ccache
+        if: steps.plan.outputs.build == '1'
+        uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ${{ matrix.platform }}
+          max-size: 1G
+          save: ${{ github.event_name == 'push' }}
       - name: Cache vcpkg binaries
         if: steps.plan.outputs.build == '1'
         uses: actions/cache@v6
