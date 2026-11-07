@@ -204,23 +204,29 @@ TEST_CASE("ApLink: ConnectionRefused emits ApConnectionRefused with the server's
     REQUIRE(f.all<mth::ApConnected>().empty());
 }
 
-// Expected to fail: apclientpp's onmessage catches the parse throw, so it never reaches ApLink::run and no refusal is pushed.
-TEST_CASE("ApLink: slot_data with a wrong-typed key refuses the connection", "[net][ap_link][!shouldfail]")
+TEST_CASE("ApLink: slot_data with a wrong-typed key refuses the connection", "[net][ap_link]")
 {
     LinkFixture f;
     f.server.reply_to("Connect", {connected(1, {{"ossex_start", "yes"}}), received_items(0, {10})});
+    f.server.reply_to("Connect", {connected(1, json::object()), received_items(0, {10})});
     f.connect();
     f.wait_for_sent("Connect");
     f.server.push(received_items(0, {11}));
 
-    REQUIRE(wait_until(
-        [&]
-        {
-            f.pump();
-            return !f.all<mth::ApConnectionRefused>().empty() || !f.all<mth::ApItemReceived>().empty();
-        }));
+    const mth::ApConnectionRefused r = f.wait_for<mth::ApConnectionRefused>("ApConnectionRefused");
+    REQUIRE(r.errors.size() == 1);
+    REQUIRE(r.errors[0].starts_with("invalid slot_data: "));
+
+    // The refused attempt's events all precede the next attempt's, so the final item list also covers the bad packet.
+    const std::size_t mark = f.events.size();
+    f.connect();
+    f.wait_for<mth::ApItemReceived>("the item after reconnect", 1, mark);
+
     REQUIRE(f.all<mth::ApConnectionRefused>().size() == 1);
-    REQUIRE(f.all<mth::ApConnected>().empty());
+    REQUIRE(f.all<mth::ApDisconnected>().empty());
+    REQUIRE(f.all<mth::ApConnected>().size() == 1);
+    REQUIRE(f.index_of<mth::ApConnected>() >= mark);
+    REQUIRE(item_ids(f.all<mth::ApItemReceived>()) == std::vector<std::int64_t>{10});
 }
 
 TEST_CASE("ApLink: reconnecting to the same seed and slot keeps the session and its item cursor", "[net][ap_link]")

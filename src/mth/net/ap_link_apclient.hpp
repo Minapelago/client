@@ -58,6 +58,7 @@ class ApLink final : public mth::IApLink
     int session_slot_{-1};                                                  // net thread only
     std::string slot_name_;                                                 // net thread only; captured on connect for bounce source
     std::optional<std::chrono::steady_clock::time_point> connect_deadline_; // net thread only; set while a connect is in flight
+    bool teardown_pending_{false};                                          // net thread only; run() drops client_ after the poll that set it
 
     std::atomic<bool> running_{true};
     std::atomic<bool> connected_{false};

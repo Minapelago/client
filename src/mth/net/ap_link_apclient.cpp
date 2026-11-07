@@ -233,8 +233,7 @@ void ApLink::run()
             catch (const std::exception &e)
             {
                 pal::logf(pal::LogLevel::Error, "ApLink: poll failed: %s", e.what());
-                // Nothing else reports a throw before the handshake (e.g. slot_data with a wrong-typed key), so refuse while the deadline is armed. A
-                // socket drop in this poll has already cleared it and pushed its own event.
+                // A socket drop in this poll has already cleared the deadline and pushed its own event.
                 if (connected_.exchange(false))
                     push_event(mth::ApDisconnected{});
                 else if (connect_deadline_)
@@ -242,6 +241,8 @@ void ApLink::run()
                 client_.reset();
                 connect_deadline_.reset();
             }
+            if (std::exchange(teardown_pending_, false))
+                do_disconnect();
         }
         if (connect_deadline_ && std::chrono::steady_clock::now() > *connect_deadline_)
         {
@@ -326,6 +327,8 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
     client_->set_socket_disconnected_handler(
         [this]
         {
+            if (teardown_pending_)
+                return;
             connected_.store(false);
             connect_deadline_.reset();
             push_event(mth::ApDisconnected{});
@@ -343,8 +346,21 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
     client_->set_slot_connected_handler(
         [this](const nlohmann::json &data)
         {
+            mth::SlotDataConfig config;
+            try
+            {
+                config = mth::parse_slot_data(data);
+            }
+            catch (const std::exception &e)
+            {
+                // apclientpp swallows handler throws, so refuse here and leave the teardown to run(), outside client_'s own callback.
+                pal::logf(pal::LogLevel::Error, "ApLink: invalid slot_data: %s", e.what());
+                connect_deadline_.reset();
+                push_event(mth::ApConnectionRefused{{std::string("invalid slot_data: ") + e.what()}});
+                teardown_pending_ = true;
+                return;
+            }
             connect_deadline_.reset();
-            mth::SlotDataConfig config = mth::parse_slot_data(data);
             // slot_data "death_link" sets the default; a sticky client-side force-off (console) still wins.
             slot_deathlink_.store(config.deathlink);
             config.deathlink = config.deathlink && !force_off_.load();
@@ -392,6 +408,8 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
     client_->set_items_received_handler(
         [this](const std::list<APClient::NetworkItem> &items)
         {
+            if (teardown_pending_)
+                return;
             for (const auto &item : items)
             {
                 if (item.index <= last_item_index_)
@@ -403,8 +421,12 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
 
     // Server-reported checked locations (Connected full set and RoomUpdate deltas) for Collect, same-slot coop and self-heal. Reconciled locally without
     // re-sending; see App::reconcile_server_checked.
-    client_->set_location_checked_handler([this](const std::list<std::int64_t> &locations)
-                                          { push_event(mth::ApLocationsChecked{std::vector<std::int64_t>(locations.begin(), locations.end())}); });
+    client_->set_location_checked_handler(
+        [this](const std::list<std::int64_t> &locations)
+        {
+            if (!teardown_pending_)
+                push_event(mth::ApLocationsChecked{std::vector<std::int64_t>(locations.begin(), locations.end())});
+        });
 
     // LocationScouts replies. Names resolve here (apclientpp resolution is net-thread-only), then plain ScoutInfo goes over the event queue.
     client_->set_location_info_handler(
@@ -430,7 +452,7 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
     client_->set_bounced_handler(
         [this](const nlohmann::json &cmd)
         {
-            if (!deathlink_.load())
+            if (teardown_pending_ || !deathlink_.load())
                 return;
             if (auto t = cmd.find("tags"); t == cmd.end() || std::find(t->begin(), t->end(), "DeathLink") == t->end())
                 return;
@@ -453,6 +475,8 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
     client_->set_print_json_handler(
         [this](const APClient::PrintJSONArgs &args)
         {
+            if (teardown_pending_)
+                return;
             const auto opt = [](const int *p) { return p ? std::optional<int>(*p) : std::nullopt; };
             // args.item->player is the finder, which matters when we sent the check to another slot.
             const std::optional<int> item_player = args.item ? std::optional<int>(args.item->player) : std::nullopt;
