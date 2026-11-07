@@ -53,6 +53,8 @@ Source and test files are globbed. Drop a new `tests/unit/*_test.cpp` or a sourc
 place and re-run the configure step; there is no list to edit. A test that needs a PAL or module
 source the library does not already expose adds it to `target_sources` in `tests/CMakeLists.txt`.
 
+`tests/unit/contract_test.cpp` checks the client's item and location IDs and `parse_slot_data` against `tests/fixtures/contract.json`, which holds the apworld's item and location tables and its `fill_slot_data()` output for the default options and one non-default set. After an ID or slot_data change in the world, regenerate it with `python scripts/gen_contract_fixture.py ../world` (Python 3.12 with `pip install -r ../world/requirements.txt`) and commit the diff.
+
 ### Windows mod (`mod.dll`)
 
 The canonical Windows build uses native `clang-cl` with a static CRT (run on Windows or CI):

@@ -18,6 +18,7 @@ file(GLOB _mthap_test_sources CONFIGURE_DEPENDS unit/*.cpp)
 add_executable(mthap_unit_tests ${_mthap_test_sources})
 
 target_include_directories(mthap_unit_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(mthap_unit_tests PRIVATE MTHAP_CONTRACT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/contract.json")
 target_link_libraries(mthap_unit_tests PRIVATE
     Catch2::Catch2WithMain
     mthap_core

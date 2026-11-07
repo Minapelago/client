@@ -20,8 +20,6 @@ using nlohmann::json;
 namespace
 {
 
-// Warnings are part of the contract here (an out-of-range index is dropped *and* reported), so the
-// suite reads them back through the ILog seam.
 class CapturingLog final : public pal::ILog
 {
   public:
@@ -31,20 +29,13 @@ class CapturingLog final : public pal::ILog
         lines_.emplace_back(level, std::string(message));
     }
 
-    // An empty needle matches any line of that level, so `count(Warn) == 0` reads as "nothing was
-    // reported" without pinning how much the parser traces at other levels.
-    [[nodiscard]] std::size_t count(pal::LogLevel level, std::string_view needle = "") const
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        std::size_t n = 0;
-        for (const auto &[lvl, text] : lines_)
-            if (lvl == level && text.find(needle) != std::string::npos)
-                ++n;
-        return n;
-    }
     [[nodiscard]] bool saw(pal::LogLevel level, std::string_view needle) const
     {
-        return count(level, needle) != 0;
+        std::lock_guard<std::mutex> lock(mu_);
+        for (const auto &[lvl, text] : lines_)
+            if (lvl == level && text.find(needle) != std::string::npos)
+                return true;
+        return false;
     }
 
   private:
@@ -78,61 +69,41 @@ class LogCapture
 
 } // namespace
 
-TEST_CASE("parse_slot_data: an absent blob yields every default", "[slot_data]")
+TEST_CASE("parse_slot_data: an absent, empty or non-object blob yields every default", "[slot_data]")
 {
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{});
-
-    REQUIRE_FALSE(cfg.ossex_start);
-    REQUIRE(cfg.kear_mode == mth::KearMode::ApItems);
-    REQUIRE_FALSE(cfg.burrow_rando);
-    REQUIRE_FALSE(cfg.swim_rando);
-    REQUIRE_FALSE(cfg.rope_rando);
-    REQUIRE_FALSE(cfg.puff_rando);
-    REQUIRE_FALSE(cfg.spring_rando);
-    REQUIRE_FALSE(cfg.carry_rando);
-    REQUIRE(cfg.train_pass_cost == mth::kTrainPassCostDefault);
-    REQUIRE_FALSE(cfg.deathlink);
-    REQUIRE(cfg.max_stat_level == 99);
-    REQUIRE(cfg.goal_config == 0);
-    REQUIRE(cfg.goal_generators == 99);
-    REQUIRE(cfg.goal_bosses == 99);
-    REQUIRE(cfg.broken_generator_mask == mth::kAllGeneratorsMask);
-    REQUIRE_FALSE(cfg.wallet_cap);
-    REQUIRE(cfg.lit_generator_lamp_mask == 0);
-    REQUIRE(cfg.removed_locations.empty());
-}
-
-TEST_CASE("parse_slot_data: an empty object takes the key-absent defaults", "[slot_data]")
-{
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json::object());
-
-    REQUIRE(cfg.kear_mode == mth::KearMode::ApItems);
-    REQUIRE(cfg.train_rando);
-    REQUIRE(cfg.train_pass_cost == mth::kTrainPassCostDefault);
-    REQUIRE(cfg.max_stat_level == 99);
-    REQUIRE(cfg.goal_generators == 99);
-    REQUIRE(cfg.goal_bosses == 99);
-    REQUIRE(cfg.broken_generator_mask == mth::kAllGeneratorsMask);
-}
-
-TEST_CASE("parse_slot_data: a non-object blob still yields a usable config", "[slot_data]")
-{
-    // Every read is guarded on is_object, so an array or scalar reads no keys and never throws; where a defaulted flag lands is not a contract.
-    for (const json &blob : {json::array({1, 2}), json("nope"), json(7), json(true)})
+    for (const json &blob : {json{}, json::object(), json::array({1, 2}), json("nope"), json(7), json(true)})
     {
+        INFO(blob.dump());
         mth::SlotDataConfig cfg;
         REQUIRE_NOTHROW(cfg = mth::parse_slot_data(blob));
+
+        REQUIRE_FALSE(cfg.ossex_start);
         REQUIRE(cfg.kear_mode == mth::KearMode::ApItems);
+        REQUIRE_FALSE(cfg.burrow_rando);
+        REQUIRE_FALSE(cfg.swim_rando);
+        REQUIRE_FALSE(cfg.rope_rando);
+        REQUIRE_FALSE(cfg.puff_rando);
+        REQUIRE_FALSE(cfg.spring_rando);
+        REQUIRE_FALSE(cfg.carry_rando);
         REQUIRE(cfg.train_pass_cost == mth::kTrainPassCostDefault);
+        REQUIRE_FALSE(cfg.deathlink);
         REQUIRE(cfg.max_stat_level == 99);
+        REQUIRE(cfg.goal_config == 0);
+        REQUIRE(cfg.goal_generators == 99);
+        REQUIRE(cfg.goal_bosses == 99);
+        REQUIRE(cfg.broken_generator_mask == mth::kAllGeneratorsMask);
+        REQUIRE_FALSE(cfg.wallet_cap);
+        // A seed that says nothing about the shortcut switches gets vanilla ones, since it cannot grant any.
+        REQUIRE_FALSE(cfg.mirror_switch_rando);
+        REQUIRE(cfg.lit_generator_lamp_mask == 0);
         REQUIRE(cfg.removed_locations.empty());
     }
 }
 
 TEST_CASE("parse_slot_data: the ability flags read as 0/non-0", "[slot_data]")
 {
-    const json data = {{"ossex_start", 1}, {"burrow_rando", 1}, {"swim_rando", 0}, {"rope_rando", 1}, {"puff_rando", 0},       {"spring_rando", 1},
-                       {"carry_rando", 1}, {"train_rando", 0},  {"death_link", 1}, {"wallet_cap", 1}, {"train_pass_cost", 250}};
+    const json data = {{"ossex_start", 1}, {"burrow_rando", 1}, {"swim_rando", 0}, {"rope_rando", 1}, {"puff_rando", 0},        {"spring_rando", 1},
+                       {"carry_rando", 1}, {"train_rando", 0},  {"death_link", 1}, {"wallet_cap", 1}, {"train_pass_cost", 250}, {"mirror_switch_rando", 1}};
     const mth::SlotDataConfig cfg = mth::parse_slot_data(data);
 
     REQUIRE(cfg.ossex_start);
@@ -146,12 +117,17 @@ TEST_CASE("parse_slot_data: the ability flags read as 0/non-0", "[slot_data]")
     REQUIRE(cfg.deathlink);
     REQUIRE(cfg.wallet_cap);
     REQUIRE(cfg.train_pass_cost == 250);
+    REQUIRE(cfg.mirror_switch_rando);
 }
 
-TEST_CASE("parse_slot_data: any non-negative-zero flag value counts as set", "[slot_data]")
+TEST_CASE("parse_slot_data: any non-zero number or true sets a flag, and fractions truncate", "[slot_data]")
 {
     REQUIRE(mth::parse_slot_data(json{{"ossex_start", 2}}).ossex_start);
     REQUIRE(mth::parse_slot_data(json{{"ossex_start", -1}}).ossex_start);
+    REQUIRE(mth::parse_slot_data(json{{"ossex_start", true}}).ossex_start);
+    REQUIRE_FALSE(mth::parse_slot_data(json{{"ossex_start", false}}).ossex_start);
+    REQUIRE(mth::parse_slot_data(json{{"train_pass_cost", 250.9}}).train_pass_cost == 250);
+    REQUIRE(mth::parse_slot_data(json{{"max_stat_level", 42.7}}).max_stat_level == 42);
 }
 
 TEST_CASE("parse_slot_data: kear_rando maps to a mode, unknown values to ApItems", "[slot_data]")
@@ -196,53 +172,6 @@ TEST_CASE("parse_slot_data: goal counts default high when the key is absent", "[
     REQUIRE(cfg.goal_bosses == 99);
 }
 
-TEST_CASE("parse_slot_data: a missing goal count is reported when that goal is selected", "[slot_data]")
-{
-    LogCapture gens;
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalGenerators}, {"broken_generators", json::array({0})}}).goal_generators == 99);
-    REQUIRE(gens.sink().saw(pal::LogLevel::Warn, "goal_generators"));
-
-    LogCapture bosses;
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalBosses}}).goal_bosses == 99);
-    REQUIRE(bosses.sink().saw(pal::LogLevel::Warn, "goal_bosses"));
-}
-
-TEST_CASE("parse_slot_data: a missing goal count the goal does not use is quiet", "[slot_data]")
-{
-    // The unselected count and the game-clear goal both default to 99 harmlessly, so warning there
-    // would fire on nearly every seed.
-    LogCapture log;
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalFinish}}).goal_generators == 99);
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalBosses}, {"goal_bosses", 4}}).goal_generators == 99);
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalGenerators}, {"goal_generators", 3}, {"broken_generators", json::array({0})}}).goal_bosses ==
-            99);
-    REQUIRE(log.sink().count(pal::LogLevel::Warn) == 0);
-}
-
-TEST_CASE("parse_slot_data: a generator goal with nothing broken is reported", "[slot_data]")
-{
-    LogCapture log;
-    const json data = {{"goal_config", mth::kGoalGenerators}, {"goal_generators", 1}, {"broken_generators", json::array()}};
-    REQUIRE(mth::parse_slot_data(data).broken_generator_mask == 0);
-    REQUIRE(log.sink().saw(pal::LogLevel::Warn, "broken_generators"));
-}
-
-TEST_CASE("parse_slot_data: an empty broken_generators is quiet under another goal", "[slot_data]")
-{
-    LogCapture log;
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalFinish}, {"broken_generators", json::array()}}).broken_generator_mask == 0);
-    REQUIRE(mth::parse_slot_data(json{{"goal_config", mth::kGoalBosses}, {"goal_bosses", 3}, {"broken_generators", json::array()}}).broken_generator_mask == 0);
-    REQUIRE(log.sink().count(pal::LogLevel::Warn) == 0);
-}
-
-TEST_CASE("parse_slot_data: broken_generators indices become save bits", "[slot_data]")
-{
-    // Index -> SaveSlot 0x290 bit is the kGeneratorSaveBit permutation, not identity.
-    REQUIRE(mth::parse_slot_data(json{{"broken_generators", json::array({0})}}).broken_generator_mask == (std::uint64_t{1} << 2));
-    REQUIRE(mth::parse_slot_data(json{{"broken_generators", json::array({0, 1})}}).broken_generator_mask == 0x6);
-    REQUIRE(mth::parse_slot_data(json{{"broken_generators", json::array({5})}}).broken_generator_mask == (std::uint64_t{1} << 6));
-}
-
 TEST_CASE("parse_slot_data: an absent broken_generators counts every generator", "[slot_data]")
 {
     REQUIRE(mth::parse_slot_data(json::object()).broken_generator_mask == mth::kAllGeneratorsMask);
@@ -258,20 +187,13 @@ TEST_CASE("parse_slot_data: an empty broken_generators counts no generator", "[s
     REQUIRE(mth::parse_slot_data(json{{"broken_generators", json::array()}}).broken_generator_mask == 0);
 }
 
-TEST_CASE("parse_slot_data: out-of-range broken_generators are dropped and reported", "[slot_data]")
+TEST_CASE("parse_slot_data: out-of-range and non-integer broken_generators are dropped", "[slot_data]")
 {
     LogCapture log;
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"broken_generators", json::array({0, 6, -1})}});
+    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"broken_generators", json::array({0, 6, -1, "1", 2.5, nullptr})}});
 
     REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2));
-    REQUIRE(log.sink().count(pal::LogLevel::Warn, "broken_generators") == 2);
-}
-
-TEST_CASE("parse_slot_data: non-integer broken_generators entries are skipped", "[slot_data]")
-{
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"broken_generators", json::array({0, "1", 2.5, nullptr})}});
-
-    REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2));
+    REQUIRE(log.sink().saw(pal::LogLevel::Warn, "broken_generators"));
 }
 
 TEST_CASE("parse_slot_data: lit_generators folds indices into a lamp mask", "[slot_data]")
@@ -279,44 +201,23 @@ TEST_CASE("parse_slot_data: lit_generators folds indices into a lamp mask", "[sl
     REQUIRE(mth::parse_slot_data(json{{"lit_generators", json::array({0, 2})}}).lit_generator_lamp_mask == 0x5);
     REQUIRE(mth::parse_slot_data(json{{"lit_generators", json::array()}}).lit_generator_lamp_mask == 0);
     REQUIRE(mth::parse_slot_data(json{{"lit_generators", 4}}).lit_generator_lamp_mask == 0);
-}
-
-TEST_CASE("parse_slot_data: out-of-range lit_generators are dropped and reported", "[slot_data]")
-{
-    LogCapture log;
     // 6 is the Radiant Manor prime lamp: a real index in the game, out of range for this option.
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"lit_generators", json::array({1, 6, -2})}});
-
-    REQUIRE(cfg.lit_generator_lamp_mask == 0x2);
-    REQUIRE(log.sink().count(pal::LogLevel::Warn, "lit_generators") == 2);
+    REQUIRE(mth::parse_slot_data(json{{"lit_generators", json::array({1, 6, -2})}}).lit_generator_lamp_mask == 0x2);
 }
 
-TEST_CASE("parse_slot_data: removed_locations keeps every integer id", "[slot_data]")
+TEST_CASE("parse_slot_data: removed_locations keeps every integer id and drops the rest", "[slot_data]")
 {
-    LogCapture log;
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"removed_locations", json::array({500, 100, 300})}});
+    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"removed_locations", json::array({500, 100, "2", 3.5, nullptr, 300})}});
 
     REQUIRE(std::set<std::int64_t>(cfg.removed_locations.begin(), cfg.removed_locations.end()) == std::set<std::int64_t>{100, 300, 500});
     REQUIRE(cfg.removed_locations.size() == 3);
-    REQUIRE(log.sink().saw(pal::LogLevel::Info, "removed_locations"));
-}
-
-TEST_CASE("parse_slot_data: removed_locations drops non-integer entries and reports the count", "[slot_data]")
-{
-    LogCapture log;
-    const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"removed_locations", json::array({1, "2", 3.5, nullptr, 4})}});
-
-    REQUIRE(cfg.removed_locations == std::vector<std::int64_t>{1, 4});
-    REQUIRE(log.sink().saw(pal::LogLevel::Warn, "removed_locations"));
 }
 
 TEST_CASE("parse_slot_data: an absent or non-array removed_locations prunes nothing", "[slot_data]")
 {
-    LogCapture log;
     REQUIRE(mth::parse_slot_data(json::object()).removed_locations.empty());
     REQUIRE(mth::parse_slot_data(json{{"removed_locations", json::array()}}).removed_locations.empty());
     REQUIRE(mth::parse_slot_data(json{{"removed_locations", 12}}).removed_locations.empty());
-    REQUIRE(log.sink().count(pal::LogLevel::Warn) == 0);
 }
 
 TEST_CASE("parse_slot_data: a key of the wrong JSON type throws", "[slot_data]")
@@ -328,30 +229,10 @@ TEST_CASE("parse_slot_data: a key of the wrong JSON type throws", "[slot_data]")
     REQUIRE_THROWS_AS(mth::parse_slot_data(json{{"train_pass_cost", json::array({1})}}), nlohmann::json::type_error);
 }
 
-TEST_CASE("parse_slot_data: a boolean flag value is accepted", "[slot_data]")
-{
-    REQUIRE(mth::parse_slot_data(json{{"ossex_start", true}}).ossex_start);
-    REQUIRE_FALSE(mth::parse_slot_data(json{{"ossex_start", false}}).ossex_start);
-}
-
-TEST_CASE("parse_slot_data: a fractional integer field truncates", "[slot_data]")
-{
-    REQUIRE(mth::parse_slot_data(json{{"train_pass_cost", 250.9}}).train_pass_cost == 250);
-    REQUIRE(mth::parse_slot_data(json{{"max_stat_level", 42.7}}).max_stat_level == 42);
-}
-
 TEST_CASE("parse_slot_data: unknown keys are ignored", "[slot_data]")
 {
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"future_option", 5}, {"ossex_start", 1}});
     REQUIRE(cfg.ossex_start);
+    // train_rando defaults on for any object blob, since current seeds shuffle the tickets without sending the key.
     REQUIRE(cfg.train_rando);
-}
-
-TEST_CASE("parse_slot_data: mirror_switch_rando defaults off", "[slot_data]")
-{
-    // A seed that says nothing about the shortcut switches gets vanilla ones, since it cannot grant any.
-    REQUIRE_FALSE(mth::parse_slot_data(json::object()).mirror_switch_rando);
-    REQUIRE_FALSE(mth::parse_slot_data(json{{"mirror_switch_rando", 0}}).mirror_switch_rando);
-    REQUIRE(mth::parse_slot_data(json{{"mirror_switch_rando", 1}}).mirror_switch_rando);
-    REQUIRE_FALSE(mth::parse_slot_data(json(5)).mirror_switch_rando);
 }

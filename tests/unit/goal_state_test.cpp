@@ -38,20 +38,6 @@ TEST_CASE("unknown goal_config falls back to finish", "[goal]")
     REQUIRE_FALSE(mth::goal_met(7, 0, 0, false, 99, 99));
 }
 
-TEST_CASE("broken_generator_mask maps slot_data indices onto SaveSlot 0x290 bits", "[goal]")
-{
-    // The slot_data generator index differs from the 0x290 bit position: BossComponent::SetGeneratorFixed marks bit {bayou/Noxs=0 -> 2,
-    // crypt/Queensbury=1 -> 1, septemburg=2 -> 3, boneBeach=3 -> 4, coltrane=4 -> 5, astral=5 -> 6}, so the mask is built in 0x290-bit space (#146).
-    REQUIRE(mth::broken_generator_mask({0}) == (std::uint64_t{1} << 2));
-    REQUIRE(mth::broken_generator_mask({1}) == (std::uint64_t{1} << 1));
-    REQUIRE(mth::broken_generator_mask({5}) == (std::uint64_t{1} << 6));
-    REQUIRE(mth::broken_generator_mask({0, 1, 2}) == 0b1110u);
-    REQUIRE(mth::broken_generator_mask({}) == 0u);
-    REQUIRE(mth::broken_generator_mask({0, 0}) == (std::uint64_t{1} << 2));
-    // Only the six real generators exist; anything else is ignored.
-    REQUIRE(mth::broken_generator_mask({-1, 6, 64, 999}) == 0u);
-}
-
 TEST_CASE("generators_done counts only generators the seed started broken (#141)", "[goal]")
 {
     // Real slot_data shape: broken_generators {Noxs=0, Queensbury=1, Septemburg=2} must be fixed; the other

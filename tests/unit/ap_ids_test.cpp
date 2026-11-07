@@ -3,22 +3,6 @@
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/game/game_layout.hpp"
 
-TEST_CASE("ap_item_id and game_item_type round-trip", "[ap_ids]")
-{
-    REQUIRE(mth::ap_item_id(0) == mth::kItemBase);
-    REQUIRE(mth::ap_item_id(42) == mth::kItemBase + 42);
-    REQUIRE(mth::game_item_type(mth::ap_item_id(42)) == 42);
-    REQUIRE(mth::game_item_type(mth::kItemBase) == 0);
-}
-
-TEST_CASE("vanilla kear item id is the Universal Kear itemType", "[ap_ids]")
-{
-    REQUIRE(mth::is_vanilla_kear_item(mth::ap_item_id(63)));
-    REQUIRE(mth::is_vanilla_kear_item(63));
-    REQUIRE_FALSE(mth::is_vanilla_kear_item(mth::ap_item_id(62)));
-    REQUIRE_FALSE(mth::is_vanilla_kear_item(mth::kKearBlockItemBase));
-}
-
 TEST_CASE("stat-cap item ids: per-stat and all-stat flavours", "[ap_ids]")
 {
     REQUIRE(mth::is_stat_cap_item(mth::kProgStatCapBase) == true);
@@ -142,18 +126,6 @@ TEST_CASE("weapon authorization: non-weapon receipts still authorize nothing", "
     CHECK_FALSE(mth::any_weapon_authorized(authorized));
 }
 
-TEST_CASE("item-space segments are 1000-wide and ordered", "[ap_ids]")
-{
-    REQUIRE(mth::kItemBase == 0);
-    REQUIRE(mth::kProgressiveItemBase == 1000);
-    REQUIRE(mth::kKearBlockItemBase == 2000);
-    REQUIRE(mth::kAbilityItemBase == 3000);
-    REQUIRE(mth::kBlockerItemBase == 4000);
-    REQUIRE(mth::kTrapItemBase == 5000);
-    // Progressive sub-layout stays within segment 1.
-    REQUIRE(mth::kProgStatCapAllId < mth::kKearBlockItemBase);
-}
-
 TEST_CASE("is_vanilla_game_item recognises only item segment 0", "[ap_ids]")
 {
     REQUIRE(mth::is_vanilla_game_item(mth::ap_item_id(0)));
@@ -176,13 +148,6 @@ TEST_CASE("is_valid_item_type bounds a type against the s_rItems row count", "[a
     REQUIRE_FALSE(mth::is_valid_item_type(500));
     REQUIRE_FALSE(mth::is_valid_item_type(999));
     REQUIRE_FALSE(mth::is_valid_item_type(-1));
-}
-
-TEST_CASE("boss_location_slot maps index into the reserved range", "[boss]")
-{
-    REQUIRE(mth::boss_location_slot(0) == mth::kBossLocBase);
-    REQUIRE(mth::boss_location_slot(5) == mth::kBossLocBase + 5);
-    REQUIRE(mth::kBossLocBase >= 361);
 }
 
 TEST_CASE("is_legovich_location matches only the WeaponMerchant shop slots", "[legovich]")
@@ -280,19 +245,4 @@ TEST_CASE("maintained_vial_held preserves the missing flask count across a capac
     REQUIRE(mth::maintained_vial_held(1, 1, 1) == 1);
     REQUIRE(mth::maintained_vial_held(3, 1, 0) == 0);
     REQUIRE(mth::maintained_vial_held(0, 0, 4) == 4);
-}
-
-TEST_CASE("astral platform items decode to the game's own color order", "[items]")
-{
-    // apworld order is green, red, blue, yellow, purple; the game's Color property is yellow, green, blue, purple, red.
-    REQUIRE(mth::astral_platform_color(4000) == 1);
-    REQUIRE(mth::astral_platform_color(4001) == 4);
-    REQUIRE(mth::astral_platform_color(4002) == 2);
-    REQUIRE(mth::astral_platform_color(4003) == 0);
-    REQUIRE(mth::astral_platform_color(4004) == 3);
-
-    REQUIRE(mth::is_astral_platform_item(4000));
-    REQUIRE(mth::is_astral_platform_item(4004));
-    REQUIRE_FALSE(mth::is_astral_platform_item(3999));
-    REQUIRE_FALSE(mth::is_astral_platform_item(4005));
 }

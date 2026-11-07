@@ -285,7 +285,7 @@ inline constexpr std::int64_t kBlockerItemBase = 4000;      // Mirrors End short
 inline constexpr std::int64_t kTrapItemBase = 5000;         // modifier traps (kTrapItemBase + modifier index)
 inline constexpr std::int64_t kTrapSegmentWidth = 1000;
 
-// The apworld's five "<color> Astral Platforms" items sit at the bottom of the blocker segment in the apworld's color order, which differs from the
+// The apworld's five "<Color> Astral Switch" items sit at the bottom of the blocker segment in the apworld's color order, which differs from the
 // game's Color property. Index = id - kBlockerItemBase, value = the game color the switch reports.
 inline constexpr int kAstralPlatformCount = 5;
 inline constexpr std::array<int, kAstralPlatformCount> kAstralPlatformColors{

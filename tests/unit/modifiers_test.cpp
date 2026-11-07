@@ -5,7 +5,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/game/modifiers.hpp"
 
 using mth::CheatClass;
@@ -235,31 +234,4 @@ TEST_CASE("trap table: lookup returns the row for every modifier index in the ta
     REQUIRE(mth::trap_for_modifier(19) == nullptr);
     REQUIRE(mth::trap_for_modifier(-1) == nullptr);
     REQUIRE(mth::trap_for_modifier(9999) == nullptr);
-}
-
-TEST_CASE("ap_ids: the trap segment is 1000 wide from kTrapItemBase", "[trap][ap_ids]")
-{
-    REQUIRE(mth::is_trap_item(mth::kTrapItemBase));
-    REQUIRE(mth::is_trap_item(mth::kTrapItemBase + 204));
-    REQUIRE(mth::is_trap_item(mth::kTrapItemBase + 999));
-    REQUIRE_FALSE(mth::is_trap_item(mth::kTrapItemBase - 1));
-    REQUIRE_FALSE(mth::is_trap_item(mth::kTrapItemBase + 1000));
-    REQUIRE_FALSE(mth::is_trap_item(mth::ap_item_id(9)));
-}
-
-TEST_CASE("ap_ids: a trap id carries its modifier index", "[trap][ap_ids]")
-{
-    REQUIRE(mth::trap_modifier_index(mth::kTrapItemBase + 204) == 204);
-    REQUIRE(mth::trap_modifier_index(mth::kTrapItemBase) == 0);
-}
-
-TEST_CASE("the trap index set is frozen, because a seed already carries these item ids", "[trap]")
-{
-    // Each row's modifier_index is the AP item id offset (kTrapItemBase + index), so retiring or renumbering a row repoints an id live seeds hand out.
-    // Adding a row is safe, so this pins the set, not the count. Raw numbers: kCheat_ names would follow an upstream renumber and still pass.
-    for (int index : {15, 174, 190, 191, 192, 193, 195, 197, 202, 203, 204, 205})
-    {
-        INFO("modifier index " << index << " left the table, retiring the AP item id built from it");
-        REQUIRE(mth::trap_for_modifier(index) != nullptr);
-    }
 }

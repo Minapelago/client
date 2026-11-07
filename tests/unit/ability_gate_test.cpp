@@ -5,13 +5,6 @@
 
 using mth::Ability;
 
-TEST_CASE("ability item ids occupy the 3000 segment")
-{
-    REQUIRE(mth::kAbilityCount == 7);
-    REQUIRE(mth::ability_item_id(Ability::Burrow) == 3000);
-    REQUIRE(mth::ability_item_id(Ability::Train) == 3006);
-}
-
 TEST_CASE("ability_from_name maps known names and rejects unknown")
 {
     REQUIRE(mth::ability_from_name("burrow") == Ability::Burrow);
