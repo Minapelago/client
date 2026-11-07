@@ -1,9 +1,9 @@
 # ApClient.cmake - header-only Archipelago client deps via FetchContent.
 #
 # apclientpp -> wswrap -> websocketpp form the Archipelago net stack. Fetching them here keeps the patched websocketpp copy in build/_deps, away
-# from tracked files. Pins are exact commits. asio/OpenSSL/ZLIB/json come from vcpkg (find_package in src/mth).
+# from tracked files. Pins are exact commits. asio and OpenSSL come from vcpkg (found here); ZLIB and json are found in src/mth.
 #
-# Exposes: mthap::apclient (INTERFACE, system include dirs only).
+# Exposes: mthap::apclient (INTERFACE: system include dirs, the net stack's compile definitions, asio and OpenSSL).
 
 include_guard(GLOBAL)
 include(FetchContent)
@@ -35,6 +35,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(websocketpp wswrap apclientpp)
 
+find_package(asio CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+
 # Upstream replaces the asio error with a generic tls_handshake_failed, which merges certificate rejection, version mismatch and mid-handshake reset.
 # The asio code carries the OpenSSL reason and nothing here matches the generic one. The rewrite is idempotent and fails configure if neither text matches.
 set(_ws_tls "${websocketpp_SOURCE_DIR}/websocketpp/transport/asio/security/tls.hpp")
@@ -56,3 +59,12 @@ target_include_directories(mthap_apclient SYSTEM INTERFACE
     "${wswrap_SOURCE_DIR}/include"
     "${websocketpp_SOURCE_DIR}"
 )
+target_compile_definitions(mthap_apclient INTERFACE
+    ASIO_STANDALONE
+    AP_NO_SCHEMA
+    _WEBSOCKETPP_CPP11_STL_
+    _WEBSOCKETPP_CPP11_THREAD_
+    _WEBSOCKETPP_NO_BOOST_
+    WSWRAP_ASYNC_CLEANUP
+)
+target_link_libraries(mthap_apclient INTERFACE asio::asio OpenSSL::SSL OpenSSL::Crypto)

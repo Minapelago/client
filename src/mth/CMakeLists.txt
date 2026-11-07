@@ -15,9 +15,6 @@ find_package(ZLIB REQUIRED)
 # mthap_core's mutexes guard state the game thread shares with the net and render threads.
 find_package(Threads REQUIRED)
 
-find_package(asio CONFIG REQUIRED)
-find_package(OpenSSL REQUIRED)
-
 file(GLOB_RECURSE _mthap_core_sources CONFIGURE_DEPENDS core/*.cpp)
 
 add_library(mthap_core STATIC ${_mthap_core_sources} "${CMAKE_SOURCE_DIR}/src/mod/mod_api.cpp")
@@ -52,22 +49,10 @@ add_library(mthap MODULE
     "${MTHAP_OVERLAY_FONT_SOURCE}"
 )
 
-target_compile_definitions(mthap PRIVATE
-    ASIO_STANDALONE
-    AP_NO_SCHEMA
-    _WEBSOCKETPP_CPP11_STL_
-    _WEBSOCKETPP_CPP11_THREAD_
-    _WEBSOCKETPP_NO_BOOST_
-    WSWRAP_ASYNC_CLEANUP
-)
-
 target_link_libraries(mthap PRIVATE
     mthap_core
     mthap::apclient
     mthap::imgui
-    asio::asio
-    OpenSSL::SSL
-    OpenSSL::Crypto
 )
 
 if(WIN32)

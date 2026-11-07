@@ -30,7 +30,9 @@ target_sources(mthap_unit_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/pal/linux/cert_linux.cpp"
     # DeathHooks lives in the mthap module, which tests do not link; compile it in to unit-test its sparkless-demise gating against mthap_core.
     "${CMAKE_SOURCE_DIR}/src/mth/features/death_hooks.cpp"
-    # The deathlink payload codec also lives in the module and needs only nlohmann (via mthap_core).
-    "${CMAKE_SOURCE_DIR}/src/mth/net/deathlink.cpp")
+    # The deathlink payload codec and the AP link live in the module; ap_link_net_test drives the real link against a loopback server.
+    "${CMAKE_SOURCE_DIR}/src/mth/net/deathlink.cpp"
+    "${CMAKE_SOURCE_DIR}/src/mth/net/ap_link_apclient.cpp")
+target_link_libraries(mthap_unit_tests PRIVATE mthap::apclient)
 
-catch_discover_tests(mthap_unit_tests)
+catch_discover_tests(mthap_unit_tests PROPERTIES TIMEOUT 60)
