@@ -30,7 +30,7 @@ struct Walker
 
 } // namespace
 
-TEST_CASE("scene walk: descends entities and reports leaves to the visitor", "[scene]")
+TEST_CASE("scene walk: descends entities and reports leaves to the visitor, from any root", "[scene]")
 {
     mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
@@ -60,10 +60,20 @@ TEST_CASE("scene walk: descends entities and reports leaves to the visitor", "[s
     REQUIRE(r.visited > 0);
     REQUIRE_FALSE(r.stopped_by_visitor);
     REQUIRE_FALSE(r.node_budget_spent);
-    mod::set_api(nullptr);
+
+    void *childless = s.add(mth::rtti::kYcEntity, nullptr);
+    int calls = 0;
+    const auto count = [&](std::span<void *const>)
+    {
+        ++calls;
+        return true;
+    };
+    REQUIRE(w.run(childless, count).visited == 0);
+    REQUIRE(w.run(nullptr, count).visited == 0);
+    REQUIRE(calls == 0);
 }
 
-TEST_CASE("scene walk: a visitor returning false stops the walk", "[scene]")
+TEST_CASE("scene walk: a visitor can stop the walk, and a node wider than the child cap is walked as a prefix", "[scene]")
 {
     mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
@@ -76,17 +86,28 @@ TEST_CASE("scene walk: a visitor returning false stops the walk", "[scene]")
 
     int calls = 0;
     Walker w;
-    const mth::SceneWalk r = w.run(root,
-                                   [&](std::span<void *const>)
-                                   {
-                                       ++calls;
-                                       return false;
-                                   });
-
+    const mth::SceneWalk stopped = w.run(root,
+                                         [&](std::span<void *const>)
+                                         {
+                                             ++calls;
+                                             return false;
+                                         });
     REQUIRE(calls == 1);
-    REQUIRE(r.stopped_by_visitor);
-    REQUIRE(w.pending.empty());
-    mod::set_api(nullptr);
+    REQUIRE(stopped.stopped_by_visitor);
+
+    void *wide_root = s.add(mth::rtti::kYcEntity, nullptr);
+    for (std::size_t i = 0; i < mth::kSceneMaxChildren + 7; ++i)
+        s.add(kOther, wide_root);
+    std::size_t seen = 0;
+    Walker fresh;
+    const mth::SceneWalk wide = fresh.run(wide_root,
+                                          [&](std::span<void *const> children)
+                                          {
+                                              seen += children.size();
+                                              return true;
+                                          });
+    REQUIRE(seen == mth::kSceneMaxChildren);
+    REQUIRE(wide.widest_node == wide_root);
 }
 
 // ComponentIsa is a hierarchy test, so one object can be a ycEntity and the searched type. Such a node is descended into and withheld from the
@@ -112,49 +133,4 @@ TEST_CASE("scene walk: a node that is also an entity is descended into and withh
 
     REQUIRE(std::find(seen.begin(), seen.end(), hybrid) == seen.end());
     REQUIRE(std::find(seen.begin(), seen.end(), below) != seen.end());
-    mod::set_api(nullptr);
-}
-
-TEST_CASE("scene walk: a childless or null root walks nothing", "[scene]")
-{
-    mth::test::ScopedFakeApi scoped;
-    mth::test::fake_scene().reset();
-    void *root = mth::test::fake_scene().add(mth::rtti::kYcEntity, nullptr);
-
-    int calls = 0;
-    Walker w;
-    const auto visit = [&](std::span<void *const>)
-    {
-        ++calls;
-        return true;
-    };
-    REQUIRE(w.run(root, visit).visited == 0);
-    REQUIRE(w.run(nullptr, visit).visited == 0);
-    REQUIRE(calls == 0);
-    mod::set_api(nullptr);
-}
-
-TEST_CASE("scene walk: a node wider than the child cap is walked as a prefix and reported", "[scene]")
-{
-    mth::test::ScopedFakeApi scoped;
-    mth::test::fake_scene().reset();
-    auto &s = mth::test::fake_scene();
-
-    void *root = s.add(mth::rtti::kYcEntity, nullptr);
-    const std::size_t wide = mth::kSceneMaxChildren + 7;
-    for (std::size_t i = 0; i < wide; ++i)
-        s.add(kOther, root);
-
-    std::size_t seen = 0;
-    Walker w;
-    const mth::SceneWalk r = w.run(root,
-                                   [&](std::span<void *const> children)
-                                   {
-                                       seen += children.size();
-                                       return true;
-                                   });
-
-    REQUIRE(seen == mth::kSceneMaxChildren);
-    REQUIRE(r.widest_node == root);
-    mod::set_api(nullptr);
 }

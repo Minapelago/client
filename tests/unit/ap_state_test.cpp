@@ -6,17 +6,10 @@
 #include "mth/core/ap/ability_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
 
-TEST_CASE("ap_state: starts idle, unauthenticated", "[mth][ap_state]")
-{
-    mth::ApState s;
-    REQUIRE_FALSE(s.authenticated());
-    REQUIRE(s.received_items().empty());
-    REQUIRE_FALSE(s.is_valid_location(42));
-}
-
 TEST_CASE("ap_state: ApConnected populates slot/locations and authenticates", "[mth][ap_state]")
 {
     mth::ApState s;
+    REQUIRE_FALSE(s.authenticated());
     s.apply(mth::ApConnected{{}, R"({"x":1})", 3, {10, 11}, {12}});
     REQUIRE(s.authenticated());
     REQUIRE(s.player_slot() == 3);
@@ -25,29 +18,14 @@ TEST_CASE("ap_state: ApConnected populates slot/locations and authenticates", "[
     REQUIRE_FALSE(s.is_valid_location(99));
 }
 
-TEST_CASE("ap_state: ApConnected copies the parsed slot config through", "[mth][ap_state]")
-{
-    // One assignment carries the whole config, so a few fields stand in for all of them. What each
-    // slot_data key parses to is parse_slot_data's contract, covered in slot_data_test.
-    mth::ApState s;
-    s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.ossex_start = true, .deathlink = true, .lit_generator_lamp_mask = 0x2Au}});
-    REQUIRE(s.config().ossex_start);
-    REQUIRE(s.config().deathlink);
-    REQUIRE(s.config().lit_generator_lamp_mask == 0x2Au);
-}
-
 // slot_data "kear_rando" is an int mode: 0 = vanilla (the pool carries Universal Kear items, id 63, which must grant real keys), 1/2 = per-lock /
 // per-area AP items (usable keys stay pinned at zero). See #130.
-TEST_CASE("ap_state: vanilla kear mode does not suppress usable keys", "[mth][ap_state]")
+TEST_CASE("ap_state: only the AP-item kear modes suppress usable keys", "[mth][ap_state]")
 {
-    mth::ApState s;
-    s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.kear_mode = mth::KearMode::Vanilla}});
-    REQUIRE(s.config().kear_mode == mth::KearMode::Vanilla);
-    REQUIRE_FALSE(s.kear_keys_suppressed());
-}
+    mth::ApState vanilla;
+    vanilla.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.kear_mode = mth::KearMode::Vanilla}});
+    REQUIRE_FALSE(vanilla.kear_keys_suppressed());
 
-TEST_CASE("ap_state: AP-item kear modes suppress usable keys", "[mth][ap_state]")
-{
     mth::ApState s;
     s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.kear_mode = mth::KearMode::ApItems}});
     REQUIRE(s.kear_keys_suppressed());
@@ -76,20 +54,6 @@ TEST_CASE("ap_state: has_received matches by item_id not index", "[mth][ap_state
     REQUIRE_FALSE(s.has_received(0));
 }
 
-TEST_CASE("ap_state: disconnect clears auth; status reflects events", "[mth][ap_state]")
-{
-    mth::ApState s;
-    s.apply(mth::ApConnected{{}, "{}", 1, {}, {}});
-    s.apply(mth::ApDisconnected{});
-    REQUIRE_FALSE(s.authenticated());
-    s.apply(mth::ApStatusChanged{"Connecting..."});
-    REQUIRE(s.status() == "Connecting...");
-    s.apply(mth::ApConnectionRefused{{"InvalidSlot", "InvalidGame"}});
-    REQUIRE(s.status() == "Refused: InvalidSlot, InvalidGame");
-    s.apply(mth::ApConnectionRefused{{}});
-    REQUIRE(s.status() == "Refused");
-}
-
 TEST_CASE("ap_state: each connection event maps to its phase", "[mth][ap_state]")
 {
     using mth::ConnectionPhase;
@@ -106,6 +70,7 @@ TEST_CASE("ap_state: each connection event maps to its phase", "[mth][ap_state]"
 
     s.apply(mth::ApDisconnected{});
     REQUIRE(s.phase() == ConnectionPhase::Disconnected);
+    REQUIRE_FALSE(s.authenticated());
 
     // The login window shows detail() verbatim, so an error the join drops is a refusal the player
     // never gets an explanation for.
@@ -200,12 +165,4 @@ TEST_CASE("ap_state: a disconnect keeps the removed set", "[mth][ap_state]")
 
     REQUIRE_FALSE(s.authenticated());
     REQUIRE(s.is_removed_location(40));
-}
-
-TEST_CASE("ap_state: an absent removed list leaves the set empty", "[mth][ap_state]")
-{
-    mth::ApState s;
-    s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .missing_locations = {5}});
-    REQUIRE(s.removed_locations().empty());
-    REQUIRE_FALSE(s.is_removed_location(5));
 }

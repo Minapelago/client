@@ -428,7 +428,7 @@ TEST_CASE("mod: appended entries become available on a newer build", "[mod]")
     REQUIRE(mth::test::fake_queue_destroys == before + 1);
 
     // sym_addr forwards the name verbatim; this pins that the entry is reached and an unexported name returns null. The mangled-to-plain mapping is
-    // covered in native_sym_names_test.cpp.
+    // covered in signature_test.cpp.
     REQUIRE(mod::sym_addr("s_rItems") != nullptr);
     REQUIRE(mod::sym_addr("NotAnExposedName") == nullptr);
 

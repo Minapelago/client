@@ -1,4 +1,5 @@
 #include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,14 +8,26 @@
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
 
-TEST_CASE("ap_coordinator: tick drains link events into state", "[mth][ap_coordinator]")
+TEST_CASE("ap_coordinator: tick drains link events into state and the death and broadcast callbacks", "[mth][ap_coordinator]")
 {
     mth::test::FakeApLink link;
     mth::ApState state;
-    mth::ApCoordinator coord(link, state);
+    std::string got_source;
+    std::string got_cause;
+    std::vector<mth::BannerSegment> got_banner;
+    mth::ApCoordinator coord(
+        link, state,
+        [&](const std::string &source, const std::string &cause)
+        {
+            got_source = source;
+            got_cause = cause;
+        },
+        [&got_banner](const std::vector<mth::BannerSegment> &s) { got_banner = s; });
 
     link.pending.push_back(mth::ApConnected{{}, "{}", 2, {5}, {6}});
     link.pending.push_back(mth::ApItemReceived{{777, 0, 2, 1}});
+    link.pending.push_back(mth::ApDeathReceived{.source = "Amaterasu", .cause = "Amaterasu was crushed by a spike trap"});
+    link.pending.push_back(mth::ApPrintBroadcast{{{"you got the thing", 0xFFFFFFFFu}}});
 
     coord.tick();
 
@@ -22,85 +35,13 @@ TEST_CASE("ap_coordinator: tick drains link events into state", "[mth][ap_coordi
     REQUIRE(state.player_slot() == 2);
     REQUIRE(state.is_valid_location(5));
     REQUIRE(state.received_items().size() == 1);
-}
-
-TEST_CASE("ap_coordinator: tick with no events is a no-op", "[mth][ap_coordinator]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    mth::ApCoordinator coord(link, state);
-
-    const std::string before = state.status();
-    coord.tick();
-    REQUIRE_FALSE(state.authenticated());
-    REQUIRE(state.status() == before);
-}
-
-TEST_CASE("ap_coordinator: on_death forwards the sender and cause for attribution", "[mth][ap_coordinator]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    std::string got_source;
-    std::string got_cause;
-    mth::ApCoordinator coord(link, state,
-                             [&](const std::string &source, const std::string &cause)
-                             {
-                                 got_source = source;
-                                 got_cause = cause;
-                             });
-
-    link.pending.push_back(mth::ApDeathReceived{.source = "Amaterasu", .cause = "Amaterasu was crushed by a spike trap"});
-
-    coord.tick();
-
     REQUIRE(got_source == "Amaterasu");
     REQUIRE(got_cause == "Amaterasu was crushed by a spike trap");
+    REQUIRE(got_banner.size() == 1);
+    REQUIRE(got_banner[0].text == "you got the thing");
 }
 
-TEST_CASE("ap_coordinator: on_broadcast forwards segments from ApPrintBroadcast", "[mth][ap_coordinator]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    std::vector<mth::BannerSegment> got;
-    mth::ApCoordinator coord(link, state, {}, [&got](const std::vector<mth::BannerSegment> &s) { got = s; });
-
-    link.pending.push_back(mth::ApPrintBroadcast{{{"you got the thing", 0xFFFFFFFFu}}});
-
-    coord.tick();
-
-    REQUIRE(got.size() == 1);
-    REQUIRE(got[0].text == "you got the thing");
-}
-
-TEST_CASE("ap_coordinator: on_session_reset fires on ApConnected", "[mth][ap_coordinator]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    int reset_calls = 0;
-    mth::ApCoordinator coord(link, state, {}, {}, {}, [&reset_calls] { ++reset_calls; });
-
-    link.pending.push_back(mth::ApConnected{{}, "{}", 2, {5}, {6}});
-
-    coord.tick();
-
-    REQUIRE(reset_calls == 1);
-}
-
-TEST_CASE("ap_coordinator: on_session_reset fires on ApDisconnected", "[mth][ap_coordinator]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    int reset_calls = 0;
-    mth::ApCoordinator coord(link, state, {}, {}, {}, [&reset_calls] { ++reset_calls; });
-
-    link.pending.push_back(mth::ApDisconnected{});
-
-    coord.tick();
-
-    REQUIRE(reset_calls == 1);
-}
-
-TEST_CASE("ap_coordinator: on_session_reset does not fire on unrelated events", "[mth][ap_coordinator]")
+TEST_CASE("ap_coordinator: on_session_reset fires on connect and disconnect only", "[mth][ap_coordinator]")
 {
     mth::test::FakeApLink link;
     mth::ApState state;
@@ -109,10 +50,16 @@ TEST_CASE("ap_coordinator: on_session_reset does not fire on unrelated events", 
 
     link.pending.push_back(mth::ApItemReceived{{777, 0, 2, 1}});
     link.pending.push_back(mth::ApStatusChanged{"hi"});
-
     coord.tick();
-
     REQUIRE(reset_calls == 0);
+
+    link.pending.push_back(mth::ApConnected{{}, "{}", 2, {5}, {6}});
+    coord.tick();
+    REQUIRE(reset_calls == 1);
+
+    link.pending.push_back(mth::ApDisconnected{});
+    coord.tick();
+    REQUIRE(reset_calls == 2);
 }
 
 TEST_CASE("ap_coordinator: ApSessionEnded fires on_session_end before the new ApConnected is applied", "[mth][ap_coordinator]")

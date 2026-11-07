@@ -7,30 +7,16 @@
 
 using mth::AreaReporter;
 
-TEST_CASE("area_reporter: nothing sent while disconnected", "[mth][area]")
+TEST_CASE("area_reporter: sends each readable area change while connected", "[mth][area]")
 {
     mth::test::FakeApLink link;
     AreaReporter rep(link);
 
-    rep.tick(false, std::optional<std::uint32_t>{100});
+    rep.tick(false, std::optional<std::uint32_t>{50});
+    rep.tick(true, std::nullopt);
     REQUIRE(link.reported_areas.empty());
-}
-
-TEST_CASE("area_reporter: first connected state is sent once", "[mth][area]")
-{
-    mth::test::FakeApLink link;
-    AreaReporter rep(link);
 
     rep.tick(true, std::optional<std::uint32_t>{100});
-    rep.tick(true, std::optional<std::uint32_t>{100});
-    REQUIRE(link.reported_areas == std::vector<int>{100});
-}
-
-TEST_CASE("area_reporter: only changes are sent", "[mth][area]")
-{
-    mth::test::FakeApLink link;
-    AreaReporter rep(link);
-
     rep.tick(true, std::optional<std::uint32_t>{100});
     rep.tick(true, std::optional<std::uint32_t>{200});
     rep.tick(true, std::optional<std::uint32_t>{200});
@@ -38,24 +24,13 @@ TEST_CASE("area_reporter: only changes are sent", "[mth][area]")
     REQUIRE(link.reported_areas == std::vector<int>{100, 200, 100});
 }
 
-TEST_CASE("area_reporter: unreadable state sends nothing", "[mth][area]")
-{
-    mth::test::FakeApLink link;
-    AreaReporter rep(link);
-
-    rep.tick(true, std::nullopt);
-    REQUIRE(link.reported_areas.empty());
-    rep.tick(true, std::optional<std::uint32_t>{100});
-    REQUIRE(link.reported_areas == std::vector<int>{100});
-}
-
 TEST_CASE("area_reporter: reconnect re-sends even if unchanged", "[mth][area]")
 {
     mth::test::FakeApLink link;
     AreaReporter rep(link);
 
-    rep.tick(true, std::optional<std::uint32_t>{100});  // send 100
-    rep.tick(false, std::optional<std::uint32_t>{100}); // disconnect
-    rep.tick(true, std::optional<std::uint32_t>{100});  // reconnect -> re-send 100
+    rep.tick(true, std::optional<std::uint32_t>{100});
+    rep.tick(false, std::optional<std::uint32_t>{100});
+    rep.tick(true, std::optional<std::uint32_t>{100});
     REQUIRE(link.reported_areas == std::vector<int>{100, 100});
 }

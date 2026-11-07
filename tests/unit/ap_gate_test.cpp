@@ -64,7 +64,7 @@ TEST_CASE("gate: any single static check failing -> Refused", "[gate]")
     }
 }
 
-TEST_CASE("gate: static checks pass but liveness pending -> Pending until the timeout", "[gate]")
+TEST_CASE("gate: liveness pending -> Pending until the timeout, unless observed", "[gate]")
 {
     mth::GateInputs in = healthy_pending();
     REQUIRE(mth::evaluate(in) == mth::GateVerdict::Pending);
@@ -74,23 +74,27 @@ TEST_CASE("gate: static checks pass but liveness pending -> Pending until the ti
 
     in.ticks_since_probe_installed = mth::kLivenessTimeoutTicks;
     REQUIRE(mth::evaluate(in) == mth::GateVerdict::Refused);
-}
 
-TEST_CASE("gate: liveness observed beats the timeout", "[gate]")
-{
     // A slow load must not refuse a build where the hook does fire.
-    mth::GateInputs in = healthy_clear();
-    in.ticks_since_probe_installed = mth::kLivenessTimeoutTicks * 10;
-    REQUIRE(mth::evaluate(in) == mth::GateVerdict::Clear);
+    mth::GateInputs observed = healthy_clear();
+    observed.ticks_since_probe_installed = mth::kLivenessTimeoutTicks * 10;
+    REQUIRE(mth::evaluate(observed) == mth::GateVerdict::Clear);
 }
 
-TEST_CASE("gate: an unknown revision alone does not refuse", "[gate]")
+TEST_CASE("gate: an unknown revision or mod API shape is informational and never moves the verdict", "[gate]")
 {
     // A revision triggers verification and is not a verdict: gating on an unfamiliar build would brick the mod on every game patch.
-    mth::GateInputs in = healthy_clear();
-    in.revision_known = false;
-    REQUIRE(mth::evaluate(in) == mth::GateVerdict::Clear);
-    REQUIRE(mth::refusal_reason(in).empty());
+    for (bool mth::GateInputs::*field : {&mth::GateInputs::revision_known, &mth::GateInputs::mod_api_shape_ok})
+    {
+        mth::GateInputs in = healthy_clear();
+        in.*field = false;
+        REQUIRE(mth::evaluate(in) == mth::GateVerdict::Clear);
+        REQUIRE(mth::refusal_reason(in).empty());
+
+        mth::GateInputs pending = healthy_pending();
+        pending.*field = false;
+        REQUIRE(mth::evaluate(pending) == mth::GateVerdict::Pending);
+    }
 }
 
 TEST_CASE("gate: refusal_reason is non-empty exactly when refused, and distinct per cause", "[gate]")
@@ -150,7 +154,7 @@ TEST_CASE("gate: refusal_reason is non-empty exactly when refused, and distinct 
     REQUIRE(mth::refusal_reason(both) == mth::refusal_reason(api_only));
 }
 
-TEST_CASE("gate latch: Clear is terminal", "[gate]")
+TEST_CASE("gate latch: Clear and Refused are terminal", "[gate]")
 {
     mth::GateLatch latch;
     REQUIRE(latch.verdict() == mth::GateVerdict::Pending);
@@ -159,26 +163,16 @@ TEST_CASE("gate latch: Clear is terminal", "[gate]")
     REQUIRE(latch.update(healthy_clear()) == mth::GateVerdict::Clear);
     REQUIRE(latch.settled());
 
-    // A later input that would evaluate to Refused must not revoke a granted Clear: features
-    // are already installed and a run may already be in progress.
+    // A granted Clear is never revoked: features are already installed and a run may be in progress.
     mth::GateInputs broken = healthy_clear();
     broken.symbols_resolved = false;
     REQUIRE(latch.update(broken) == mth::GateVerdict::Clear);
-    REQUIRE(latch.verdict() == mth::GateVerdict::Clear);
-}
-
-TEST_CASE("gate latch: Refused is terminal", "[gate]")
-{
-    mth::GateLatch latch;
-    mth::GateInputs broken = healthy_clear();
-    broken.layout_probes_ok = false;
-
-    REQUIRE(latch.update(broken) == mth::GateVerdict::Refused);
-    REQUIRE(latch.settled());
 
     // No retry: a refusal holds for the process lifetime.
-    REQUIRE(latch.update(healthy_clear()) == mth::GateVerdict::Refused);
-    REQUIRE(latch.verdict() == mth::GateVerdict::Refused);
+    mth::GateLatch refused;
+    REQUIRE(refused.update(broken) == mth::GateVerdict::Refused);
+    REQUIRE(refused.settled());
+    REQUIRE(refused.update(healthy_clear()) == mth::GateVerdict::Refused);
 }
 
 TEST_CASE("gate latch: stays Pending across repeated updates until an input settles it", "[gate]")
@@ -195,29 +189,12 @@ TEST_CASE("gate latch: stays Pending across repeated updates until an input sett
     REQUIRE(latch.update(in) == mth::GateVerdict::Clear);
 }
 
-TEST_CASE("gate: mod_api_shape_ok is informational and never moves the verdict", "[gate]")
-{
-    mth::GateInputs in = healthy_clear();
-    in.mod_api_shape_ok = false;
-    REQUIRE(mth::evaluate(in) == mth::GateVerdict::Clear);
-    REQUIRE(mth::refusal_reason(in).empty());
-
-    mth::GateInputs pending = healthy_pending();
-    pending.mod_api_shape_ok = false;
-    REQUIRE(mth::evaluate(pending) == mth::GateVerdict::Pending);
-}
-
 TEST_CASE("gate: connect is refused only when enforcing and refused", "[gate]")
 {
     REQUIRE(mth::should_refuse_connect(true, mth::GateVerdict::Refused));
     REQUIRE_FALSE(mth::should_refuse_connect(true, mth::GateVerdict::Clear));
     REQUIRE_FALSE(mth::should_refuse_connect(false, mth::GateVerdict::Refused));
     REQUIRE_FALSE(mth::should_refuse_connect(false, mth::GateVerdict::Clear));
-}
-
-TEST_CASE("gate: Pending does not block connect", "[gate]")
-{
-    // The liveness proof cannot arrive before the game runs, so holding connects for it would strand a launch-time login behind a 600-tick wait.
+    // The liveness proof cannot arrive before the game runs, so holding connects for it would strand a launch-time login behind the liveness wait.
     REQUIRE_FALSE(mth::should_refuse_connect(true, mth::GateVerdict::Pending));
-    REQUIRE(mth::evaluate(healthy_pending()) == mth::GateVerdict::Pending);
 }

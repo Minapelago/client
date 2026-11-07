@@ -1,10 +1,13 @@
 #include <array>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "mth/core/ap/connect_target.hpp"
+#include "pal/pal_cert.hpp"
 
 using mth::choose_cert;
 using mth::ConnectTarget;
@@ -19,18 +22,13 @@ constexpr std::array<std::string_view, 5> kHosts{
 };
 } // namespace
 
-TEST_CASE("plan_connection: a typed host stays schemeless, which is what arms apclientpp's fallback", "[mth][net][tls]")
+TEST_CASE("plan_connection: a typed host prefers TLS with fallback, and an explicit scheme decides it", "[mth][net][tls]")
 {
     const ConnectTarget t = plan_connection("archipelago.gg:38281");
-
-    // apclientpp only alternates wss/ws when it finds no "://" in the URI, so the absence of a scheme
-    // is the property under test, not the particular string.
+    // apclientpp only alternates wss/ws when it finds no "://" in the URI.
     CHECK(t.uri.find("://") == std::string::npos);
     CHECK(t.tls == TlsMode::Preferred);
-}
 
-TEST_CASE("plan_connection: an explicit scheme decides encryption and gives up the fallback", "[mth][net][tls]")
-{
     for (const auto host : kHosts)
     {
         CHECK(plan_connection("wss://" + std::string(host)).tls == TlsMode::Pinned);
@@ -63,24 +61,20 @@ TEST_CASE("plan_connection: replanning its own URI changes nothing", "[mth][net]
     }
 }
 
-TEST_CASE("choose_cert: an unencrypted target never carries a bundle", "[mth][net][tls]")
-{
-    for (const std::string_view bundle : {"", "/etc/ssl/certs/ca-certificates.crt"})
-    {
-        const mth::CertChoice c = choose_cert(TlsMode::Off, bundle);
-        CHECK(c.cert.empty());
-        CHECK_FALSE(c.refuse);
-        CHECK_FALSE(c.unverified);
-    }
-}
-
-TEST_CASE("choose_cert: an encrypted target verifies against the bundle it was given", "[mth][net][tls]")
+TEST_CASE("choose_cert: an encrypted target verifies against the bundle, an unencrypted one carries none", "[mth][net][tls]")
 {
     const std::string_view bundle = "/etc/ssl/certs/ca-certificates.crt";
     for (const TlsMode tls : {TlsMode::Preferred, TlsMode::Pinned})
     {
         const mth::CertChoice c = choose_cert(tls, bundle);
         CHECK(c.cert == bundle);
+        CHECK_FALSE(c.refuse);
+        CHECK_FALSE(c.unverified);
+    }
+    for (const std::string_view given : {std::string_view{}, bundle})
+    {
+        const mth::CertChoice c = choose_cert(TlsMode::Off, given);
+        CHECK(c.cert.empty());
         CHECK_FALSE(c.refuse);
         CHECK_FALSE(c.unverified);
     }
@@ -108,4 +102,26 @@ TEST_CASE("choose_cert: refusing and connecting unverified are mutually exclusiv
             CHECK((c.cert.empty() || c.cert == bundle));
         }
     }
+}
+
+TEST_CASE("ca_bundle_path: honors MTHAP_AP_CERT when the file exists", "[pal][cert]")
+{
+    setenv("MTHAP_AP_CERT", __FILE__, 1);
+    auto p = pal::ca_bundle_path();
+    REQUIRE(p.has_value());
+    REQUIRE(p->string() == __FILE__);
+    unsetenv("MTHAP_AP_CERT");
+}
+
+TEST_CASE("ca_bundle_path: ignores MTHAP_AP_CERT when the file is missing", "[pal][cert]")
+{
+    // A bundle not on disk is worse than no override (curl fails on it), so the override counts only when it resolves. Only the returned path is
+    // asserted; whether a system bundle exists is the host's business.
+    setenv("MTHAP_AP_CERT", "/nonexistent/mthap/ca-bundle.crt", 1);
+    unsetenv("SSL_CERT_FILE");
+    auto p = pal::ca_bundle_path();
+    REQUIRE(p != std::filesystem::path("/nonexistent/mthap/ca-bundle.crt"));
+    if (p)
+        REQUIRE(std::filesystem::is_regular_file(*p));
+    unsetenv("MTHAP_AP_CERT");
 }

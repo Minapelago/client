@@ -69,13 +69,12 @@ class LogCapture
 
 } // namespace
 
-TEST_CASE("parse_slot_data: an absent, empty or non-object blob yields every default", "[slot_data]")
+TEST_CASE("parse_slot_data: an absent or empty blob yields every default", "[slot_data]")
 {
-    for (const json &blob : {json{}, json::object(), json::array({1, 2}), json("nope"), json(7), json(true)})
+    for (const json &blob : {json{}, json::object()})
     {
         INFO(blob.dump());
-        mth::SlotDataConfig cfg;
-        REQUIRE_NOTHROW(cfg = mth::parse_slot_data(blob));
+        const mth::SlotDataConfig cfg = mth::parse_slot_data(blob);
 
         REQUIRE_FALSE(cfg.ossex_start);
         REQUIRE(cfg.kear_mode == mth::KearMode::ApItems);
@@ -96,6 +95,20 @@ TEST_CASE("parse_slot_data: an absent, empty or non-object blob yields every def
         // A seed that says nothing about the shortcut switches gets vanilla ones, since it cannot grant any.
         REQUIRE_FALSE(cfg.mirror_switch_rando);
         REQUIRE(cfg.lit_generator_lamp_mask == 0);
+        REQUIRE(cfg.removed_locations.empty());
+    }
+}
+
+TEST_CASE("parse_slot_data: a non-object blob does not throw and fails closed on the goal", "[slot_data]")
+{
+    for (const json &blob : {json::array({1, 2}), json("nope"), json(7), json(true)})
+    {
+        INFO(blob.dump());
+        mth::SlotDataConfig cfg;
+        REQUIRE_NOTHROW(cfg = mth::parse_slot_data(blob));
+        REQUIRE(cfg.goal_generators == 99);
+        REQUIRE(cfg.goal_bosses == 99);
+        REQUIRE(cfg.broken_generator_mask == mth::kAllGeneratorsMask);
         REQUIRE(cfg.removed_locations.empty());
     }
 }

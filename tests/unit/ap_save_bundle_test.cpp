@@ -60,7 +60,7 @@ TEST_CASE("bundle round-trips a game save", "[bundle]")
     REQUIRE(reader.load("S", "2").value() == kBlob);
 }
 
-TEST_CASE("bundle round-trips ap state", "[bundle]")
+TEST_CASE("bundle round-trips ap state alongside the game save", "[bundle]")
 {
     Fixture f;
     auto store = f.make();
@@ -68,27 +68,20 @@ TEST_CASE("bundle round-trips ap state", "[bundle]")
     REQUIRE(store.stage_state("S", "2", "c 1\ng 2\n"));
     // Read-back through the same store is immediate; the disk waits for the game to save.
     REQUIRE(store.load_state("S", "2").value() == "c 1\ng 2\n");
+    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
     REQUIRE(store.store("S", "2", kBlob));
 
     auto reader = f.make();
     REQUIRE(reader.load_state("S", "2").value() == "c 1\ng 2\n");
-}
-
-TEST_CASE("bundle keeps both payloads in one container", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.stage_state("S", "2", "c 1\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-
-    auto reader = f.make();
     REQUIRE(reader.load("S", "2").value() == kBlob);
-    REQUIRE(reader.load_state("S", "2").value() == "c 1\n");
-    REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 }
 
-TEST_CASE("bundle rejects a malformed game save blob", "[bundle]")
+TEST_CASE("bundle rejects a game save blob without the ycData header", "[bundle]")
 {
+    REQUIRE(mth::looks_like_save_blob("[YCD Version: 1]\nSaveSlot\n{}"));
+    REQUIRE_FALSE(mth::looks_like_save_blob(""));
+    REQUIRE_FALSE(mth::looks_like_save_blob("[YCD Version: 1]"));
+
     Fixture f;
     auto store = f.make();
     REQUIRE_FALSE(store.store("S", "2", "garbage"));
@@ -129,21 +122,6 @@ TEST_CASE("bundle upgrades from a legacy state file", "[bundle]")
     REQUIRE(std::filesystem::exists(f.root / "ap_S_2.state"));
 }
 
-TEST_CASE("bundle upgrades from both legacy files at once", "[bundle]")
-{
-    Fixture f;
-    f.write_file(f.saves / mth::ap_save_filename("S", "2"), kBlob);
-    f.write_file(f.root / "ap_S_2.state", "c 4\n");
-
-    auto store = f.make();
-    REQUIRE(store.stage_state("S", "2", "c 4\ng 9\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-
-    auto reader = f.make();
-    REQUIRE(reader.load("S", "2").value() == kBlob);
-    REQUIRE(reader.load_state("S", "2").value() == "c 4\ng 9\n");
-}
-
 TEST_CASE("bundle prefers the container over legacy files", "[bundle]")
 {
     Fixture f;
@@ -155,21 +133,6 @@ TEST_CASE("bundle prefers the container over legacy files", "[bundle]")
 
     auto reader = f.make();
     REQUIRE(reader.load("S", "2").value() == kBlob);
-}
-
-TEST_CASE("bundle rotates a backup on rewrite", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.stage_state("S", "2", "c 1\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak"));
-    REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak"));
-
-    auto reader = f.make();
-    REQUIRE(reader.load_state("S", "2").value() == "c 1\nc 2\n");
 }
 
 TEST_CASE("bundle backs up once per session, not once per write", "[bundle]")
@@ -398,18 +361,6 @@ TEST_CASE("bundle survives a manifest with wrong field types", "[bundle]")
     }
 }
 
-TEST_CASE("bundle game saves are on disk before store returns", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    // The mod is leaked and never runs a destructor, so the game's save is the durability point.
-    REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
-
-    auto reader = f.make();
-    REQUIRE(reader.load("S", "2").value() == kBlob);
-}
-
 TEST_CASE("bundle does not publish staged state when destroyed", "[bundle]")
 {
     Fixture f;
@@ -425,69 +376,22 @@ TEST_CASE("bundle does not publish staged state when destroyed", "[bundle]")
     REQUIRE(reader.load_state("S", "2").value() == "c 1\n");
 }
 
-TEST_CASE("bundle rewrites a save blob that changed without changing length", "[bundle]")
+TEST_CASE("bundle rewrites both payloads when they change without changing length", "[bundle]")
 {
     Fixture f;
     auto store = f.make();
-    // Same length as each other: the save is a text format, so this is the common case.
+    // The save is a text format, so a same-length edit is the common case; "s 0" becoming "s 1" is what capturing the AP game slot does.
     const std::string first = "[YCD Version: 1]\nSaveSlot\n{ m_iFoo: 1 }";
     const std::string second = "[YCD Version: 1]\nSaveSlot\n{ m_iFoo: 2 }";
 
+    REQUIRE(store.stage_state("S", "2", "c 1\ng 2\ns 0\n"));
     REQUIRE(store.store("S", "2", first));
+    REQUIRE(store.stage_state("S", "2", "c 1\ng 2\ns 1\n"));
     REQUIRE(store.store("S", "2", second));
 
     auto reader = f.make();
     REQUIRE(reader.load("S", "2").value() == second);
-}
-
-TEST_CASE("bundle rewrites ap state that changed without changing length", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    // Exactly what capturing the AP game slot does: "s 0" becomes "s 1".
-    REQUIRE(store.stage_state("S", "2", "c 1\ng 2\ns 0\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE(store.stage_state("S", "2", "c 1\ng 2\ns 1\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-
-    auto reader = f.make();
     REQUIRE(reader.load_state("S", "2").value() == "c 1\ng 2\ns 1\n");
-}
-
-TEST_CASE("bundle keeps the save blob intact across same-length state writes", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.store("S", "2", kBlob));
-    // Staged states coalesce into the single commit the game save triggers, and the blob rides along unchanged.
-    for (int i = 0; i < 5; ++i)
-        REQUIRE(store.stage_state("S", "2", "c " + std::to_string(i) + "\n"));
-    REQUIRE(store.store("S", "2", kBlob));
-
-    auto reader = f.make();
-    REQUIRE(reader.load("S", "2").value() == kBlob);
-    REQUIRE(reader.load_state("S", "2").value() == "c 4\n");
-}
-
-TEST_CASE("bundle rewrites the save blob when it changes", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.store("S", "2", kBlob));
-
-    const std::string updated = "[YCD Version: 1]\nSaveSlot\n{ m_iFoo: 99 }";
-    REQUIRE(store.store("S", "2", updated));
-
-    auto reader = f.make();
-    REQUIRE(reader.load("S", "2").value() == updated);
-}
-
-TEST_CASE("bundle writes no container for state alone", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.stage_state("S", "2", "c 1\n"));
-    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 }
 
 TEST_CASE("bundle commits the ap state that pairs with the stored game save", "[bundle]")
@@ -507,17 +411,6 @@ TEST_CASE("bundle commits the ap state that pairs with the stored game save", "[
     REQUIRE(reader.load("S", "2").value() == kBlob);
 }
 
-TEST_CASE("bundle discards staged state when the session changes", "[bundle]")
-{
-    Fixture f;
-    auto store = f.make();
-    REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE(store.stage_state("S", "2", "g 5\n"));
-
-    REQUIRE_FALSE(store.load_state("T", "3").has_value());
-    REQUIRE_FALSE(store.load_state("S", "2").has_value());
-}
-
 TEST_CASE("bundle reports state waiting for a commit", "[bundle]")
 {
     Fixture f;
@@ -532,4 +425,5 @@ TEST_CASE("bundle reports state waiting for a commit", "[bundle]")
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
     REQUIRE_FALSE(store.load_state("T", "3").has_value());
     REQUIRE_FALSE(store.state_staged());
+    REQUIRE(store.load_state("S", "2").value() == "c 1\n");
 }

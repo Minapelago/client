@@ -42,24 +42,15 @@ TEST_CASE("rando_bridge: valid location is sent once", "[mth][rando]")
     REQUIRE(link.sent_locations.size() == 1);
 }
 
-TEST_CASE("rando_bridge: unknown location is dropped", "[mth][rando]")
+TEST_CASE("rando_bridge: unknown locations and negative slots are dropped", "[mth][rando]")
 {
     mth::test::FakeApLink link;
+    link.connected = true;
     mth::ApState state;
-    connect_with(state, {ap_loc_id(5)});
+    connect_with(state, {ap_loc_id(0), ap_loc_id(5)});
     mth::RandoBridge bridge(link, state);
 
     bridge.on_location_collected(7);
-    REQUIRE(link.sent_locations.empty());
-}
-
-TEST_CASE("rando_bridge: negative slot is ignored", "[mth][rando]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    connect_with(state, {ap_loc_id(0)});
-    mth::RandoBridge bridge(link, state);
-
     bridge.on_location_collected(-1);
     REQUIRE(link.sent_locations.empty());
 }
@@ -77,6 +68,8 @@ TEST_CASE("rando_bridge: persists checks and flushes the full set", "[mth][rando
 
     bridge.on_location_collected(5);
     REQUIRE(save.is_checked(5));
+    REQUIRE(link.sent_locations == std::vector<std::int64_t>{ap_loc_id(5)});
+    bridge.on_location_collected(5);
     REQUIRE(link.sent_locations == std::vector<std::int64_t>{ap_loc_id(5)});
 
     bridge.on_location_collected(9);
@@ -118,77 +111,47 @@ TEST_CASE("rando_bridge: is_ap_location reflects the server set", "[mth][rando]"
     REQUIRE_FALSE(bridge.is_ap_location(-1));
 }
 
-TEST_CASE("rando_bridge: double-collect of the same location sends once", "[mth][rando]")
+TEST_CASE("rando_bridge: is_checked reflects collected locations, with or without a save", "[mth][rando]")
 {
-    mth::ApSaveState save = detached();
-
-    mth::test::FakeApLink link;
-    link.connected = true;
-    mth::ApState state;
-    connect_with(state, {ap_loc_id(5)});
-    mth::RandoBridge bridge(link, state);
-    bridge.attach_save_state(save);
-
-    bridge.on_location_collected(5);
-    bridge.on_location_collected(5);
-    REQUIRE(link.sent_locations == std::vector<std::int64_t>{ap_loc_id(5)});
-}
-
-TEST_CASE("rando_bridge: is_checked reflects collected locations (durable)", "[mth][rando]")
-{
-    mth::ApSaveState save = detached();
-
     mth::test::FakeApLink link;
     link.connected = true;
     mth::ApState state;
     connect_with(state, {ap_loc_id(5), ap_loc_id(9)});
+
+    mth::RandoBridge session_only(link, state);
+    REQUIRE_FALSE(session_only.is_checked(5));
+    session_only.on_location_collected(5);
+    REQUIRE(session_only.is_checked(5));
+
+    mth::ApSaveState save = detached();
     mth::RandoBridge bridge(link, state);
     bridge.attach_save_state(save);
-
     REQUIRE_FALSE(bridge.is_checked(5));
     bridge.on_location_collected(5);
     REQUIRE(bridge.is_checked(5));
+    REQUIRE(save.is_checked(5));
     REQUIRE_FALSE(bridge.is_checked(9));
     REQUIRE_FALSE(bridge.is_checked(-1));
 }
 
-TEST_CASE("rando_bridge: is_checked uses the session set before a save attaches", "[mth][rando]")
+TEST_CASE("rando_bridge: send_goal sends the AP goal once, and only when authenticated", "[mth][rando]")
 {
     mth::test::FakeApLink link;
     link.connected = true;
-    mth::ApState state;
-    connect_with(state, {ap_loc_id(5)});
-    mth::RandoBridge bridge(link, state); // no attach_save_state
+    mth::ApState never_connected;
+    mth::RandoBridge offline(link, never_connected);
+    offline.send_goal();
+    REQUIRE(link.goal_calls == 0);
 
-    REQUIRE_FALSE(bridge.is_checked(5));
-    bridge.on_location_collected(5);
-    REQUIRE(bridge.is_checked(5));
-}
-
-TEST_CASE("rando_bridge: send_goal sends the AP goal once when connected", "[mth][rando]")
-{
-    mth::test::FakeApLink link;
-    link.connected = true;
     mth::ApState state;
-    connect_with(state, {}); // authenticated, no locations needed for the goal
+    connect_with(state, {});
     mth::RandoBridge bridge(link, state);
-
     bridge.send_goal();
     bridge.send_goal(); // one-shot: GigaLionel hits the death funnels 3x per kill
     REQUIRE(link.goal_calls == 1);
 }
 
-TEST_CASE("rando_bridge: send_goal is a no-op when not authenticated", "[mth][rando]")
-{
-    mth::test::FakeApLink link;
-    mth::ApState state; // never connected
-    mth::RandoBridge bridge(link, state);
-
-    bridge.send_goal();
-    REQUIRE(link.goal_calls == 0);
-}
-
-TEST_CASE("rando_bridge: reconcile_server_checked marks without sending", "[mth][rando]")
+TEST_CASE("rando_bridge: reconcile_server_checked marks AP locations once, without sending", "[mth][rando]")
 {
     mth::ApSaveState save = detached();
     mth::test::FakeApLink link;
@@ -201,19 +164,6 @@ TEST_CASE("rando_bridge: reconcile_server_checked marks without sending", "[mth]
     REQUIRE(bridge.reconcile_server_checked(5));
     REQUIRE(bridge.is_checked(5));
     REQUIRE(save.is_checked(5));
-    REQUIRE(link.sent_locations.empty());
-}
-
-TEST_CASE("rando_bridge: reconcile_server_checked dedups and rejects non-AP", "[mth][rando]")
-{
-    mth::ApSaveState save = detached();
-    mth::test::FakeApLink link;
-    mth::ApState state;
-    connect_with(state, {ap_loc_id(5)});
-    mth::RandoBridge bridge(link, state);
-    bridge.attach_save_state(save);
-
-    REQUIRE(bridge.reconcile_server_checked(5));
     REQUIRE_FALSE(bridge.reconcile_server_checked(5));
     REQUIRE_FALSE(bridge.reconcile_server_checked(7));
     REQUIRE_FALSE(bridge.reconcile_server_checked(-1));
@@ -232,25 +182,6 @@ TEST_CASE("rando_bridge: reconcile_server_checked is a no-op without a save", "[
     REQUIRE(link.sent_locations.empty());
 }
 
-TEST_CASE("rando_bridge: checked_slots exposes the persisted set (nullptr without a save)", "[mth][rando]")
-{
-    mth::test::FakeApLink link;
-    link.connected = true;
-    mth::ApState state;
-    connect_with(state, {ap_loc_id(5), ap_loc_id(9)});
-    mth::RandoBridge bridge(link, state);
-    REQUIRE(bridge.checked_slots() == nullptr);
-
-    mth::ApSaveState save = detached();
-    bridge.attach_save_state(save);
-    REQUIRE(bridge.checked_slots() != nullptr);
-    REQUIRE(bridge.checked_slots()->empty());
-
-    REQUIRE(bridge.reconcile_server_checked(5));
-    bridge.on_location_collected(9); // live player collect
-    REQUIRE(*bridge.checked_slots() == std::set<int>{5, 9});
-}
-
 TEST_CASE("rando_bridge: detach stops writing the released save and clears its dedup", "[mth][rando]")
 {
     mth::test::FakeApLink link;
@@ -267,7 +198,6 @@ TEST_CASE("rando_bridge: detach stops writing the released save and clears its d
     bridge.detach_save_state();
     bridge.on_location_collected(6);
     REQUIRE_FALSE(save.is_checked(6));
-    REQUIRE(bridge.checked_slots() == nullptr);
 }
 
 TEST_CASE("rando_bridge: a new server's flush never resends the previous save's checks (#124)", "[mth][rando]")
@@ -320,6 +250,8 @@ TEST_CASE("rando_bridge: a removed location reads as a checked AP location", "[m
     REQUIRE(bridge.is_ap_location(40));
     REQUIRE(bridge.is_checked(40));
     REQUIRE(bridge.is_removed(40));
+    bridge.on_location_collected(40);
+    REQUIRE(link.sent_locations.empty());
     REQUIRE(bridge.is_ap_location(5));
     REQUIRE_FALSE(bridge.is_checked(5));
     REQUIRE_FALSE(bridge.is_removed(5));
@@ -365,19 +297,6 @@ TEST_CASE("rando_bridge: a removed location is not reconciled or scouted", "[mth
     REQUIRE(link.scouted_locations == std::vector<std::int64_t>{ap_loc_id(5)});
 
     REQUIRE(bridge.removed_slots() == std::set<std::int64_t>{ap_loc_id(40)});
-}
-
-TEST_CASE("rando_bridge: a removed location suppresses without a save attached", "[mth][rando]")
-{
-    mth::test::FakeApLink link;
-    link.connected = true;
-    mth::ApState state;
-    state.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .missing_locations = {ap_loc_id(5)}, .config = {.removed_locations = {ap_loc_id(40)}}});
-    mth::RandoBridge bridge(link, state); // no attach_save_state
-
-    REQUIRE(bridge.is_checked(40));
-    bridge.on_location_collected(40);
-    REQUIRE(link.sent_locations.empty());
 }
 
 TEST_CASE("rando_bridge: flush excludes a removed id even from a stale statefile", "[mth][rando]")

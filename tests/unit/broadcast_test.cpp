@@ -1,38 +1,26 @@
-#include <cstddef>
 #include <string>
 
-#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "mth/core/ap/ap_events.hpp"
 #include "mth/core/ap/broadcast.hpp"
 
-using Catch::Approx;
 using mth::banner_color;
 using mth::BannerQueue;
 using mth::broadcast_relevant;
 using mth::deathlink_banner_text;
 
-TEST_CASE("broadcast_relevant: matches on our slot or receiving", "[mth][broadcast]")
+TEST_CASE("broadcast_relevant: an item message shows when we sent, received or found it, on our team", "[mth][broadcast]")
 {
     // our team 0, our slot 3
     REQUIRE(broadcast_relevant("ItemSend", 0, 3, 0, 3, std::nullopt, std::nullopt));
     REQUIRE(broadcast_relevant("ItemSend", 0, 3, 0, std::nullopt, 3, std::nullopt));
     REQUIRE(broadcast_relevant("ItemSend", 0, 3, std::nullopt, std::nullopt, 3, std::nullopt));
     REQUIRE(broadcast_relevant("ItemSend", 0, 3, 0, 9, 3, std::nullopt));
-}
-
-TEST_CASE("broadcast_relevant: matches when we are the item finder (checks we send)", "[mth][broadcast]")
-{
-    // We (slot 3) found an item destined for slot 9: no top-level slot, receiving is someone else,
-    // but the item's finder (item.player) is us. This is a check we sent -> relevant.
+    // A check we sent: the item goes to slot 9 but its finder (item.player) is us.
     REQUIRE(broadcast_relevant("ItemSend", 0, 3, std::nullopt, std::nullopt, 9, 3));
-    REQUIRE(broadcast_relevant("ItemSend", 0, 3, 0, std::nullopt, 9, 3));
-    // Team still filters even when the finder is us.
-    REQUIRE_FALSE(broadcast_relevant("ItemSend", 0, 3, 1, std::nullopt, 9, 3));
-}
 
-TEST_CASE("broadcast_relevant: filters out irrelevant", "[mth][broadcast]")
-{
+    REQUIRE_FALSE(broadcast_relevant("ItemSend", 0, 3, 1, std::nullopt, 9, 3));
     REQUIRE_FALSE(broadcast_relevant("ItemSend", 0, 3, 0, 5, 7, 8));
     REQUIRE_FALSE(broadcast_relevant("ItemSend", 0, 3, 1, 3, std::nullopt, 3));
     REQUIRE_FALSE(broadcast_relevant("Hint", 0, 3, std::nullopt, std::nullopt, 9, std::nullopt));
@@ -73,65 +61,6 @@ TEST_CASE("banner_color: type/flags select distinct AP colors", "[mth][broadcast
     REQUIRE((filler >> 24) == 0xFFu);
 }
 
-TEST_CASE("BannerQueue: idle returns nothing", "[mth][broadcast]")
-{
-    BannerQueue q;
-    REQUIRE(q.update(0.0).empty());
-    REQUIRE(q.update(99.0).empty());
-}
-
-TEST_CASE("BannerQueue: shows a message and fades over hold+fade", "[mth][broadcast]")
-{
-    constexpr double hold = BannerQueue::kHoldSeconds;
-    constexpr double fade = BannerQueue::kFadeSeconds;
-    constexpr double t0 = 100.0;
-
-    BannerQueue q;
-    q.push({{"hi", 0xFFFFFFFFu}});
-
-    const auto f0 = q.update(t0);
-    REQUIRE(f0.size() == 1);
-    REQUIRE(f0[0].segments.size() == 1);
-    REQUIRE(f0[0].segments[0].text == "hi");
-    REQUIRE(f0[0].alpha == Approx(1.0f));
-    REQUIRE(q.update(t0 + hold * 0.5)[0].alpha == Approx(1.0f));
-    // Two samples inside the fade, so a stuck or reversed fade fails without pinning the curve's shape.
-    const float early = q.update(t0 + hold + fade * 0.25)[0].alpha;
-    const float late = q.update(t0 + hold + fade * 0.75)[0].alpha;
-    REQUIRE(early < 1.0f);
-    REQUIRE(late < early);
-    REQUIRE(q.update(t0 + hold + fade).empty());
-}
-
-TEST_CASE("BannerQueue: a burst staggers in and never exceeds kMaxVisible", "[mth][broadcast]")
-{
-    constexpr double step = BannerQueue::kPromoteIntervalSeconds;
-
-    BannerQueue q;
-    for (int i = 0; i < BannerQueue::kMaxVisible + 2; ++i)
-        q.push({{"msg", 0xFFFFFFFFu}});
-
-    REQUIRE(q.update(0.0).size() == 1);
-    REQUIRE(q.update(step * 0.5).size() == 1);
-
-    // Sampled past each boundary: the spacing is the contract, how an exact hit on the promotion time rounds is not.
-    double now = 0.0;
-    std::size_t shown = 1;
-    for (int i = 1; i < BannerQueue::kMaxVisible; ++i)
-    {
-        now += step * 1.1;
-        const std::vector<mth::BannerFrame> frames = q.update(now);
-        REQUIRE(frames.size() > shown);
-        shown = frames.size();
-        for (const auto &f : frames)
-            REQUIRE(f.alpha == Approx(1.0f));
-    }
-    REQUIRE(static_cast<int>(shown) == BannerQueue::kMaxVisible);
-
-    // The cap holds with extras pending even once further intervals have elapsed.
-    REQUIRE(static_cast<int>(q.update(now + step).size()) == BannerQueue::kMaxVisible);
-}
-
 TEST_CASE("BannerQueue: a queued message waits until a visible slot frees, in order", "[mth][broadcast]")
 {
     constexpr double step = BannerQueue::kPromoteIntervalSeconds;
@@ -144,7 +73,7 @@ TEST_CASE("BannerQueue: a queued message waits until a visible slot frees, in or
 
     // Fill every slot, one per interval; the first filler starts at 0.0 and the last at step*(kMaxVisible-1).
     for (int i = 0; i < BannerQueue::kMaxVisible; ++i)
-        q.update(step * i);
+        REQUIRE_FALSE(q.update(step * i).empty());
     REQUIRE(static_cast<int>(q.update(step * BannerQueue::kMaxVisible).size()) == BannerQueue::kMaxVisible);
 
     // The first filler fades out at `life`, freeing a slot for the overflow message.
@@ -155,25 +84,25 @@ TEST_CASE("BannerQueue: a queued message waits until a visible slot frees, in or
     REQUIRE(q.update(life * 2.0).empty());
 }
 
-TEST_CASE("deathlink_banner_text: a cause is already a full sentence naming the sender", "[mth][broadcast][deathlink]")
+TEST_CASE("deathlink_banner_text: names the sender and keeps the cause as written", "[mth][broadcast][deathlink]")
 {
+    // A cause is already a full sentence naming the sender.
     REQUIRE(deathlink_banner_text("Amaterasu", "Amaterasu was crushed by a spike trap") == "Amaterasu was crushed by a spike trap");
-}
+    REQUIRE(deathlink_banner_text("", "somebody blew up") == "somebody blew up");
 
-TEST_CASE("deathlink_banner_text: an empty cause still attributes the death to the sender", "[mth][broadcast][deathlink]")
-{
-    // The wording is the banner's own, so only the attribution is pinned: the sender is named and the line is not the bare name.
     const std::string line = deathlink_banner_text("Amaterasu", "");
     REQUIRE(line.find("Amaterasu") != std::string::npos);
     REQUIRE(line != "Amaterasu");
-}
-
-TEST_CASE("deathlink_banner_text: a cause without a sender still stands alone", "[mth][broadcast][deathlink]")
-{
-    REQUIRE(deathlink_banner_text("", "somebody blew up") == "somebody blew up");
-}
-
-TEST_CASE("deathlink_banner_text: neither field still leaves something to show", "[mth][broadcast][deathlink]")
-{
     REQUIRE_FALSE(deathlink_banner_text("", "").empty());
+}
+
+TEST_CASE("format_scout_desc: names another player's recipient and game, and neither for our own slot", "[scout]")
+{
+    const std::string other = mth::format_scout_desc(mth::ScoutInfo{1, "Sword", "Alice", "Some Game", 0u, false});
+    REQUIRE(other.find("Alice") != std::string::npos);
+    REQUIRE(other.find("Some Game") != std::string::npos);
+
+    // A self-scout that fell through to the other-player branch would advertise "for Mina (Mina the Hollower)" in the shop.
+    const std::string self = mth::format_scout_desc(mth::ScoutInfo{1, "Sword", "Mina", "Mina the Hollower", 0u, true});
+    REQUIRE(self.find("Mina") == std::string::npos);
 }

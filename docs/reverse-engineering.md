@@ -58,7 +58,7 @@ cannot drift. Then a hook anchor, where a hook name's 64-bit hash is compiled
 into the dispatch site inside the target function. Only then the carved signature
 table, scanning `.text` for a masked byte pattern. The pure matcher is
 `src/mth/core/game/sig_scan.cpp` (`mth::sig::find_masked` / `resolve`), linked into
-`mthap_core` and unit-tested in `tests/unit/sig_scan_test.cpp`. There are two
+`mthap_core` and unit-tested in `tests/unit/signature_test.cpp`. There are two
 entry kinds. A `Code` entry resolves to the function address directly. A
 `DataRef` entry resolves a global through a RIP-relative `disp32`.
 

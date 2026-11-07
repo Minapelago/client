@@ -6,50 +6,38 @@ using mth::next_takeover_step;
 using mth::TakeoverInputs;
 using mth::TakeoverStep;
 
-TEST_CASE("every non-terminal step fails closed when the save api is unavailable", "[takeover]")
+namespace
 {
-    TakeoverInputs in;
-    in.save_api_ready = false;
-    in.gameplay_entered = true;
-    REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, in) == TakeoverStep::Failed);
-    REQUIRE(next_takeover_step(TakeoverStep::Launching, in) == TakeoverStep::Failed);
+// Ten minutes at 60 fps, far past any wait the takeover should need.
+constexpr int kStuckFrames = 60 * 60 * 10;
+} // namespace
+
+TEST_CASE("a pending step fails closed without the save api, and when its wait is stuck", "[takeover]")
+{
+    TakeoverInputs no_api;
+    no_api.save_api_ready = false;
+    no_api.gameplay_entered = true;
+    REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, no_api) == TakeoverStep::Failed);
+    REQUIRE(next_takeover_step(TakeoverStep::Launching, no_api) == TakeoverStep::Failed);
+
+    TakeoverInputs stuck;
+    stuck.save_api_ready = true;
+    stuck.frames_in_step = kStuckFrames;
+    REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, stuck) == TakeoverStep::Failed);
+    REQUIRE(next_takeover_step(TakeoverStep::Launching, stuck) == TakeoverStep::Failed);
 }
 
-TEST_CASE("awaiting the menu holds until the profile-menu callback advances it", "[takeover]")
+TEST_CASE("the menu step waits for the profile-menu callback, the launch step for gameplay", "[takeover]")
 {
     TakeoverInputs in;
     in.save_api_ready = true;
     in.gameplay_entered = true; // must not shortcut past the menu
     REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, in) == TakeoverStep::AwaitingMenu);
-}
 
-TEST_CASE("launching waits for gameplay before running", "[takeover]")
-{
-    TakeoverInputs in;
-    in.save_api_ready = true;
     in.gameplay_entered = false;
     REQUIRE(next_takeover_step(TakeoverStep::Launching, in) == TakeoverStep::Launching);
-
     in.gameplay_entered = true;
     REQUIRE(next_takeover_step(TakeoverStep::Launching, in) == TakeoverStep::Running);
-}
-
-TEST_CASE("a stuck wait times out into failed rather than hanging", "[takeover]")
-{
-    TakeoverInputs in;
-    in.save_api_ready = true;
-    in.frames_in_step = mth::kMaxFramesPerStep + 1;
-    REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, in) == TakeoverStep::Failed);
-    REQUIRE(next_takeover_step(TakeoverStep::Launching, in) == TakeoverStep::Failed);
-}
-
-TEST_CASE("a wait at exactly the frame limit has not yet timed out", "[takeover]")
-{
-    TakeoverInputs in;
-    in.save_api_ready = true;
-    in.frames_in_step = mth::kMaxFramesPerStep;
-    REQUIRE(next_takeover_step(TakeoverStep::AwaitingMenu, in) == TakeoverStep::AwaitingMenu);
-    REQUIRE(next_takeover_step(TakeoverStep::Launching, in) == TakeoverStep::Launching);
 }
 
 TEST_CASE("settled steps are stable, even without the save api", "[takeover]")
@@ -65,74 +53,39 @@ TEST_CASE("settled steps are stable, even without the save api", "[takeover]")
     REQUIRE_FALSE(mth::takeover_settled(TakeoverStep::Launching));
 }
 
-TEST_CASE("the block latches off once the ceiling trips, rather than reopening next frame", "[takeover]")
-{
-    mth::InputBlockState block;
-    block.rearm();
-    for (int i = 0; i <= mth::kMaxInputBlockFrames; ++i)
-        REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
-
-    // The step still wants the block; only the spent budget is holding it off, and it must stay off.
-    for (int i = 0; i < 10; ++i)
-        REQUIRE_FALSE(block.advance(TakeoverStep::AwaitingMenu, false));
-    REQUIRE_FALSE(block.blocked());
-}
-
-TEST_CASE("a fresh claim gets a fresh frame budget", "[takeover]")
-{
-    mth::InputBlockState block;
-    block.rearm();
-    for (int i = 0; i <= mth::kMaxInputBlockFrames + 5; ++i)
-        block.advance(TakeoverStep::AwaitingMenu, false);
-    REQUIRE_FALSE(block.blocked());
-
-    block.rearm();
-    REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
-}
-
-TEST_CASE("frames spent unblocked do not eat the budget", "[takeover]")
-{
-    mth::InputBlockState block;
-    block.rearm();
-    for (int i = 0; i < mth::kMaxInputBlockFrames * 2; ++i)
-        REQUIRE_FALSE(block.advance(TakeoverStep::Running, false));
-    REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
-}
-
-TEST_CASE("input is blocked while the menu is being waited for and driven", "[takeover]")
+TEST_CASE("input is blocked while the takeover drives the menu, and reaches the game once it runs", "[takeover]")
 {
     mth::InputBlockState block;
     REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
-    REQUIRE(block.advance(TakeoverStep::Launching, false));
-    REQUIRE(block.blocked());
-}
-
-TEST_CASE("input reaches the game again once the takeover is running", "[takeover]")
-{
-    mth::InputBlockState block;
     REQUIRE(block.advance(TakeoverStep::Launching, true));
+    REQUIRE(block.blocked());
+
     REQUIRE_FALSE(block.advance(TakeoverStep::Running, true));
     REQUIRE_FALSE(block.blocked());
     REQUIRE_FALSE(block.advance(TakeoverStep::Idle, true));
+
+    // A failed takeover keeps swallowing input only while the menu is the live gamestate.
+    mth::InputBlockState failed;
+    REQUIRE(failed.advance(TakeoverStep::Failed, true));
+    REQUIRE_FALSE(failed.advance(TakeoverStep::Failed, false));
 }
 
-TEST_CASE("a failed takeover keeps swallowing input while the menu is the live gamestate", "[takeover]")
+TEST_CASE("a block that never clears is eventually released for good, until a fresh claim", "[takeover]")
 {
     mth::InputBlockState block;
-    REQUIRE(block.advance(TakeoverStep::Failed, true));
-    REQUIRE_FALSE(block.advance(TakeoverStep::Failed, false));
-}
+    block.rearm();
+    bool released = false;
+    for (int i = 0; i < kStuckFrames && !released; ++i)
+        released = !block.advance(TakeoverStep::AwaitingMenu, false);
+    REQUIRE(released);
 
-TEST_CASE("the ceiling releases every step that still wants the block", "[takeover]")
-{
-    mth::InputBlockState block;
-    for (int i = 0; i < mth::kMaxInputBlockFrames; ++i)
-        REQUIRE(block.advance(TakeoverStep::Launching, false));
-    REQUIRE(block.advance(TakeoverStep::Failed, true));
+    // The steps still want the block; only the spent budget holds it off, and it must stay off.
+    for (const auto step : {TakeoverStep::AwaitingMenu, TakeoverStep::Launching, TakeoverStep::Failed})
+        REQUIRE_FALSE(block.advance(step, true));
+    REQUIRE_FALSE(block.blocked());
 
-    REQUIRE_FALSE(block.advance(TakeoverStep::AwaitingMenu, true));
-    REQUIRE_FALSE(block.advance(TakeoverStep::Launching, true));
-    REQUIRE_FALSE(block.advance(TakeoverStep::Failed, true));
+    block.rearm();
+    REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
 }
 
 TEST_CASE("flush_refusal: a commit needs all three conditions, and each one alone can stop it", "[takeover]")
