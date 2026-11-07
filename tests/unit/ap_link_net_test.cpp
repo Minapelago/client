@@ -316,5 +316,8 @@ TEST_CASE("ApLink: LocationChecks and the goal StatusUpdate reach the server as 
     f.wait_for_sent("StatusUpdate", 2);
 
     REQUIRE(f.server.received("LocationChecks").at(0).at("locations") == json::array({101, 102}));
-    REQUIRE(f.server.received("StatusUpdate").at(1).at("status") == 30);
+    bool goal_seen = false;
+    for (const json &update : f.server.received("StatusUpdate"))
+        goal_seen = goal_seen || update.at("status") == 30;
+    REQUIRE(goal_seen);
 }

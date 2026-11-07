@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
+#include "mocks/capturing_log.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/slot_data.hpp"
 #include "mth/core/rules/goal.hpp"
@@ -20,28 +21,7 @@ using nlohmann::json;
 namespace
 {
 
-class CapturingLog final : public pal::ILog
-{
-  public:
-    void write(pal::LogLevel level, std::string_view message) override
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        lines_.emplace_back(level, std::string(message));
-    }
-
-    [[nodiscard]] bool saw(pal::LogLevel level, std::string_view needle) const
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        for (const auto &[lvl, text] : lines_)
-            if (lvl == level && text.find(needle) != std::string::npos)
-                return true;
-        return false;
-    }
-
-  private:
-    mutable std::mutex mu_;
-    std::vector<std::pair<pal::LogLevel, std::string>> lines_;
-};
+using mth::test::CapturingLog;
 
 // RAII around the process-wide log seam so a throwing REQUIRE cannot leave it dangling.
 class LogCapture

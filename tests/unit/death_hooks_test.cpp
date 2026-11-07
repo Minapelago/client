@@ -3,757 +3,290 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mocks/fake_mod_api.hpp"
-#include "mod/mod_api.hpp"
-#include "mth/core/game/game_layout.hpp"
-#include "mth/core/game/game_state_ids.hpp"
+#include "mocks/fake_game.hpp"
+#include "mth/core/rules/death_broadcast_gate.hpp"
 #include "mth/features/death_hooks.hpp"
 
-// Covers the deathlink state machine given a correct offset, not the offset. FakePlayer writes the guard byte at kPlayerDeathGuardOff, the constant
-// is_dying() reads, so drift on a game rebuild leaves these cases green; confirm that offset by playing.
+// The fake writes the guard byte at kPlayerDeathGuardOff, the offset DeathHooks reads, so drift on a game rebuild leaves these green; confirm it in game.
 
 namespace
 {
-// A Player buffer big enough for the death-guard byte; get_player() hands out its base.
-struct FakePlayer
-{
-    std::vector<unsigned char> bytes;
-    FakePlayer() : bytes(mth::layout::kPlayerDeathGuardOff + 16, 0)
-    {
-    }
-    void set_dying(bool d)
-    {
-        bytes[static_cast<std::size_t>(mth::layout::kPlayerDeathGuardOff)] = d ? 1 : 0;
-    }
-    void *base()
-    {
-        return bytes.data();
-    }
+using Log = std::vector<std::string>;
 
-    void set_state(int s)
+const Log kDeathRun{"died", "death screen", "respawned"};
+const Log kBroadcastDeathRun{"died", "death screen", "deathlink sent", "respawned"};
+
+// A player settled in a room with DeathHooks polling every tick; an outbound deathlink lands in the game's log.
+struct Deathlink
+{
+    mth::test::FakeGame game;
+    mth::DeathHooks hooks{[this](const std::string &cause) { game.note(cause.empty() ? "deathlink sent without a cause" : "deathlink sent"); },
+                          [this] { return game.player(); }};
+
+    Deathlink()
     {
-        std::memcpy(bytes.data() + mth::layout::kPlayerStateOff, &s, sizeof(s));
+        game.on_tick = [this] { hooks.poll(); };
+        game.play_for(1.0);
+    }
+    void receive_deathlink()
+    {
+        hooks.kill();
     }
 };
-
-// Enough frozen polls to show a deferral is not a one-tick effect; nothing ages while frozen, so the count is arbitrary.
-constexpr int kFrozenPolls = 4;
-
-// Stably alive with no sparks: the state an inbound death may be applied from.
-void settle(mth::DeathHooks &hooks, FakePlayer &player)
-{
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-}
 } // namespace
 
-// Player::DropDeathSpark zeroes the live spark before the poll sees the death edge, so DeathHooks must snapshot spark while alive and gate on that.
-TEST_CASE("deathlink: a death with sparks banked while alive is not broadcast", "[deathlink][sparkless]")
+TEST_CASE("deathlink: a sparkless death is broadcast once, at the death screen, with a cause", "[deathlink][outbound]")
 {
-    mth::test::ScopedFakeApi scoped;
+    Deathlink d;
+    d.game.die_locally();
+    d.game.play_for(1.0);
+    REQUIRE(d.game.log == Log{"died"});
 
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Alive with 3 sparks banked: DeathHooks snapshots the pre-death spark here.
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 3;
-    player.set_dying(false);
-    hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    // Death: the game has already dropped every spark (live spark now 0) and health is 0.
-    mth::test::recorder().health = 0.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(true);
-    hooks.poll();
-
-    REQUIRE(broadcasts == 0);
-
-    mod::set_api(nullptr);
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kBroadcastDeathRun);
 }
 
-TEST_CASE("deathlink: an inbound death during an area enter waits for it to finish", "[deathlink]")
+// Player::DropDeathSpark zeroes the live spark before the death registers, so the spark count has to come from while the player was alive.
+TEST_CASE("deathlink: a death with sparks banked is not broadcast, and the next sparkless one is", "[deathlink][outbound]")
 {
-    mth::test::ScopedFakeApi scoped;
+    Deathlink d;
+    d.game.sparks = 3;
+    d.game.play_for(0.5);
+    d.game.die_locally();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
 
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-
-    player.set_state(7);
-    settle(hooks, player);
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    player.set_state(0);
-    hooks.poll();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
+    d.game.die_locally();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == Log{"died", "death screen", "respawned", "died", "death screen", "deathlink sent", "respawned"});
 }
 
-TEST_CASE("deathlink: a long area change does not expore a latched inbound death", "[deathlink]")
+// A Proto Spark runs the whole death sequence, guard byte included, then revives in place without reaching the death screen.
+TEST_CASE("deathlink: a death the player is revived from is not broadcast", "[deathlink][outbound]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-
-    player.set_state(7);
-    settle(hooks, player);
-    hooks.kill();
-    for (int i = 0; i < mth::DeathHooks::kPendingInboundDeathTicks + 1; ++i)
-        hooks.poll();
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    player.set_state(0);
-    hooks.poll();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
+    Deathlink d;
+    d.game.proto_spark = true;
+    d.game.die_locally();
+    d.game.play_for(20.0);
+    REQUIRE(d.game.log == Log{"died", "revived"});
 }
 
-TEST_CASE("deathlink: a genuine sparkless death is broadcast", "[deathlink][sparkless]")
+// Echo storm (#125): the player reads alive for a while after PlayerDie, and those ticks must not lift the suppression armed for this death.
+TEST_CASE("deathlink: a death taken from an inbound deathlink is not echoed back", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Alive but already at 0 sparks.
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    // The death edge alone is not enough (a Proto Spark save produces it too), so the broadcast waits for the death screen.
-    mth::test::recorder().health = 0.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(true);
-    hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    mth::test::recorder().game_state = mth::kGameStateDeath;
-    hooks.poll();
-
-    REQUIRE(broadcasts == 1);
-
-    mod::set_api(nullptr);
+    Deathlink d;
+    d.receive_deathlink();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
 }
 
-// A Proto Spark save runs the whole death sequence and sets the death-guard byte, then revives the player in place without reaching the death screen.
-TEST_CASE("deathlink: a death the player is revived from is not broadcast", "[deathlink][sparkless]")
+// The world pause flag only covers menus; a game-level pause stops the room clock without it. Neither may age the echo suppression.
+TEST_CASE("deathlink: an inbound death held behind a pause lands when play resumes, without an echo", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Alive in a room, no sparks banked: a death here would otherwise broadcast.
-    mth::test::recorder().game_state = mth::kGameStateFirstWorld;
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    hooks.poll();
-
-    // The death sequence runs, and the game never leaves the room for the death screen.
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    for (int i = 0; i < mth::DeathHooks::kDeathConfirmTicks; ++i)
-        hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    // Revived in place, and still nothing may fire once the held death has lapsed.
-    mth::test::recorder().health = 1.0f;
-    player.set_dying(false);
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks * 2; ++i)
-        hooks.poll();
-
-    REQUIRE(broadcasts == 0);
-
-    mod::set_api(nullptr);
-}
-
-TEST_CASE("deathlink: the broadcast carries a detail for the outbound cause", "[deathlink][sparkless]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    std::string detail;
-    mth::DeathHooks hooks([&](const std::string &d) { detail = d; }, [&] { return player.base(); });
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    hooks.poll();
-
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    hooks.poll();
-    mth::test::recorder().game_state = mth::kGameStateDeath;
-    hooks.poll();
-
-    // ApLink prefixes the slot name, so the detail is the predicate alone, never empty.
-    REQUIRE_FALSE(detail.empty());
-
-    mod::set_api(nullptr);
-}
-
-// Echo storm (#125): after an inbound PlayerDie, health and the guard byte read alive for ~0.7s. Those polls must not count as a settled respawn,
-// or they lift the suppression armed for this death and it is broadcast back.
-TEST_CASE("deathlink: a death taken from an inbound deathlink is never echoed back", "[deathlink][echo]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Settle: stably alive, no sparks (so any death of ours would otherwise broadcast).
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-
-    hooks.kill(); // inbound deathlink -> applied from a settled state
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    // ~0.7s of alive reads is twice as many polls at 120 Hz FixedUpdate as at 60 Hz; drive the higher tick count.
-    for (int i = 0; i < mth::ticks_for_seconds(0.7); ++i)
-        hooks.poll();
-
-    // Now the death actually registers.
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    hooks.poll();
-
-    REQUIRE(broadcasts == 0);
-
-    mod::set_api(nullptr);
-}
-
-TEST_CASE("deathlink: respawn re-arms; a mid-death guard-byte pulse does not overwrite the held spark", "[deathlink][sparkless]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Alive with sparks, snapshot taken.
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 2;
-    player.set_dying(false);
-    hooks.poll();
-
-    // Death edge: broadcast suppressed (had sparks).
-    mth::test::recorder().health = 0.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(true);
-    hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    // The guard byte pulses to 0 mid-death while still dead. That must not be sampled as an alive snapshot or re-arm the gate.
-    player.set_dying(false);
-    hooks.poll();
-    REQUIRE(broadcasts == 0);
-
-    mod::set_api(nullptr);
-}
-
-// Two bounces 142ms apart in the field both issued PlayerDie into one death sequence, because no advancing poll ran between them. PlayerDie
-// reaches Player::DeathEvent through the vtable and skips the damage pipeline, so the second call re-runs the teardown (suspected cause of the
-// camera losing the player).
-TEST_CASE("deathlink: a second inbound death arriving during the first is deferred", "[deathlink][echo]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-    settle(hooks, player);
-
-    hooks.kill(); // first bounce -> applied from a settled state
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    // Only frozen polls follow. The player reads alive throughout and the freeze is a paused world, so the in-flight death alone defers the second bounce.
-    mth::test::recorder().paused = true;
-    for (int i = 0; i < kFrozenPolls; ++i)
-        hooks.poll();
-
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// A paused world holds a queued death until the menu closes; a stalled room clock with the world unpaused is a screen transition, where PlayerDie
-// lands unpredictably.
-TEST_CASE("deathlink: an inbound death during a screen transition is deferred", "[deathlink][echo]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-    settle(hooks, player);
-
-    // The room clock stalls while WorldIsPaused stays false: a transition, not a menu.
-    mth::test::recorder().game_paused = true;
-    hooks.poll();
-
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
-}
-
-TEST_CASE("deathlink: an inbound death during a menu is still applied", "[deathlink][echo]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-    settle(hooks, player);
-
-    // A paused world queues the death until the menu closes, so it keeps applying.
-    mth::test::recorder().paused = true;
-    hooks.poll();
-
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// The world pause flag covers only menus that pause the world. A game-level pause skips the whole update queue, which the flag cannot see, but it
-// stalls the room clock.
-TEST_CASE("deathlink: a death queued behind a game-level pause is not echoed", "[deathlink][echo]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    // Longer than both gate timers together, so a paused tick that aged either would have lifted the suppression by the time the death lands.
-    mth::test::recorder().game_paused = true; // world never learns it is paused; the room clock stops
-    for (int i = 0; i < mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-    mth::test::recorder().game_paused = false;
-
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    hooks.poll();
-
-    REQUIRE(broadcasts == 0);
-
-    mod::set_api(nullptr);
-}
-
-// A bounce that arrives while we are already dying is served by that death; a second death after the respawn would read as a bug.
-TEST_CASE("deathlink: a bounce arriving during our own death does not kill us again", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return player.base(); });
-
-    // Settle, then die locally: the gate is no longer stably alive.
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    hooks.poll();
-    mth::test::recorder().game_state = mth::kGameStateDeath;
-    hooks.poll();
-    REQUIRE(broadcasts == 1);
-
-    hooks.kill(); // the bounce lands while we are dying
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    // Respawn and play well past a full grace + settle: nothing may be waiting to fire.
-    mth::test::recorder().health = 1.0f;
-    player.set_dying(false);
-    for (int i = 0; i < (mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks) * 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
-}
-
-// #164: a bounce during a world/screen transition, when no Player is captured.
-TEST_CASE("deathlink: an inbound death arriving during a transition is applied when the player returns", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr; // mid-transition: no player captured
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base(); // the new room's player exists
-    for (int i = 0; i < mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// The latch is bounded: a bounce that never finds a settled player is dropped, not held to kill the player much later.
-TEST_CASE("deathlink: a latched inbound death expires if the player never settles", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    hooks.kill();
-    for (int i = 0; i < mth::DeathHooks::kPendingInboundDeathTicks + 1; ++i)
-        hooks.poll(); // still no player: the window burns down
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    for (int i = 0; i < mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
-}
-
-// One pending death however many bounces arrive; a multiworld storm must not chain-kill through several respawns.
-TEST_CASE("deathlink: several inbound deaths arriving before the player settles apply once", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    // Three bounces spread across the unsettled window, not stacked on one tick (a counter would queue all three).
-    hooks.kill();
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-    hooks.kill();
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-    hooks.kill();
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    // Long enough that a second queued death would have its own full grace + settle to land in.
-    for (int i = 0; i < (mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks) * 3; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// The retry window counts gameplay ticks: a menu holds the game still and must not burn the window.
-TEST_CASE("deathlink: a menu does not burn the pending-death retry window", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    hooks.kill();
-
-    mth::test::recorder().paused = true; // menu open far longer than the retry window
-    for (int i = 0; i < mth::DeathHooks::kPendingInboundDeathTicks * 2; ++i)
-        hooks.poll();
-    mth::test::recorder().paused = false;
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    for (int i = 0; i < mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// The inbound grace covers a PlayerDie already in flight. Arming it at receive time would hold the alive streak at zero for its whole length and
-// delay a latched death even though the player settled immediately; it must land off the ordinary settle debounce.
-TEST_CASE("deathlink: a latched death lands as soon as the player settles, not a grace later", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    hooks.kill(); // no player yet: latched
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks + 3; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
-}
-
-// A busy multiworld: bounces keep arriving while one is latched. An arrival must not restart the settling clock, or the latched death never lands
-// and the retry window never expires.
-TEST_CASE("deathlink: a steady stream of bounces still lands a death", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    hooks.kill(); // first bounce arrives mid-transition
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base(); // player available and alive from here on
-
-    for (int i = 0; i < mth::ticks_for_seconds(10.0) && mth::test::recorder().deaths == 0; ++i)
+    Deathlink d;
+    SECTION("a menu")
     {
-        if (i % mth::ticks_for_seconds(1.0) == 0)
-            hooks.kill(); // another player dies every second
-        hooks.poll();
+        d.game.open_menu();
+        d.game.play_for(0.5);
+        d.receive_deathlink();
+        d.game.play_for(30.0);
+        REQUIRE(d.game.log.empty());
+        d.game.close_menu();
     }
-
-    REQUIRE(mth::test::recorder().deaths >= 1);
-
-    mod::set_api(nullptr);
-}
-
-// The window runs from the first deferral; re-arming it on each bounce would push the deadline out indefinitely.
-TEST_CASE("deathlink: a stream of bounces does not extend the retry window", "[deathlink][retry]")
-{
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    void *live = nullptr;
-    int broadcasts = 0;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    const int window = mth::DeathHooks::kPendingInboundDeathTicks;
-    hooks.kill();
-    for (int i = 0; i < window; ++i)
+    SECTION("a game-level pause")
     {
-        if (i < window / 2 && i % mth::ticks_for_seconds(0.5) == 0)
-            hooks.kill(); // more bounces, but only through the first half of the window
-        hooks.poll();     // no player the whole time
+        d.receive_deathlink();
+        d.game.pause_game();
+        d.game.play_for(30.0);
+        REQUIRE(d.game.log.empty());
+        d.game.resume_game();
     }
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    for (int i = 0; i < mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
 }
 
-// A bounce that applies immediately must consume the one already latched, or the latched one fires again after the respawn.
-TEST_CASE("deathlink: a bounce that applies at once clears an already-latched death", "[deathlink][retry]")
+// Two bounces 142ms apart in the field both reached PlayerDie before the first death registered, and the second re-ran the death teardown.
+TEST_CASE("deathlink: a second bounce while the first death is still landing is served by it", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    int broadcasts = 0;
-    void *live = nullptr;
-    mth::DeathHooks hooks([&](const std::string &) { ++broadcasts; }, [&] { return live; });
-
-    mth::test::recorder().health = 1.0f;
-    mth::test::recorder().spark = 0;
-    player.set_dying(false);
-    live = player.base();
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks; ++i)
-        hooks.poll();
-
-    live = nullptr; // one tick of transition
-    hooks.kill();   // bounce A: latched
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    live = player.base();
-    hooks.kill(); // bounce B: still settled, so it applies right away
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    for (int i = 0; i < (mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks) * 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
+    Deathlink d;
+    d.receive_deathlink();
+    d.game.open_menu();
+    d.game.play_for(0.1);
+    d.receive_deathlink();
+    d.game.close_menu();
+    d.game.play_for(30.0);
+    REQUIRE(d.game.log == kDeathRun);
 }
 
-// The apply path unsettles us at once, so a rapid second bounce is latched, and the death underway serves it: the latch must be cancelled.
-// kill() checks death_in_progress(), but the guard byte takes ~0.7s to appear, so the bounce is latched while it is still false.
-TEST_CASE("deathlink: a death in progress cancels a latched bounce instead of killing again", "[deathlink][retry]")
+TEST_CASE("deathlink: an inbound death that never lands stops suppressing our own deaths", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
+    Deathlink d;
+    d.game.invulnerable = true;
+    d.receive_deathlink();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log.empty());
 
-    FakePlayer player;
-    mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
-    settle(hooks, player);
-
-    hooks.kill(); // first bounce -> applied from a settled state, which unsettles us at once
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    // A paused world: frozen ticks age nothing and we are no longer settled, so the second bounce is latched for retry.
-    mth::test::recorder().paused = true;
-    hooks.poll();
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    // The first PlayerDie now registers: from here the latched bounce is served by the death in progress.
-    mth::test::recorder().paused = false;
-    mth::test::recorder().health = 0.0f;
-    player.set_dying(true);
-    hooks.poll();
-
-    // Respawn and play well past a full grace + settle. The latch must have been cancelled, not delayed.
-    mth::test::recorder().health = 1.0f;
-    player.set_dying(false);
-    for (int i = 0; i < (mth::DeathBroadcastGate::kInboundDeathGraceTicks + mth::DeathBroadcastGate::kStableAliveTicks) * 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
+    d.game.invulnerable = false;
+    d.game.die_locally();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kBroadcastDeathRun);
 }
 
-// The ending leaves a live Player in a World with no area bound. Player::InitDeath dereferences player->entity->world->area without a null check,
-// so a PlayerDie there faults when the state machine flushes the death (crash 2026-08-23, 59th inbound deathlink, during the credits).
-TEST_CASE("deathlink: an inbound death is not applied while the world has no area bound", "[deathlink][ending]")
+// A single alive poll is transition flicker (#125); only a settled alive stretch re-arms the broadcast.
+TEST_CASE("deathlink: one alive poll after a death does not re-arm the broadcast", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
-
-    settle(hooks, player);
-    mth::test::recorder().world_has_area = false; // a populated World, no area: the credits
-
-    hooks.kill();
-
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
+    mth::DeathBroadcastGate gate;
+    for (int i = 0; i < 1000; ++i)
+        (void)gate.observe(false, true, true);
+    REQUIRE(gate.observe(true, false, true));
+    (void)gate.observe(false, true, true);
+    REQUIRE_FALSE(gate.observe(true, false, true));
 }
 
-// No area bound is terminal: a bounce held until an area exists again would land in the post-credits handoff. It is consumed on arrival.
-TEST_CASE("deathlink: a bounce received with no area bound is dropped, not retried later", "[deathlink][ending]")
+// Re-arming needs alive and not dying; health reading alive with the guard byte set does not count.
+TEST_CASE("deathlink: the broadcast never re-arms while the guard byte is set", "[deathlink][echo]")
 {
-    mth::test::ScopedFakeApi scoped;
-
-    FakePlayer player;
-    mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
-
-    settle(hooks, player);
-    mth::test::recorder().world_has_area = false;
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    // An area is bound again and play continues well past the retry window: nothing may still be waiting.
-    mth::test::recorder().world_has_area = true;
-    for (int i = 0; i < mth::DeathHooks::kPendingInboundDeathTicks + mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
-
-    REQUIRE(mth::test::recorder().deaths == 0);
-
-    mod::set_api(nullptr);
+    mth::DeathBroadcastGate gate;
+    for (int i = 0; i < 1000; ++i)
+        (void)gate.observe(false, true, true);
+    REQUIRE(gate.observe(true, false, true));
+    for (int i = 0; i < 1000; ++i)
+        REQUIRE_FALSE(gate.observe(true, true, true));
 }
 
-// A build whose API cannot supply a World reports no world, which must not cost every deathlink. "No accessor" and "no world right now" are
-// indistinguishable here; this guards against an absent world refusing the kill.
-TEST_CASE("deathlink: the area check fails open when the build has no world accessor", "[deathlink][ending]")
+// A busy multiworld: bounces arrive every second from mid-transition on. Each death runs to the respawn before the next, and none is echoed.
+TEST_CASE("deathlink: a steady stream of bounces keeps landing deaths and never echoes one", "[deathlink][storm]")
 {
-    mth::test::ScopedFakeApi scoped;
-    scoped.api.PlayerGetWorld = nullptr; // older game build: the entry is absent
+    Deathlink d;
+    d.game.despawn_player();
+    d.receive_deathlink();
+    d.game.play_for(0.5);
+    d.game.spawn_player();
+    for (int second = 0; second < 60; ++second)
+    {
+        d.game.play_for(1.0);
+        d.receive_deathlink();
+    }
+    d.game.play_for(10.0);
 
-    FakePlayer player;
-    mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
-
-    settle(hooks, player);
-    hooks.kill();
-
-    REQUIRE(mth::test::recorder().deaths == 1);
-
-    mod::set_api(nullptr);
+    const long deaths = d.game.count("died");
+    REQUIRE(deaths >= 2);
+    Log expected;
+    for (long i = 0; i < deaths; ++i)
+        expected.insert(expected.end(), kDeathRun.begin(), kDeathRun.end());
+    REQUIRE(d.game.log == expected);
 }
 
-// Between area teardown and AreaManagerNewArea there is an area-less window that clears by itself. The terminal area check must come last, or every
-// room change becomes a permanent silent drop.
-TEST_CASE("deathlink: an area-less bounce mid-transition is latched and lands, not dropped", "[deathlink][ending]")
+TEST_CASE("deathlink: several bounces before the player is back apply as one death", "[deathlink][storm]")
 {
-    mth::test::ScopedFakeApi scoped;
+    Deathlink d;
+    d.game.despawn_player();
+    d.receive_deathlink();
+    d.game.play_for(0.25);
+    d.receive_deathlink();
+    d.game.play_for(0.25);
+    d.receive_deathlink();
+    d.game.spawn_player();
+    d.game.play_for(30.0);
+    REQUIRE(d.game.log == kDeathRun);
+}
 
-    FakePlayer player;
-    mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
+// #164: a bounce during a world or screen transition, while no Player exists.
+TEST_CASE("deathlink: a bounce with no player lands soon after the player returns", "[deathlink][retry]")
+{
+    Deathlink d;
+    d.game.despawn_player();
+    d.receive_deathlink();
+    d.game.play_for(0.5);
+    REQUIRE(d.game.log.empty());
 
-    settle(hooks, player);
+    d.game.spawn_player();
+    d.game.play_for(2.0);
+    REQUIRE(d.game.log == Log{"died"});
+}
 
-    // A room change: the area is torn down and the room clock stalls with the world unpaused.
-    mth::test::recorder().game_paused = true;
-    mth::test::recorder().world_has_area = false;
-    hooks.poll();
-    hooks.kill();
-    REQUIRE(mth::test::recorder().deaths == 0);
+// The retry window counts gameplay time, so a menu does not spend it; a bounce that never finds a settled player is dropped.
+TEST_CASE("deathlink: a held bounce is dropped after a long absence, counting gameplay time only", "[deathlink][retry]")
+{
+    Deathlink d;
+    d.game.despawn_player();
+    d.receive_deathlink();
+    SECTION("the player stays away")
+    {
+        d.game.play_for(60.0);
+        d.game.spawn_player();
+        d.game.play_for(10.0);
+        REQUIRE(d.game.log.empty());
+    }
+    SECTION("the room clock stops while the player is away")
+    {
+        d.game.open_menu();
+        d.game.play_for(60.0);
+        d.game.close_menu();
+        d.game.spawn_player();
+        d.game.play_for(10.0);
+        REQUIRE(d.game.log == kDeathRun);
+    }
+}
 
-    // The next room binds its area and the clock runs again; the latched bounce lands.
-    mth::test::recorder().game_paused = false;
-    mth::test::recorder().world_has_area = true;
-    for (int i = 0; i < mth::DeathBroadcastGate::kStableAliveTicks + 2; ++i)
-        hooks.poll();
+// PlayerDie softlocks the game in an area-change state, so the bounce waits however long the cutscene runs.
+TEST_CASE("deathlink: a bounce during a cutscene waits for it to end", "[deathlink][retry]")
+{
+    Deathlink d;
+    d.game.enter_cutscene();
+    d.receive_deathlink();
+    d.game.play_for(30.0);
+    REQUIRE(d.game.log.empty());
 
-    REQUIRE(mth::test::recorder().deaths == 1);
+    d.game.leave_cutscene();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
+}
 
-    mod::set_api(nullptr);
+// The area is unbound between teardown and the next room's AreaManagerNewArea, a window that clears by itself.
+TEST_CASE("deathlink: a bounce during a room change lands in the next room", "[deathlink][retry]")
+{
+    Deathlink d;
+    d.game.begin_room_change();
+    d.game.play_for(0.1);
+    d.receive_deathlink();
+    d.game.play_for(1.0);
+    REQUIRE(d.game.log.empty());
+
+    d.game.finish_room_change();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
+}
+
+TEST_CASE("deathlink: a bounce during our own death does not kill us again", "[deathlink][retry]")
+{
+    Deathlink d;
+    d.game.die_locally();
+    d.game.play_for(0.5);
+    d.receive_deathlink();
+    d.game.play_for(30.0);
+    REQUIRE(d.game.log == kBroadcastDeathRun);
+}
+
+// The ending leaves a settled Player in a World with no area, where PlayerDie faults in Player::InitDeath (crash 2026-08-23, during the credits). The
+// bounce is dropped: held, it would land in the post-credits handoff.
+TEST_CASE("deathlink: a bounce during the credits is dropped", "[deathlink][ending]")
+{
+    Deathlink d;
+    d.game.enter_credits();
+    d.receive_deathlink();
+    d.game.play_for(1.0);
+    d.game.leave_credits();
+    d.game.play_for(30.0);
+    REQUIRE(d.game.log.empty());
+}
+
+// A build without PlayerGetWorld cannot tell an area-less world from no world at all, and must not lose every deathlink for it.
+TEST_CASE("deathlink: the credits check lets deaths through on a build with no world accessor", "[deathlink][ending]")
+{
+    Deathlink d;
+    d.game.api.PlayerGetWorld = nullptr;
+    d.receive_deathlink();
+    d.game.play_for(10.0);
+    REQUIRE(d.game.log == kDeathRun);
 }

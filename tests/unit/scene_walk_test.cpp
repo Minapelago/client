@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mocks/fake_mod_api.hpp"
+#include "mocks/fake_game.hpp"
 #include "mod/mod_api.hpp"
 #include "mth/core/game/component_types.hpp"
 #include "mth/features/scene_gates/scene_walk.hpp"
@@ -32,9 +32,8 @@ struct Walker
 
 TEST_CASE("scene walk: descends entities and reports leaves to the visitor, from any root", "[scene]")
 {
-    mth::test::ScopedFakeApi scoped;
-    mth::test::fake_scene().reset();
-    auto &s = mth::test::fake_scene();
+    mth::test::FakeGame game;
+    auto &s = game.scene;
 
     void *root = s.add(mth::rtti::kYcEntity, nullptr);
     void *child_entity = s.add(mth::rtti::kYcEntity, root);
@@ -75,9 +74,8 @@ TEST_CASE("scene walk: descends entities and reports leaves to the visitor, from
 
 TEST_CASE("scene walk: a visitor can stop the walk, and a node wider than the child cap is walked as a prefix", "[scene]")
 {
-    mth::test::ScopedFakeApi scoped;
-    mth::test::fake_scene().reset();
-    auto &s = mth::test::fake_scene();
+    mth::test::FakeGame game;
+    auto &s = game.scene;
 
     void *root = s.add(mth::rtti::kYcEntity, nullptr);
     void *branch = s.add(mth::rtti::kYcEntity, root);
@@ -114,9 +112,8 @@ TEST_CASE("scene walk: a visitor can stop the walk, and a node wider than the ch
 // visitor, so a search misses a hit on an entity.
 TEST_CASE("scene walk: a node that is also an entity is descended into and withheld from the visitor", "[scene]")
 {
-    mth::test::ScopedFakeApi scoped;
-    mth::test::fake_scene().reset();
-    auto &s = mth::test::fake_scene();
+    mth::test::FakeGame game;
+    auto &s = game.scene;
 
     void *root = s.add(mth::rtti::kYcEntity, nullptr);
     void *hybrid = s.add(kTarget, root, mth::rtti::kYcEntity); // isa kTarget and isa ycEntity both

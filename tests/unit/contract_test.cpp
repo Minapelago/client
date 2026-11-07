@@ -246,7 +246,11 @@ TEST_CASE("apworld generator indexes map onto SaveSlot 0x290 bits", "[contract][
     const Row rows[] = {
         {"Nox's Bayou", 2}, {"Queensbury Crypt", 1}, {"Septemburg", 3}, {"Bone Beach", 4}, {"Coltrane Peak", 5}, {"Astral Orrery", 6},
     };
-    REQUIRE(fixture().at("generator_indexes").size() == std::size(rows));
+    for (const auto &[name, index] : fixture().at("generator_indexes").items())
+    {
+        INFO(name);
+        CHECK(std::any_of(std::begin(rows), std::end(rows), [&](const Row &row) { return name == row.name; }));
+    }
     for (const Row &row : rows)
     {
         INFO(row.name);

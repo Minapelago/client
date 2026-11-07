@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "mocks/capturing_log.hpp"
 #include "mth/core/console/dev_commands.hpp"
 #include "mth/core/console/log_ring.hpp"
 #include "pal/overlay_keys.hpp"
@@ -18,13 +19,15 @@ using mth::parse_command;
 namespace
 {
 
+using mth::test::CapturingLog;
+
 struct VerbRow
 {
     const char *verb;
     CommandKind kind;
 };
 
-// Every kind the console dispatches, in enum order. None and Unknown are parse outcomes, not verbs.
+// Every kind the console dispatches, in enum order. None and Unknown are parse outcomes and have no verb.
 constexpr VerbRow kVerbs[] = {
     {"help", CommandKind::Help},
     {"clear", CommandKind::Clear},
@@ -52,26 +55,6 @@ std::string to_upper(std::string s)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return s;
 }
-
-class CapturingLog final : public pal::ILog
-{
-  public:
-    void write(pal::LogLevel level, std::string_view message) override
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        entries_.emplace_back(level, std::string(message));
-    }
-
-    std::vector<std::pair<pal::LogLevel, std::string>> entries()
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        return entries_;
-    }
-
-  private:
-    std::mutex mu_;
-    std::vector<std::pair<pal::LogLevel, std::string>> entries_;
-};
 
 // Restores the process-wide log sink and observer even when a REQUIRE throws.
 struct ScopedLog

@@ -97,7 +97,7 @@ flowchart TB
 - **Persistence**: checked locations and granted items are persisted per `(seed, slot)` so
   reconnects and reloads don't double-send or double-grant.
 - The network stack (apclientpp / wswrap / websocketpp with OpenSSL) lives in `src/mth/net/` and
-  implements the `IApLink` interface from core. The tests use an in-memory fake of it.
+  implements the `IApLink` interface from core. The tests use an in-memory fake of it, and the real link is also tested over a loopback websocket (`tests/unit/ap_link_net_test.cpp`, `tests/mocks/scripted_ap_server.hpp`).
 
 ## In-game overlay
 
