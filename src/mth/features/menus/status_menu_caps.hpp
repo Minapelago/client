@@ -11,9 +11,8 @@ namespace mth
 class LevelCapHooks;
 
 // twin: mth/core/rules/progression.hpp (the cap policy this displays).
-// Appends the enforced cap to the three stat panels on the pause screen, so the player can see the
-// ceiling without opening the bone-up menu. The game writes those labels only when the menu is built
-// or the language changes, so the walk runs on a cadence rather than every tick. Game thread only.
+// Appends the enforced cap to the three pause-screen stat panels. The game writes those labels only on menu build or language change, so the walk runs on a
+// cadence. Game thread only.
 class StatusMenuCaps
 {
   public:

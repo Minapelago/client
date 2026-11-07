@@ -1,23 +1,14 @@
 # ApClient.cmake - header-only Archipelago client deps via FetchContent.
 #
-# apclientpp -> wswrap -> websocketpp form the Archipelago net stack. All three
-# are header-only and were previously vendored as git submodules under external/.
-# We fetch them here instead so:
-#   * the patched websocketpp copy lives in the build dir (build/_deps), never
-#     dirtying a tracked worktree;
-#   * external/ holds only vcpkg.
-#
-# Pins are the exact commits the submodules recorded. asio/OpenSSL/ZLIB/json come
-# from vcpkg (find_package in src/mth), not from here.
+# apclientpp -> wswrap -> websocketpp form the Archipelago net stack. Fetching them here keeps the patched websocketpp copy in build/_deps, away
+# from tracked files. Pins are exact commits. asio/OpenSSL/ZLIB/json come from vcpkg (find_package in src/mth).
 #
 # Exposes: mthap::apclient (INTERFACE, system include dirs only).
 
 include_guard(GLOBAL)
 include(FetchContent)
 
-# SOURCE_SUBDIR points at a path with no CMakeLists.txt, so MakeAvailable populates
-# each dependency without calling add_subdirectory. They are header-only and their
-# own CMake builds (examples, tests, install) are not wanted.
+# SOURCE_SUBDIR points at a path with no CMakeLists.txt, so MakeAvailable populates each dependency without add_subdirectory (header-only).
 set(_apclient_no_build "_headers_only")
 
 FetchContent_Declare(
@@ -44,10 +35,8 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(websocketpp wswrap apclientpp)
 
-# Upstream replaces the asio error with a generic tls_handshake_failed, which collapses a certificate
-# rejection, a version mismatch and a reset mid-handshake into one message. The asio code carries the
-# OpenSSL reason and nothing in this stack matches on the generic one. Rewriting the fetched copy in
-# place is idempotent, and it fails the configure if a different websocketpp makes neither text match.
+# Upstream replaces the asio error with a generic tls_handshake_failed, which merges certificate rejection, version mismatch and mid-handshake reset.
+# The asio code carries the OpenSSL reason and nothing here matches the generic one. The rewrite is idempotent and fails configure if neither text matches.
 set(_ws_tls "${websocketpp_SOURCE_DIR}/websocketpp/transport/asio/security/tls.hpp")
 set(_ws_tls_old "m_ec = socket::make_error_code(socket::error::tls_handshake_failed);")
 set(_ws_tls_new "m_ec = ec;")

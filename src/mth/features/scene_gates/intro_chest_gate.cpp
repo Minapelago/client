@@ -22,11 +22,8 @@ using mth::looks_like_component;
 namespace mth
 {
 
-// The seed precollects the starting weapon, so every weapon reaches the player through the item stream. The
-// game hands one out anyway at the intro (the weapon chest's pick, and the fallback that force-grants the
-// whip), and both write the SaveSlot fields directly rather than going through Items::OnPickupDone, where the
-// vanilla-grant suppression sits. So ownership is clamped to the AP grants each tick instead of hooking
-// either site.
+// The seed precollects the starting weapon, but the intro still hands one out (the chest's pick, and the fallback that force-grants the whip), writing SaveSlot
+// directly and bypassing the Items::OnPickupDone suppression. So ownership is clamped to the AP grants each tick.
 void IntroChestGate::enforce_weapon_grants(const ApState &state, bool authed, bool slot_ok)
 {
     WeaponTally tally;
@@ -37,16 +34,13 @@ void IntroChestGate::enforce_weapon_grants(const ApState &state, bool authed, bo
     for (int fam = 0; fam < kWeaponFamilyCount; ++fam)
         authorized[fam] = tally.owned_mask(fam);
     enforce_weapon_ownership(authorized, authed, slot_ok);
-    // The clamp corrects the bits after the fact; the chest itself still offers all three starters and still
-    // equips the pick, so it is demoted as well. Both extra conditions are load-bearing: the weapon-change
-    // mode lists owned weapons only, so demoting before a grant lands, or on a save AP does not own, leaves
-    // the player with nothing to arm.
+    // The chest still offers all three starters and equips the pick, so it is demoted too. Weapon-change mode lists owned weapons only, so demoting before a
+    // grant lands, or on a save AP does not own, leaves nothing to arm.
     armed_ = authed && slot_ok && any_weapon_authorized(authorized);
 }
 
-// Writes only on a real transition, so a demotion costs one log line rather than one per walk, and a re-arm
-// by the NPC is reported again. The menu is cleared as well as the chest: the NPC writes the menu's copy of
-// the byte directly, so clearing the chest alone leaves an already-open menu in starter mode.
+// Writes only on a real transition, so a demotion logs once and an NPC re-arm logs again. The NPC writes the menu's copy of the byte directly, so an open menu
+// is cleared too.
 void IntroChestGate::demote_chest(void *chest)
 {
     auto *starter = reinterpret_cast<std::uint8_t *>(static_cast<char *>(chest) + mth::layout::kCheckpointChestStarterOff);
@@ -56,7 +50,7 @@ void IntroChestGate::demote_chest(void *chest)
         menu_starter = reinterpret_cast<std::uint8_t *>(static_cast<char *>(menu) + mth::layout::kWeaponsChestMenuStarterOff);
 
     if (*starter == 0 && (menu_starter == nullptr || *menu_starter == 0))
-        return; // the common case is a pure read: every chest outside the intro is already in this mode
+        return; // pure read for every chest outside the intro
 
     const unsigned prev_chest = *starter;
     const unsigned prev_menu = menu_starter != nullptr ? *menu_starter : 0u;
@@ -77,8 +71,7 @@ void IntroChestGate::tick()
     if (root == nullptr)
         return;
 
-    // No early exit: a checkpoint room carries a trinket chest and a weapon chest, and only the one
-    // still in starter mode is written, so the rest cost a read each.
+    // No early exit: a checkpoint room has a trinket chest and a weapon chest, and only one still in starter mode is written.
     const SceneWalk walk = walker_.for_each(root, rtti::kCheckpointChest, [&](void *c) { demote_chest(c); });
     walker_.report(walk);
 }

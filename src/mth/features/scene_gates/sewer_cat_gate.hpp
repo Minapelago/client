@@ -10,24 +10,20 @@
 namespace mth
 {
 
-// Makes the sewer-cat fetch vendor ("Panino") non-interactible while should_disable() is true (#88).
-// Vanilla, he takes an order for an item still out in the world and later spawns the real pickup beside
-// him, which hands over an item AP never routed.
+// Makes the sewer-cat fetch vendor ("Panino") non-interactible while should_disable() is true (#88). Vanilla, he takes an order for an item still in the world
+// and later spawns the real pickup, handing over an item AP never routed.
 //
-// Found by scene walk, not by detouring his OnNPCEvent: the mod API does not expose that symbol and no
-// signature is carved for it, so a detour resolves to nothing on Windows. This suppresses the interact
-// prompt only, and does not cancel an order already recorded in the save; his UpdateState still
-// delivers those.
+// Found by scene walk because his OnNPCEvent is neither exposed by the mod API nor signature-carved, so a detour resolves to nothing on Windows. Only the
+// prompt is suppressed: his UpdateState still delivers orders already in the save.
 //
-// The walk repeats rather than latching after one success: he is reconstructed on each appearance. No
-// game pointer is held across ticks, so a room teardown cannot leave a dangling one.
+// The walk repeats because he is reconstructed on each appearance. No game pointer is held across ticks.
 class SewerCatGate
 {
   public:
     explicit SewerCatGate(std::function<bool()> should_disable);
 
     void tick();             // game thread; walks nothing unless should_disable()
-    void on_world_destroy(); // walk the next room immediately rather than up to a cadence late
+    void on_world_destroy(); // re-walk on the next tick
 
   private:
     void disable_vendor(void *behavior, void *sibling_interact, bool sibling_unique);

@@ -6,10 +6,9 @@
 #include "mth/core/game/game_layout.hpp"
 #include "mth/features/name_key.hpp"
 
-// Stand-ins for the game objects the name-key walk crosses. Only the offsets it reads are modelled, and
-// those offsets come from the same layout constants name_key.hpp reads, so nothing here can catch one
-// drifting on a game rebuild: they are pinned reverse-engineered facts, confirmed in game rather than
-// tested. What is left below is the logic that sits on top of them, the key precedence and the null hops.
+// Stand-ins for the game objects the name-key walk crosses. Only the offsets it reads are modelled, and they come from the layout constants
+// name_key.hpp reads, so drift on a game rebuild is not caught here; those offsets are confirmed in game. These cases cover the key precedence
+// and the null hops.
 namespace
 {
 

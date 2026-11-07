@@ -120,7 +120,7 @@ TEST_CASE("find_masked matches at the last valid offset", "[sig]")
     Match m = find_masked(region, pat.data(), mask.data(), pat.size());
     REQUIRE(m.found);
     REQUIRE(m.unique);
-    REQUIRE(m.offset == 3); // region.size() - len == 6 - 3
+    REQUIRE(m.offset == 3);
     Entry e{"tail", Kind::Code, pat.data(), mask.data(), pat.size(), 0, 0};
     REQUIRE(resolve(region, 0x140001000ull, e) == 0x140001003ull);
 }

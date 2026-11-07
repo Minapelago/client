@@ -1,8 +1,6 @@
 // Windows D3D12/Win32 dev overlay.
 //
-// Feature-parity counterpart to the Linux Vulkan overlay (overlay_linux.cpp),
-// built on the stock imgui_impl_dx12 + imgui_impl_win32 backends. Hooks are
-// installed via pal::install_hook (MinHook):
+// Counterpart to overlay_linux.cpp on the stock imgui_impl_dx12 + imgui_impl_win32 backends, hooked through pal::install_hook (MinHook):
 //   - IDXGISwapChain::Present / IDXGISwapChain1::Present1  -> composite ImGui
 //   - IDXGISwapChain::ResizeBuffers                        -> rebuild RTVs
 //   - ID3D12CommandQueue::ExecuteCommandLists             -> capture DIRECT queue
@@ -34,7 +32,7 @@
 #include "pal/pal_overlay.hpp"
 #include "pal/scoped_hook.hpp"
 
-// Provided by imgui_impl_win32 (also declared in its header; repeated for clarity).
+// Defined in imgui_impl_win32; its header keeps this declaration under #if 0.
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace pal
@@ -44,8 +42,7 @@ namespace
 {
 
 // ---------------------------------------------------------------------------
-// Shared state (single-file overlay; detours are free functions over globals,
-// mirroring the Linux overlay).
+// Shared state. Detours are free functions over globals, as in the Linux overlay.
 // ---------------------------------------------------------------------------
 
 std::atomic<IOverlayUi *> g_ui{nullptr};
@@ -75,22 +72,15 @@ ID3D12Fence *g_fence = nullptr;
 UINT64 g_fence_last_signaled = 0;
 HANDLE g_fence_event = nullptr;
 
-// Identity of the swapchain init_render bound g_frames to. render_overlay only
-// renders when the presented swapchain matches this; a different pointer means a
-// full recreate (our cached back buffers belong to a dead swapchain).
+// The swapchain init_render bound g_frames to. render_overlay renders only when the presented swapchain matches; another pointer means a recreate.
 IDXGISwapChain3 *g_inited_swap = nullptr;
 bool g_swapchain_mismatch_warned = false; // rate-limit the recreate warning
 
 UINT g_toggle_vk = VK_F1;
 UINT g_login_vk = VK_F2;
 
-// Cross-thread input marshalling. The Win32 message pump and D3D12 present run on
-// DIFFERENT threads in this game, so the WndProc must not touch ImGui directly
-// (it races NewFrame). Instead it queues raw messages here under g_msg_mu; the
-// render thread drains + replays them into ImGui before NewFrame. The render
-// thread publishes ImGui's capture intent into g_want_* (read one frame in
-// arrears by the WndProc to decide what game input to swallow). Mirrors the
-// Linux overlay's SDL-event queue.
+// The Win32 message pump and D3D12 present run on different threads here, so the WndProc queues raw messages under g_msg_mu and the render thread
+// replays them into ImGui before NewFrame. The render thread publishes ImGui's capture intent in g_want_*, which the WndProc reads a frame late.
 struct Win32Msg
 {
     HWND hwnd;
@@ -106,11 +96,8 @@ std::atomic<bool> g_want_mouse{false};
 static_assert(VK_F12 - VK_F1 == 11 && VK_F2 == VK_F1 + 1, "pal::parse_console_key assumes contiguous F keys");
 
 // ---------------------------------------------------------------------------
-// Stall diagnostics. Everything below the Present detour fails silently, so a
-// dead overlay and a healthy one produce the same log. These counters let the
-// watchdog tell "the Present detour never fired" from "it fired but init never
-// finished", and dump the module list to catch a conflicting injector or a
-// proxy dxgi.dll.
+// Stall diagnostics. Everything below the Present detour fails silently, so these counters let the watchdog tell "Present never fired" from "init
+// never finished", and the module dump catches a conflicting injector or a proxy dxgi.dll.
 // ---------------------------------------------------------------------------
 
 std::atomic<unsigned long long> g_present_calls{0};
@@ -138,8 +125,7 @@ static void describe_addr(const void *addr, char *out, std::size_t cap)
     std::snprintf(out, cap, "?");
 }
 
-// Bounds-check before dereferencing an address decoded out of patch bytes some
-// other injector may have written; the operand cannot be assumed sane.
+// Bounds-checked read of an address decoded from patch bytes another injector may have written.
 static bool safe_read(const void *addr, void *out, std::size_t n)
 {
     MEMORY_BASIC_INFORMATION mbi{};
@@ -307,9 +293,8 @@ template <class Swap, class CallOriginal> HRESULT present_with_overlay(Swap *sel
         swap3->Release();
     }
 
-    // Present first: the dump makes hundreds of flushed writes and walks the
-    // loader list, with DXGI's swapchain lock held. Own latch so a failing QI
-    // does not re-enter it every frame.
+    // Present first: the dump makes hundreds of flushed writes and walks the loader list, and DXGI holds its swapchain lock here. Its own latch keeps a
+    // failing QI from re-entering it every frame.
     const HRESULT hr = call_original();
     if (!qi_ok && !g_qi_warned.exchange(true, std::memory_order_relaxed))
         report_overlay_stall("swapchain does not implement IDXGISwapChain3; cannot render");
@@ -328,7 +313,7 @@ HRESULT STDMETHODCALLTYPE repl_present1(IDXGISwapChain1 *self, UINT sync, UINT f
 
 HRESULT STDMETHODCALLTYPE repl_resize(IDXGISwapChain *self, UINT count, UINT w, UINT h, DXGI_FORMAT fmt, UINT flags)
 {
-    // Release our back-buffer references + RTVs so ResizeBuffers can succeed.
+    // Release our back-buffer references and RTVs so ResizeBuffers can succeed.
     if (g_imgui_inited && g_frames != nullptr)
     {
         wait_for_gpu(); // overlay submits referencing these back buffers must finish first
@@ -366,8 +351,7 @@ HRESULT STDMETHODCALLTYPE repl_resize(IDXGISwapChain *self, UINT count, UINT w, 
                 {
                     if (FAILED(swap3->GetBuffer(i, IID_PPV_ARGS(&g_frames[i].render_target))))
                     {
-                        // Leaving a null back buffer would crash render_overlay; bail inert
-                        // (parity with init_render's GetBuffer failure path).
+                        // A null back buffer would crash render_overlay; go inert as init_render does on GetBuffer failure.
                         pal::logf(pal::LogLevel::Error, "overlay: GetBuffer %u failed after resize; overlay inert", i);
                         g_init_failed = true;
                         break;
@@ -488,10 +472,8 @@ cleanup:
     return ok;
 }
 
-// Block until the GPU has finished the most recent overlay submission. The overlay
-// reuses a single command list + per-frame allocators, so the previous submit must
-// complete before they are reset or released. The overlay's GPU workload is tiny,
-// so fully serializing here is cheap.
+// Blocks until the GPU finishes the latest overlay submit, which must complete before the shared command list and per-frame allocators are reset or
+// released. The workload is tiny, so serializing is cheap.
 static void wait_for_gpu()
 {
     if (g_fence == nullptr || g_fence_last_signaled == 0)
@@ -624,9 +606,7 @@ static LRESULT CALLBACK overlay_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPAR
         return 0; // consume the toggle key itself
     }
 
-    // Do NOT call ImGui from this thread: the message pump and the present thread
-    // are different, and ImGui's context/IO is not thread-safe. Queue the message
-    // for the render thread to replay before NewFrame.
+    // ImGui is not thread-safe and this is the message-pump thread, so queue the message for the render thread to replay before NewFrame.
     if (is_imgui_msg(msg))
     {
         {
@@ -634,8 +614,7 @@ static LRESULT CALLBACK overlay_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPAR
             g_msg_queue.push_back(Win32Msg{hwnd, msg, wparam, lparam});
         }
 
-        // Swallow from the game while either window is open and ImGui wants this
-        // input. WantCapture* is published by the render thread (one frame stale).
+        // Swallow from the game while either window is open and ImGui wants this input (WantCapture* is a frame stale).
         if (g_console_open.load(std::memory_order_relaxed) || g_login_open.load(std::memory_order_relaxed))
         {
             if (g_want_keyboard.load(std::memory_order_relaxed) && is_keyboard_msg(msg))
@@ -769,17 +748,14 @@ static void render_overlay(IDXGISwapChain3 *swap)
     if (!g_imgui_inited && !init_render(swap))
         return;
 
-    // Drain the WndProc message queue on the render thread (always, to bound its
-    // growth). Replayed into ImGui only when we actually render a frame below.
+    // Drain the WndProc queue every frame to bound it; it is replayed only when a frame renders below.
     std::vector<Win32Msg> input;
     {
         const std::lock_guard<std::mutex> lk(g_msg_mu);
         input.swap(g_msg_queue);
     }
 
-    // Our g_frames back buffers + RTVs belong to g_inited_swap; if the game recreated
-    // the swapchain (different pointer) they are stale, so skip rather than render
-    // into freed targets. Warn once so a recreate is visible in the log.
+    // g_frames belong to g_inited_swap and go stale when the game recreates the swapchain, so skip rendering and warn once.
     if (swap != g_inited_swap)
     {
         if (!g_swapchain_mismatch_warned)
@@ -809,8 +785,7 @@ static void render_overlay(IDXGISwapChain3 *swap)
     const bool console_open = g_console_open.load(std::memory_order_relaxed);
     const bool login_open = g_login_open.load(std::memory_order_relaxed);
     const bool any_open = console_open || login_open;
-    // The game hides the OS cursor, so draw ImGui's own software cursor while any
-    // window is open; otherwise the user has no visible pointer to click with.
+    // The game hides the OS cursor, so draw ImGui's software cursor while any window is open.
     ImGui::GetIO().MouseDrawCursor = any_open;
 
     if (IOverlayUi *ui = g_ui.load(std::memory_order_acquire); ui != nullptr)
@@ -908,9 +883,8 @@ void overlay_start(IOverlayUi *ui)
 
 void overlay_stop()
 {
-    // Relies on the render/message threads being quiesced at teardown (the App
-    // is destroyed at process shutdown). MinHook does not drain in-flight
-    // detours, so a present racing this would touch freed GPU state.
+    // Only ~App calls this, and App is leaked. It needs the render and message threads quiesced: MinHook does not drain in-flight detours, so a racing
+    // present would touch freed GPU state.
     for (ScopedHook &hook : g_overlay_hooks)
         hook.reset();
     g_orig_present = nullptr;

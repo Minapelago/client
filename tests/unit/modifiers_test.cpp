@@ -16,8 +16,8 @@ TEST_CASE("class_of partitions the index space", "[modifiers]")
     REQUIRE(mth::class_of(254) == CheatClass::Invalid);
     REQUIRE(mth::class_of(0) == CheatClass::Continuous);
     REQUIRE(mth::class_of(31) == CheatClass::Continuous);
-    REQUIRE(mth::class_of(126) == CheatClass::Continuous); // StartNewGamePlus is a no-op -> CONT
-    REQUIRE(mth::class_of(19) == CheatClass::Grant);       // Hedgehog grants a trinket
+    REQUIRE(mth::class_of(126) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(19) == CheatClass::Grant);
     REQUIRE(mth::class_of(54) == CheatClass::Grant);
     REQUIRE(mth::class_of(140) == CheatClass::Grant);
     REQUIRE(mth::class_of(123) == CheatClass::Randomizer);
@@ -28,94 +28,92 @@ TEST_CASE("class_of partitions the index space", "[modifiers]")
 TEST_CASE("class_of range boundaries are fence-post correct", "[modifiers]")
 {
     // Edges around every range so an off-by-one in class_of is caught.
-    REQUIRE(mth::class_of(18) == CheatClass::Continuous);  // before Grant-19
-    REQUIRE(mth::class_of(20) == CheatClass::Continuous);  // after Grant-19
-    REQUIRE(mth::class_of(53) == CheatClass::Continuous);  // before Grant-54
-    REQUIRE(mth::class_of(55) == CheatClass::Continuous);  // after Grant-54
-    REQUIRE(mth::class_of(121) == CheatClass::Continuous); // before Randomizer
-    REQUIRE(mth::class_of(122) == CheatClass::Randomizer); // first Randomizer
-    REQUIRE(mth::class_of(125) == CheatClass::Randomizer); // last Randomizer
-    REQUIRE(mth::class_of(127) == CheatClass::Continuous); // 126/127 are no-ops -> CONT
-    REQUIRE(mth::class_of(128) == CheatClass::Grant);      // first Grant range
-    REQUIRE(mth::class_of(172) == CheatClass::Grant);      // last Grant range
-    REQUIRE(mth::class_of(173) == CheatClass::Continuous); // after Grant range
-    REQUIRE(mth::class_of(213) == CheatClass::Continuous); // before Combo
-    REQUIRE(mth::class_of(214) == CheatClass::Combo);      // first Combo
+    REQUIRE(mth::class_of(18) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(20) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(53) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(55) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(121) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(122) == CheatClass::Randomizer);
+    REQUIRE(mth::class_of(125) == CheatClass::Randomizer);
+    REQUIRE(mth::class_of(127) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(128) == CheatClass::Grant);
+    REQUIRE(mth::class_of(172) == CheatClass::Grant);
+    REQUIRE(mth::class_of(173) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(213) == CheatClass::Continuous);
+    REQUIRE(mth::class_of(214) == CheatClass::Combo);
 }
 
 TEST_CASE("is_safe is exactly the continuous set", "[modifiers]")
 {
     REQUIRE(mth::is_safe(31));
-    REQUIRE_FALSE(mth::is_safe(140)); // grant
-    REQUIRE_FALSE(mth::is_safe(123)); // randomizer
-    REQUIRE_FALSE(mth::is_safe(218)); // combo
+    REQUIRE_FALSE(mth::is_safe(140));
+    REQUIRE_FALSE(mth::is_safe(123));
+    REQUIRE_FALSE(mth::is_safe(218));
 }
 
 TEST_CASE("is_ap_denied covers the hostile modifiers", "[modifiers]")
 {
-    REQUIRE(mth::is_ap_denied(0));   // High Jump: vertical reach
-    REQUIRE(mth::is_ap_denied(2));   // Infinite Jump
-    REQUIRE(mth::is_ap_denied(5));   // Floatier Jumps
-    REQUIRE(mth::is_ap_denied(17));  // Grapple Mode
-    REQUIRE(mth::is_ap_denied(21));  // Walk On Pits
-    REQUIRE(mth::is_ap_denied(19));  // Hedgehog grants a trinket
-    REQUIRE(mth::is_ap_denied(54));  // EarlyWeapons grants weapons
-    REQUIRE(mth::is_ap_denied(70));  // SidearmRandom
-    REQUIRE(mth::is_ap_denied(95));  // AllWeapons
-    REQUIRE(mth::is_ap_denied(123)); // the game's own warp shuffle
-    REQUIRE(mth::is_ap_denied(126)); // custom-game-mode bit; skips the starting-kit seed
-    REQUIRE(mth::is_ap_denied(140)); // StartTrainPassMax
-    REQUIRE(mth::is_ap_denied(48));  // NoUnderlab
-    REQUIRE(mth::is_ap_denied(107)); // NoBones
-    REQUIRE(mth::is_ap_denied(119)); // NoPawnShop
-    REQUIRE(mth::is_ap_denied(253)); // ComboBacker
+    REQUIRE(mth::is_ap_denied(0));
+    REQUIRE(mth::is_ap_denied(2));
+    REQUIRE(mth::is_ap_denied(5));
+    REQUIRE(mth::is_ap_denied(17));
+    REQUIRE(mth::is_ap_denied(21));
+    REQUIRE(mth::is_ap_denied(19));
+    REQUIRE(mth::is_ap_denied(54));
+    REQUIRE(mth::is_ap_denied(70));
+    REQUIRE(mth::is_ap_denied(95));
+    REQUIRE(mth::is_ap_denied(123));
+    REQUIRE(mth::is_ap_denied(126));
+    REQUIRE(mth::is_ap_denied(140));
+    REQUIRE(mth::is_ap_denied(48));
+    REQUIRE(mth::is_ap_denied(107));
+    REQUIRE(mth::is_ap_denied(119));
+    REQUIRE(mth::is_ap_denied(253));
 }
 
 TEST_CASE("is_ap_denied leaves difficulty and cosmetic modifiers alone", "[modifiers]")
 {
-    REQUIRE_FALSE(mth::is_ap_denied(1));   // Auto Jump
-    REQUIRE_FALSE(mth::is_ap_denied(8));   // Burrow Chain
-    REQUIRE_FALSE(mth::is_ap_denied(9));   // Infinite Burrow
-    REQUIRE_FALSE(mth::is_ap_denied(20));  // Walk On Spikes
-    REQUIRE_FALSE(mth::is_ap_denied(31));  // InstaKillPlayer
-    REQUIRE_FALSE(mth::is_ap_denied(62));  // SuddenDeath
-    REQUIRE_FALSE(mth::is_ap_denied(102)); // LevelingFast50, part of the AP force-on baseline
-    REQUIRE_FALSE(mth::is_ap_denied(121)); // WarpHome, likewise
-    REQUIRE_FALSE(mth::is_ap_denied(186)); // CloakColor1
-    REQUIRE_FALSE(mth::is_ap_denied(213)); // CustomFlower
-    REQUIRE_FALSE(mth::is_ap_denied(-1));  // invalid indices are never blocked
+    REQUIRE_FALSE(mth::is_ap_denied(1));
+    REQUIRE_FALSE(mth::is_ap_denied(8));
+    REQUIRE_FALSE(mth::is_ap_denied(9));
+    REQUIRE_FALSE(mth::is_ap_denied(20));
+    REQUIRE_FALSE(mth::is_ap_denied(31));
+    REQUIRE_FALSE(mth::is_ap_denied(62));
+    REQUIRE_FALSE(mth::is_ap_denied(102));
+    REQUIRE_FALSE(mth::is_ap_denied(121));
+    REQUIRE_FALSE(mth::is_ap_denied(186));
+    REQUIRE_FALSE(mth::is_ap_denied(213));
+    REQUIRE_FALSE(mth::is_ap_denied(-1));
     REQUIRE_FALSE(mth::is_ap_denied(254));
 }
 
 TEST_CASE("is_ap_denied range boundaries are fence-post correct", "[modifiers]")
 {
     // Edges around every denied range so an off-by-one is caught.
-    REQUIRE(mth::is_ap_denied(7));         // last of the speed/float block
-    REQUIRE_FALSE(mth::is_ap_denied(16));  // Vampire Vault, just below Grapple Mode
-    REQUIRE_FALSE(mth::is_ap_denied(18));  // Dumb Throw, just above it
-    REQUIRE_FALSE(mth::is_ap_denied(71));  // between the sidearm rerolls
-    REQUIRE_FALSE(mth::is_ap_denied(73));  // above them
-    REQUIRE(mth::is_ap_denied(89));        // first All*
-    REQUIRE(mth::is_ap_denied(98));        // last All*
-    REQUIRE_FALSE(mth::is_ap_denied(99));  // LevelingDeathOne
-    REQUIRE_FALSE(mth::is_ap_denied(115)); // ShopPrice
-    REQUIRE(mth::is_ap_denied(116));       // first shop removal
-    REQUIRE(mth::is_ap_denied(120));       // last shop removal
-    REQUIRE(mth::is_ap_denied(122));       // first randomizer flag
-    REQUIRE(mth::is_ap_denied(125));       // last randomizer flag
-    REQUIRE_FALSE(mth::is_ap_denied(127)); // StartProgBoat is a no-op
-    REQUIRE(mth::is_ap_denied(128));       // first Start* grant
-    REQUIRE(mth::is_ap_denied(172));       // last Start* grant
-    REQUIRE_FALSE(mth::is_ap_denied(173)); // QuickLocks
-    REQUIRE(mth::is_ap_denied(214));       // first combo
-    REQUIRE(mth::is_ap_denied(253));       // last combo
+    REQUIRE(mth::is_ap_denied(7));
+    REQUIRE_FALSE(mth::is_ap_denied(16));
+    REQUIRE_FALSE(mth::is_ap_denied(18));
+    REQUIRE_FALSE(mth::is_ap_denied(71));
+    REQUIRE_FALSE(mth::is_ap_denied(73));
+    REQUIRE(mth::is_ap_denied(89));
+    REQUIRE(mth::is_ap_denied(98));
+    REQUIRE_FALSE(mth::is_ap_denied(99));
+    REQUIRE_FALSE(mth::is_ap_denied(115));
+    REQUIRE(mth::is_ap_denied(116));
+    REQUIRE(mth::is_ap_denied(120));
+    REQUIRE(mth::is_ap_denied(122));
+    REQUIRE(mth::is_ap_denied(125));
+    REQUIRE_FALSE(mth::is_ap_denied(127));
+    REQUIRE(mth::is_ap_denied(128));
+    REQUIRE(mth::is_ap_denied(172));
+    REQUIRE_FALSE(mth::is_ap_denied(173));
+    REQUIRE(mth::is_ap_denied(214));
+    REQUIRE(mth::is_ap_denied(253));
 }
 
 namespace
 {
-// One index touching each end of each of the four 64-bit words, plus 255, the top of the range the
-// mask's four words can address (the real cheat count stops at 253; 254/255 are still in-bounds for
-// cheat_mask_set's own contract).
+// One index at each end of each of the four 64-bit words, plus 255, the top of the range the mask can address (the real cheat count stops at 253).
 constexpr std::array<int, 9> kBoundaryIndices = {0, 63, 64, 127, 128, 191, 192, 253, 255};
 
 bool bit_set(const std::uint64_t *mask, int idx)
@@ -170,10 +168,8 @@ TEST_CASE("cheat_mask: set then clear round-trips to zero", "[cheat_mask]")
 
 TEST_CASE("cheat_mask: an out-of-range index leaves cheat_mask_set a total no-op", "[cheat_mask]")
 {
-    // The four mask words sit inside a six-word buffer with a guard word on each side, because idx=-1
-    // writes one word below the mask and idx=256 one word above it: a four-word array would put both
-    // of those outside the object entirely and every assertion here would pass regardless. Distinct
-    // per-word sentinels also catch a write that lands on the wrong word inside the mask.
+    // The four mask words sit in a six-word buffer with a guard word on each side, since idx=-1 and idx=256 write one word below and above the mask.
+    // Distinct per-word sentinels catch a write to the wrong word inside the mask.
     for (int idx : {-1, 256})
     {
         std::uint64_t buf[6] = {0x5555555555555555ull, 0x1111111111111111ull, 0x2222222222222222ull,
@@ -236,7 +232,7 @@ TEST_CASE("trap table: lookup returns the row for every modifier index in the ta
     for (const auto &t : mth::traps())
         REQUIRE(mth::trap_for_modifier(t.modifier_index) == &t);
 
-    REQUIRE(mth::trap_for_modifier(19) == nullptr); // a Grant-class modifier is never a trap
+    REQUIRE(mth::trap_for_modifier(19) == nullptr);
     REQUIRE(mth::trap_for_modifier(-1) == nullptr);
     REQUIRE(mth::trap_for_modifier(9999) == nullptr);
 }
@@ -259,11 +255,8 @@ TEST_CASE("ap_ids: a trap id carries its modifier index", "[trap][ap_ids]")
 
 TEST_CASE("the trap index set is frozen, because a seed already carries these item ids", "[trap]")
 {
-    // modifiers.hpp spells out the hazard: each row's modifier_index is the AP item id offset
-    // (kTrapItemBase + index), so retiring or renumbering a row repoints an id a live seed hands out
-    // and the player receives a different trap than the one that was rolled. Adding a row is safe, so
-    // this pins the set rather than the count. Raw numbers on purpose: written as kCheat_ names, an
-    // upstream renumber would move the AP ids and still pass.
+    // Each row's modifier_index is the AP item id offset (kTrapItemBase + index), so retiring or renumbering a row repoints an id live seeds hand out.
+    // Adding a row is safe, so this pins the set, not the count. Raw numbers: kCheat_ names would follow an upstream renumber and still pass.
     for (int index : {15, 174, 190, 191, 192, 193, 195, 197, 202, 203, 204, 205})
     {
         INFO("modifier index " << index << " left the table, retiring the AP item id built from it");

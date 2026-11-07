@@ -15,18 +15,16 @@
 namespace mth
 {
 
-// Runaway guards shared by the scene walks. The graph is a tree, but these bound the damage if a build
-// ever hands back a cyclic or corrupt one rather than letting the walk hang the game thread.
+// Runaway guards shared by the scene walks: the graph is a tree, but a cyclic or corrupt one must not hang the game thread.
 inline constexpr std::size_t kSceneMaxNodes = 65536;
 inline constexpr std::size_t kSceneMaxChildren = 8192;
 
-// Ticks between the cadenced walks SceneWalker::due_root hands out: about 1Hz. A traversal costs
-// microseconds, but it is pure waste in every room that does not hold what the walk is looking for.
+// Ticks between the cadenced walks SceneWalker::due_root hands out, about 1Hz. A full walk costs close to a frame (see walk_scene), wasted in every room
+// without the target.
 inline constexpr int kSceneWalkIntervalTicks = 60;
 
-// ComponentIsa jumps straight through the object's vtable with no validation of its own, so only pass it
-// something shaped like a live polymorphic game object. Note the vtable lives in the module's read-only
-// DATA, not its code, so pal::in_game_text is the wrong test here - it would reject every real object.
+// ComponentIsa jumps through the object's vtable unvalidated, so pass it only something shaped like a live polymorphic game object. The vtable lives in the
+// module's read-only data, so pal::in_game_text would reject every real object.
 [[nodiscard]] inline bool looks_like_component(const void *p, std::uintptr_t mod_base, std::size_t mod_size)
 {
     if (!pal::pointer_looks_valid(p))
@@ -40,30 +38,22 @@ inline constexpr int kSceneWalkIntervalTicks = 60;
     return v >= mod_base && v < mod_base + mod_size;
 }
 
-// What one walk did. The caps are reported rather than logged here so each feature keeps its own log
-// prefix and issue reference, and so a walk stays usable from a context with no logger.
+// What one walk did. The caps are reported here, not logged, so each feature keeps its own log prefix and issue tag.
 struct SceneWalk
 {
     std::size_t visited{0};
     void *widest_node{nullptr};          // first node that exceeded kSceneMaxChildren, else null
     std::size_t widest_node_children{0}; // its true child count, which is larger than what was walked
     bool node_budget_spent{false};       // stopped at kSceneMaxNodes with work possibly left
-    bool stopped_by_visitor{false};      // a visitor returned false, so the walk ended on its own terms
+    bool stopped_by_visitor{false};      // a visitor returned false
 };
 
-// Depth-first walk of the live scene graph from `root`, the general way to find a game object without
-// depending on an address that moves every build. Descends through anything the game reports as a
-// ycEntity and hands each node's other validated children to `visit` as one span, so a caller can reason
-// about siblings rather than one child at a time. `pending` and `buffer` are the caller's scratch, reused
-// so that no node costs an allocation.
+// Depth-first walk of the live scene graph from `root`, for finding game objects without a per-build address. Descends through every ycEntity and hands each
+// node's other validated children to `visit` as one span, so a caller can reason about siblings; visit returns whether to keep walking. `pending` and `buffer`
+// are caller scratch, so no node allocates.
 //
-// visit is called as visit(children) and returns whether to keep walking, so a search can stop the
-// moment it finds its target instead of touring the rest of the room.
-//
-// Cost: a full walk lands just under one frame's budget, because EntityGetChildren and ComponentIsa are
-// real calls into the game per node rather than a memory read. Walk on a transition (a room load, a menu
-// opening, a state change) or behind a tick throttle. A walk that runs every frame drops frames while
-// still returning the right answer, which is what makes the cost easy to miss.
+// Cost: a full walk lands just under one frame's budget, since EntityGetChildren and ComponentIsa are real game calls per node. Walk on a transition (room
+// load, menu open, state change) or behind a tick throttle; an every-frame walk drops frames while still returning the right answer.
 template <typename Visit>
 SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, std::vector<void *> &pending, std::vector<void *> &buffer, Visit &&visit)
 {
@@ -90,8 +80,7 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
         buffer.assign(count > kSceneMaxChildren ? kSceneMaxChildren : count, nullptr);
         mod::entity_children(entity, buffer.data(), buffer.size());
 
-        // Entities are removed from the span before visit sees it, so a visitor never pays for an isa
-        // call on a node the walk is already descending into.
+        // Entities are filtered out before visit sees the span, so a visitor never pays an isa call on them.
         std::size_t kept = 0;
         for (void *c : buffer)
         {
@@ -116,10 +105,8 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
     return out;
 }
 
-// The game module range, which looks_like_component needs to range-check a vtable. Resolved on first
-// use rather than at startup because the lookup takes the loader lock, and retried until it answers so
-// a walk that runs before the module is published does not cache a zero for the rest of the session.
-// Game-thread only, like every walk.
+// The game module range for looks_like_component's vtable check. Resolved on first use because the lookup takes the loader lock, and retried until nonzero so
+// an early walk does not cache a zero. Game thread only.
 [[nodiscard]] inline const pal::ModuleInfo &game_range()
 {
     static pal::ModuleInfo gm{};
@@ -134,9 +121,8 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
     return looks_like_component(p, gm.base, gm.size);
 }
 
-// Sets an InteractComponent's disable byte, which leaves its entity visible and solid but stops it
-// prompting. True only on the 0->1 write, so a caller logs the one tick that changed something, and
-// would hear about it again if the game ever cleared the byte.
+// Sets an InteractComponent's disable byte: the entity stays visible and solid but stops prompting. True only on the 0->1 write, so callers log the tick that
+// changed it, and again if the game clears the byte.
 [[nodiscard]] inline bool disable_interact(void *interact)
 {
     auto &disabled = pal::at<std::uint8_t>(interact, layout::kInteractDisabledOff);
@@ -146,23 +132,20 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
     return true;
 }
 
-// One scene-polling feature's walking apparatus: the scratch a repeated walk reuses, the once-only
-// latches its diagnostics need, and an optional 1Hz cadence (due_root). A feature with another cadence
-// keeps its own; read the cost note on walk_scene before adding one.
+// One scene-polling feature's walk state: reused scratch, once-only diagnostic latches and an optional 1Hz cadence (due_root). Read the cost note on walk_scene
+// before adding another cadence.
 class SceneWalker
 {
   public:
-    // tag prefixes every line ("intro"), noun names what is being looked for ("the weapon chest"),
-    // suffix carries an issue reference or is empty, and walk_name distinguishes a walk over something
-    // other than the game world.
+    // tag prefixes every log line ("intro"), noun names the target ("the weapon chest"), suffix is an issue reference or empty, and walk_name labels a walk
+    // over something other than the game world.
     SceneWalker(const char *tag, const char *noun, const char *suffix = "", const char *walk_name = "scene walk")
         : tag_(tag), noun_(noun), suffix_(suffix), walk_name_(walk_name)
     {
     }
 
-    // The world's game root when a cadenced walk is due, else null. The cooldown is charged only when a
-    // root is handed out, so the first tick after a room load, which usually has no live player yet,
-    // cannot eat a reset_cadence() and cost a full interval.
+    // The world's game root when a cadenced walk is due, else null. The cooldown is charged only when a root is handed out, so a post-load tick with no live
+    // player does not waste a reset_cadence().
     [[nodiscard]] void *due_root()
     {
         if (!mod::entity_walk_api_available())
@@ -182,7 +165,7 @@ class SceneWalker
         return root;
     }
 
-    // Walk the next room immediately rather than up to a cadence late (call on world destroy).
+    // Hands out a root on the next due_root() call; call on world destroy.
     void reset_cadence()
     {
         cooldown_ = 0;
@@ -245,9 +228,8 @@ class SceneWalker
         }
     }
 
-    // The failure mode of every one of these walks is silence: finding nothing looks exactly like a room
-    // that has nothing. Reaching zero components off a valid root is the one reading that can only mean
-    // broken, so that alone warns, and only when the caller says the answer mattered this tick.
+    // These walks fail silently: finding nothing looks like a room that has nothing. Zero components off a valid root can only mean broken, so that alone
+    // warns, and only when the caller says the answer mattered this tick.
     void report_silence(const SceneWalk &w, bool mattered)
     {
         if (w.visited != 0 || !mattered || warned_empty_)

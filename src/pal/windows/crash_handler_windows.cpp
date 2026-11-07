@@ -1,11 +1,7 @@
-// Windows crash handler: an unhandled-exception filter that logs the faulting
-// module+RVA and a symbolized stack backtrace into the pal log, and writes a
-// minidump to the log directory for offline analysis (WinDbg / Visual Studio).
+// Windows crash handler: logs the faulting module+RVA and a symbolized backtrace to the pal log and writes a minidump to the log directory.
 //
-// The module+RVA frames are the key diagnostic for this stripped game: subtract
-// nothing - the RVA is already relative to each module's base, so a frame in
-// MinaTheHollower.exe maps straight to a Ghidra address, and a frame in
-// mod.dll maps to our own code (symbolized directly if its PDB is alongside).
+// Each RVA is already relative to its module's base, so a MinaTheHollower.exe frame maps straight to a Ghidra address and a mod.dll frame to our code
+// (symbolized if its PDB is alongside).
 
 #include "pal/pal_crash.hpp"
 #include "pal/pal_log.hpp"
@@ -71,8 +67,7 @@ void write_minidump(EXCEPTION_POINTERS *ep)
     pal::logf(pal::LogLevel::Error, "crash: minidump %s -> crash_%lu.dmp (in log dir)", ok ? "written" : "FAILED", GetCurrentProcessId());
 }
 
-// Walk the faulting thread's stack from the exception context (NOT the filter's
-// own stack), resolving each frame to module+RVA and, where symbols exist, name.
+// Walks the faulting thread's stack from the exception context, not the filter's own, resolving each frame to module+RVA and a name where symbols exist.
 void log_backtrace(CONTEXT *src_ctx)
 {
     const HANDLE proc = GetCurrentProcess();
@@ -116,9 +111,7 @@ void log_backtrace(CONTEXT *src_ctx)
     SymCleanup(proc);
 }
 
-// Exception codes that are essentially always fatal (not used for control flow),
-// so the vectored handler can act on them without logging benign first-chance
-// exceptions (e.g. C++ EH throws, debugger notifications).
+// Codes that are effectively always fatal, so the vectored handler skips benign first-chance exceptions (C++ EH throws, debugger notifications).
 bool is_fatal_code(DWORD c)
 {
     switch (c)
@@ -155,9 +148,7 @@ void report_crash(EXCEPTION_POINTERS *ep, const char *source)
     if (code == EXCEPTION_ACCESS_VIOLATION && er && er->NumberParameters >= 2)
     {
         const ULONG_PTR at = er->ExceptionInformation[1];
-        // -1 means "no address available": a general-protection fault, not a page fault.
-        // ExceptionInformation[0] still reads 0 there, so pairing the two reports a phantom
-        // read of 0xFFFFFFFFFFFFFFFF.
+        // -1 means no address (a general-protection fault). ExceptionInformation[0] still reads 0 then, so pairing them reports a phantom read of -1.
         if (at == static_cast<ULONG_PTR>(-1))
         {
             pal::logf(pal::LogLevel::Error, "crash: general-protection fault, no faulting address");
@@ -178,18 +169,14 @@ void report_crash(EXCEPTION_POINTERS *ep, const char *source)
     InterlockedExchange(&g_in_handler, 0);
 }
 
-// Unhandled-exception filter: fires only for truly-unhandled exceptions, but the
-// game may replace it (SetUnhandledExceptionFilter is last-writer-wins).
+// Fires only for truly unhandled exceptions, and the game may replace it (SetUnhandledExceptionFilter is last-writer-wins).
 LONG WINAPI crash_filter(EXCEPTION_POINTERS *ep)
 {
     report_crash(ep, "unhandled exception (process is terminating)");
     return EXCEPTION_CONTINUE_SEARCH; // let the default handler terminate normally
 }
 
-// Vectored handler: cannot be overridden by SetUnhandledExceptionFilter and runs
-// before the SEH chain, so it catches crashes even if the game replaced our
-// filter. Gated to fatal codes to skip C++ EH throws and debugger notifications,
-// but even a fatal code is first-chance here, so a report is not proof the process
+// Vectored handler: runs before the SEH chain and survives a replaced filter. It sees fatal codes first-chance, so a report does not prove the process
 // died: injected overlays (RTSS, Steam) raise and handle their own access violations.
 LONG CALLBACK veh_handler(EXCEPTION_POINTERS *ep)
 {

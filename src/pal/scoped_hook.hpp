@@ -9,20 +9,17 @@
 namespace pal
 {
 
-// RAII detour on a game function. A failed install leaves the hook inert (installed() == false);
-// destruction or reset() removes it. Replacement and trampoline stay file-scope in the owning module
-// (Frida replacements have no user context); this type owns only the installed target.
+// RAII detour on a game function. A failed install leaves it inert (installed() == false); destruction or reset() removes it. Replacement and trampoline
+// stay file-scope in the owner, since Frida replacements get no user context.
 //
-// The App is leaked by design, so a namespace-scope ScopedHook has to be declared [[clang::no_destroy]]
-// and removed through reset(). Its exit-time destructor would otherwise revert detours that game
+// App is leaked, so a namespace-scope ScopedHook needs [[clang::no_destroy]] and removal through reset(): its exit-time dtor would revert detours game
 // threads may still be running.
 class ScopedHook
 {
   public:
     ScopedHook() = default;
 
-    // Installs at an already-resolved address. Apart from the backend's own failure line nothing is
-    // logged, so the caller reports the outcome. A zero address leaves the hook inert.
+    // Installs at a resolved address and logs nothing beyond the backend's failure line. A zero address leaves the hook inert.
     template <class Fn> ScopedHook(std::uintptr_t target, Fn *replacement, Fn **trampoline)
     {
         void *addr = reinterpret_cast<void *>(target);

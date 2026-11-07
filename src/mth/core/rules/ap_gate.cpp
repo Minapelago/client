@@ -45,8 +45,7 @@ const char *verdict_name(GateVerdict v)
 
 std::string refusal_reason(const GateInputs &in)
 {
-    // Ordered most-fundamental first: the first failure is the one worth reporting, since a
-    // missing mod API also explains every downstream check that depends on it.
+    // Most fundamental first: a missing mod API also explains every check that depends on it, so the first failure is the one to report.
     if (!in.mod_api_present)
         return "the game's mod API is unavailable (is this the experimental-modding build?)";
     if (!in.symbols_resolved)

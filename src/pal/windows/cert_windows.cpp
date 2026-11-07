@@ -48,7 +48,7 @@ std::optional<fs::path> ca_bundle_path()
             return fs::path(o);
     }
 
-    // Materialized once (function-local static); MTHAP_AP_CERT override remains per-call.
+    // Built once; the MTHAP_AP_CERT override is still checked per call.
     static const std::optional<fs::path> cached = []() -> std::optional<fs::path>
     {
         HCERTSTORE store = CertOpenSystemStoreW(0, L"ROOT");

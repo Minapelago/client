@@ -5,7 +5,7 @@
 namespace mth
 {
 
-// Save-takeover progress. Every step is a wait on the game, not on our own work.
+// Save-takeover progress. Every step waits on the game.
 enum class TakeoverStep
 {
     Idle,
@@ -22,30 +22,27 @@ struct TakeoverInputs
     int frames_in_step{0};
 };
 
-// Any wait longer than this fails the takeover instead of hanging the player on a dead menu.
+// Any wait longer than this fails the takeover, so the player is never left on a dead menu.
 inline constexpr int kMaxFramesPerStep = 600;
 
-// Ceiling on how long game input stays swallowed. A takeover that wedges somewhere the step timeouts
-// do not cover must still hand the player back their controller.
+// Ceiling on how long game input stays swallowed, so a wedge the step timeouts miss still returns the controller.
 inline constexpr int kMaxInputBlockFrames = 1800;
 
-// Settled outcomes, as opposed to in-flight work.
+// Settled outcomes.
 [[nodiscard]] bool takeover_settled(TakeoverStep step) noexcept;
 
 TakeoverStep next_takeover_step(TakeoverStep current, const TakeoverInputs &in);
 
-// Decides whether the game sees input, and owns the frame budget behind that decision. The budget has
-// a latch in it: once the ceiling trips the block stays off until the next claim, rather than
-// reopening on the following frame.
+// Decides whether the game sees input, and owns the frame budget behind that decision. Once the ceiling trips, the block stays off until the next
+// claim.
 class InputBlockState
 {
   public:
     // Fresh budget for a newly claimed launch.
     void rearm() noexcept;
 
-    // Whether the game should see no input this frame. The profile-select menu is live for a fraction of
-    // a second before the takeover drives it, which is long enough for a held confirm to open a vanilla
-    // file. on_profile_select: the file-select menu is the live gamestate.
+    // Whether the game sees no input this frame. The profile-select menu is live briefly before the takeover drives it, long enough for a held
+    // confirm to open a vanilla file. on_profile_select: the file-select menu is the live gamestate.
     [[nodiscard]] bool advance(TakeoverStep step, bool on_profile_select) noexcept;
 
     [[nodiscard]] bool blocked() const noexcept
@@ -60,8 +57,7 @@ class InputBlockState
 
 const char *takeover_step_name(TakeoverStep step);
 
-// What stands between a cleared title slot and the player's run. The decision lives here rather than
-// inline in the feature, where the test lane cannot compile it. Blob emptiness is deliberately not an
+// What stands between a cleared title slot and the player's run, kept out of the feature so tests can compile it. Blob emptiness is not an
 // input: reading the slot costs a full serialize, so the caller does that only once these pass.
 struct FlushInputs
 {

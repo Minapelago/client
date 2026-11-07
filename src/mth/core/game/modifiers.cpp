@@ -9,7 +9,6 @@ CheatClass class_of(int idx)
 {
     if (idx < 0 || idx >= kCheatCount)
         return CheatClass::Invalid;
-    // Checked in ascending index order so the non-overlap of the ranges is obvious.
     if (idx >= 122 && idx <= 125)
         return CheatClass::Randomizer;
     if (idx == 19 || idx == 54 || (idx >= 128 && idx <= 172))
@@ -28,7 +27,7 @@ bool is_safe(int idx)
 bool is_ap_denied(int idx)
 {
     if (idx < 0 || idx >= kCheatCount)
-        return false; // not a modifier index at all, so there is nothing for the lockdown to refuse
+        return false; // not a modifier index; nothing to refuse
 
     // Grouped by why the index is denied. Trailing names are the ones the options menu shows,
     // which differ from the kCheat_ enum for a few entries.
@@ -77,8 +76,8 @@ bool is_ap_denied(int idx)
         return true; // the game's own item/warp/sidearm/level shuffle; AP owns placement
     if (idx >= 128 && idx <= 172)
         return true; // every Start*: one-shot save writes that double-grant when re-applied
-    // Combos recurse into sub-cheats through ApplyFileCheats and their member lists were never
-    // recovered from the binary. 238 and 239 provably pull in the warp shuffle, and 253 sets bit 126.
+    // Combos recurse into sub-cheats through ApplyFileCheats; their member lists are unknown. 238 and 239 pull in the warp shuffle, and 253 sets
+    // bit 126.
     return idx >= 214 && idx <= 253;
 }
 
@@ -90,22 +89,19 @@ constexpr TrapDef make_trap(int modifier_index, const char *label, float seconds
     return TrapDef{modifier_index, label, seconds};
 }
 
-// Builds one row from the modifier's own kCheat_* name, so the label has exactly one source.
-// MTH_TRAP(Mirror, 30.0f) is make_trap(kCheat_Mirror, "Mirror", 30.0f):
-// the ## paste forms the token kCheat_Mirror, which is then itself macro-expanded to 204,
-// and the # stringizes the bare argument. The duration stays a per-row argument so one trap
-// can be retuned without touching the others.
+// MTH_TRAP(Mirror, 30.0f) is make_trap(kCheat_Mirror, "Mirror", 30.0f): ## pastes the token kCheat_Mirror (macro-expanded to 204) and #
+// stringizes the bare argument, so the label has one source.
 #define MTH_TRAP(name, seconds) make_trap(kCheat_##name, #name, seconds)
 
 constexpr TrapDef kTrapTable[] = {
-    MTH_TRAP(FlipControls, kDefaultTrapSeconds),      // input axes reversed
-    MTH_TRAP(FloorIsLava, kDefaultTrapSeconds),       // floor is lava
-    MTH_TRAP(Giant, kDefaultTrapSeconds),             // player render scale
-    MTH_TRAP(Giant2, kDefaultTrapSeconds),            // player render scale
-    MTH_TRAP(GiantEnemies, kDefaultTrapSeconds),      // enemy render scale
-    MTH_TRAP(GiantEnemies2, kDefaultTrapSeconds),     // enemy render scale
-    MTH_TRAP(StartInvisible, kDefaultTrapSeconds),    // Mina invisible
-    MTH_TRAP(NoHUD, kDefaultTrapSeconds),             // HUD hidden
+    MTH_TRAP(FlipControls, kDefaultTrapSeconds), // input axes reversed
+    MTH_TRAP(FloorIsLava, kDefaultTrapSeconds),
+    MTH_TRAP(Giant, kDefaultTrapSeconds),          // player render scale
+    MTH_TRAP(Giant2, kDefaultTrapSeconds),         // player render scale
+    MTH_TRAP(GiantEnemies, kDefaultTrapSeconds),   // enemy render scale
+    MTH_TRAP(GiantEnemies2, kDefaultTrapSeconds),  // enemy render scale
+    MTH_TRAP(StartInvisible, kDefaultTrapSeconds), // Mina invisible
+    MTH_TRAP(NoHUD, kDefaultTrapSeconds),
     MTH_TRAP(RotateCamera, kDefaultTrapSeconds / 5),  // continuous camera roll
     MTH_TRAP(RotateCameraInput, kDefaultTrapSeconds), // camera tilts with horizontal input
     MTH_TRAP(Mirror, kDefaultTrapSeconds),            // scene flipped horizontally, controls flip with it

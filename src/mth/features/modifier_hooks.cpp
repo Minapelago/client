@@ -15,9 +15,8 @@
 #include "pal/pal_module.hpp"
 #include "pal/scoped_hook.hpp"
 
-// The game-side modifier ("cheat") control. Windows has a single save slot behind g_saveManager where
-// Linux has an apply-path slot and a live slot; pal::layout gives Windows the same offset for both, so
-// the paths below that handle two slots collapse to one there.
+// Game-side modifier ("cheat") control. Linux has an apply-path slot and a live slot behind g_saveManager where Windows has one; pal::layout gives Windows the
+// same offset for both, so the two-slot paths collapse there.
 namespace
 {
 
@@ -82,22 +81,21 @@ void repl_activate_slot(void *self, bool flag)
             g_seed_fn(slot_index, words);
             for (int i = 0; i < 8; ++i)
                 mask[i] = words[i];
-            // Diagnostic (#46): warp_home=121 -> word3 bit25, landing(ossex)=128 -> word4 bit0. Confirms
-            // the force-on baseline landed in the mask (if inert in-game, it was seeded but not re-applied).
+            // Diagnostic (#46): warp_home=121 is word3 bit25, landing(ossex)=128 is word4 bit0. Confirms the force-on baseline reached the mask; inert in game
+            // means seeded but not re-applied.
             pal::logf(pal::LogLevel::Debug, "modifiers: seeded cheat mask on slot=%p (slot_index=%d) warp_home[121]=%d landing[128]=%d", slot, slot_index,
                       (mask[3] >> 25) & 1, mask[4] & 1);
         }
     }
     if (g_orig_activate_slot)
         g_orig_activate_slot(self, flag);
-    // Post-original: the slot's contents are the run's by now. flag=false is a title/profile-menu
-    // re-activation and must not fire, or the notify lands before the save data does.
+    // Post-original, so the slot holds the run's data. flag=false (title/profile-menu re-activation) must not notify, or it lands before the save data.
     if (flag && g_save_loaded_fn)
         g_save_loaded_fn();
 }
 
-// ToggleCheat (menu toggle) writes the runtime mirror and persists; blocking it keeps a gameplay modifier
-// off. The checkbox flips transiently but re-syncs on cursor-over. idx = 2nd arg (edx).
+// ToggleCheat (menu toggle) writes the runtime mirror and persists; blocking it keeps a gameplay modifier off. The checkbox flips briefly and re-syncs on
+// cursor-over. idx = 2nd arg (edx).
 void repl_toggle(void *self, int idx, bool enable, void *slot, bool b, int i)
 {
     const bool blocked = g_block_fn && g_block_fn(idx);
@@ -186,10 +184,9 @@ bool apply_live_modifier(int idx, bool on)
         pal::logf(pal::LogLevel::Warn, "modifiers: live set idx=%d failed (no valid save slot active)", idx);
         return false;
     }
-    // The native entry covers the live slot only (it resolves the live slot itself, and stamps the extra
-    // save-file byte the four special indices need) and does NOT null-check it, so it is only safe once
-    // that slot is known good. The apply-path slot has no native path either way and keeps the raw write;
-    // a pre-appended-API build falls back to the raw write for both.
+    // The native entry covers only the live slot (it resolves it itself and stamps the extra save-file byte the four special indices need) and does not
+    // null-check it, so it runs only on a known-good slot. The apply-path slot has no native path and keeps the raw write, as does a build without the appended
+    // API.
     const bool native = pal::pointer_looks_valid(lslot) && mod::cheat_manager_set_cheat_applied(idx, on);
     if (!native)
         set_mask_bit(lslot, idx, on);
@@ -251,7 +248,7 @@ void ModifierHooks::seed(int slot_index, std::uint32_t words[8])
     const bool scoped = ap_scoped_.load();
     if (scoped)
     {
-        // AP session: enforce only the AP game's slot (captured on the first load), never a vanilla one.
+        // AP session: enforce only the AP game's slot, captured on the first load.
         if (ap_slot_ >= 0 && slot_index != ap_slot_)
         {
             pal::logf(pal::LogLevel::Info, "modifiers: load slot_index=%d != AP slot %d; not enforcing", slot_index, ap_slot_);
@@ -265,9 +262,7 @@ void ModifierHooks::seed(int slot_index, std::uint32_t words[8])
     }
     if (armed_)
     {
-        // Runs on every real load, not only on a new file, so a denied modifier that was set
-        // before the save joined the AP session gets cleared again here. Anything the player is
-        // allowed to pick survives the reload.
+        // Runs on every real load, so a denied modifier set before the save joined the AP session is cleared again; allowed picks survive.
         for (int idx = 0; idx < kCheatCount; ++idx)
             if (is_ap_denied(idx))
                 words[idx >> 5] &= ~(1u << (static_cast<unsigned>(idx) & 31u));

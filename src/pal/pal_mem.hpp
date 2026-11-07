@@ -6,18 +6,15 @@
 namespace pal
 {
 
-// RW-protect [addr, addr+len); not restored. Linux page-aligns internally. Drops execute permission, so
-// this is for DATA only - never use it on .text (the game will fault executing the de-exec'd page).
+// Makes [addr, addr+len) read-write and never restores it; Linux page-aligns. It drops execute permission, so use it on data only and patch_code on .text.
 bool make_writable(void *addr, std::size_t len);
 
 // Overwrite len bytes of executable code at addr: temporarily add write permission, copy, restore the
 // original (executable) protection, and flush the instruction cache. Use for .text patches.
 bool patch_code(void *addr, const void *bytes, std::size_t len);
 
-// A pointer that could plausibly be a live game object: a canonical low-half user address.
-// NOT a bounds check against the game module (heap objects live outside it) - it just rejects
-// null-ish, kernel, and uninitialized-garbage values before we dereference one for a write.
-// Identical range on both x64 platforms, so header-only (no per-platform seam impl needed).
+// A canonical low-half user address, as a live game object would have. Rejects null-ish, kernel and garbage values before a write; heap objects live
+// outside the module, so this is no bounds check against it.
 [[nodiscard]] inline bool pointer_looks_valid(const void *p) noexcept
 {
     const auto v = reinterpret_cast<std::uintptr_t>(p);

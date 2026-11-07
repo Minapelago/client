@@ -11,10 +11,8 @@ namespace mth
 class ApState;
 
 // twin: mth/core/rules/progression.hpp (pure cap policy).
-// Owns the level-cap PAL hook and the StatCapState policy. Installs unconditionally when the PAL
-// reports the feature available; the provider returns vanilla (no restriction) until enforcement is
-// live (AP session or offline test mode), so vanilla play is never affected. Game-thread only:
-// recompute()/provide() both run on the game thread; only enforce_live_ crosses via atomic.
+// Owns the level-cap PAL hook and the StatCapState policy. Installs whenever the PAL has the feature; the provider returns the vanilla cap until enforcement is
+// live (AP session or offline test mode). Game thread only, except the atomic enforce_live_.
 class LevelCapHooks
 {
   public:
@@ -25,7 +23,7 @@ class LevelCapHooks
 
     void recompute(const ApState &state);                  // refresh caps from received items
     void set_counts(int attack, int defense, int sidearm); // offline test override
-    void set_enforce_live(bool on);                        // gate: vanilla play is never restricted
+    void set_enforce_live(bool on);                        // off leaves vanilla caps
 
     // Bone-up menu annotation: the level to display as the cap for `stat`, or <0 to leave the
     // vanilla text alone (not enforcing, or not one of the real stats). Game thread.

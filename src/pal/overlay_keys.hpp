@@ -6,9 +6,8 @@
 namespace pal
 {
 
-// MTHAP_CONSOLE_KEY / MTHAP_LOGIN_KEY string to a platform key code. F1..F12 are contiguous in both SDL
-// keycodes and Win32 virtual-key codes, so the caller passes F1 and the backquote key. Anything
-// unrecognised, including unset, gives F1.
+// MTHAP_CONSOLE_KEY / MTHAP_LOGIN_KEY string to a platform key code. F1..F12 are contiguous in SDL keycodes and Win32 virtual keys, so the caller passes
+// F1 and backquote. Unset or unrecognised gives F1.
 template <class Key> Key parse_console_key(const char *name, Key f1, Key backquote)
 {
     if (name == nullptr)
@@ -26,8 +25,7 @@ template <class Key> Key parse_console_key(const char *name, Key f1, Key backquo
     return f1;
 }
 
-// Login key falls back to F2 when it would collide with the console key (the default when
-// MTHAP_LOGIN_KEY is unset).
+// Falls back to F2 when the login key would collide with the console key (the default with MTHAP_LOGIN_KEY unset).
 template <class Key> Key parse_login_key(const char *name, Key toggle, Key f1, Key backquote)
 {
     const Key k = parse_console_key(name, f1, backquote);

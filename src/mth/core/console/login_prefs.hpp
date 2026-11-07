@@ -7,7 +7,7 @@ namespace mth
 {
 
 // Last-used AP connection target, persisted so the login window can auto-fill it.
-// Password is deliberately never stored.
+// The password is never stored.
 class LoginPrefs
 {
   public:

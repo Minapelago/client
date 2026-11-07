@@ -7,25 +7,20 @@
 namespace mth
 {
 
-// Backstop for #162, paired with TicketMachineGate: refuse the station donation machine's Train Pass
-// dispense while the train is randomized. It comes through Items::OnPickup at a location the apworld
-// does not carry, so the is_ap_location suppression never sees it. Inbound AP grants arrive through
-// OnPickupDone instead, so the AP Train Pass itself still lands. Owned by the hook the granter installs,
-// hence a free function rather than a member.
+// Backstop for #162 alongside TicketMachineGate: refuses the station donation machine's Train Pass dispense while the train is randomized. That dispense goes
+// through Items::OnPickup at a location the apworld lacks, so is_ap_location never sees it; inbound AP grants use OnPickupDone, so the AP Train Pass still
+// lands.
 void set_train_pass_machine_blocked(bool on);
 
 // twin: mth/core/ap/item_granter_interface.hpp (the IItemGranter interface).
-// IItemGranter via Items::OnPickupDone replay. Owns the OnPickupDone hook (which also
-// refreshes the tracker's Player* on every vanilla pickup). grant() enqueues (false
-// until a Player* is captured); drain() replays from the engine's spawn window
-// (pre-World::Update), requeueing until the tracker has a cached position.
+// IItemGranter via Items::OnPickupDone replay. Owns the OnPickupDone hook, which also refreshes the tracker's Player* on every vanilla pickup. grant() enqueues
+// (false until a Player* is captured); drain() replays from the pre-World::Update spawn window, requeueing until the tracker has a cached position.
 class ItemGranter final : public IItemGranter
 {
   public:
-    // is_ap_location: RandoBridge predicate used to suppress vanilla grants for randomized locations.
-    // report_collected: RandoBridge sink invoked when a suppressed grant IS the player collecting an AP
-    // location through Items::OnPickupDone directly (no Pickup entity / ShopMenu) - e.g. the train-ticket
-    // machine; sends the outbound check that the pickup/shop hooks would otherwise miss (idempotent).
+    // is_ap_location: RandoBridge predicate that suppresses vanilla grants at randomized locations.
+    // report_collected: sends the check (idempotent) when a suppressed grant is the player collecting an AP location straight through OnPickupDone with no
+    // Pickup entity or ShopMenu, e.g. the train-ticket machine.
     ItemGranter(std::function<bool(int)> is_ap_location, std::function<void(int)> report_collected);
     ~ItemGranter() override;
     ItemGranter(const ItemGranter &) = delete;

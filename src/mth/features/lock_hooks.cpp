@@ -24,11 +24,9 @@ bool g_seed_logged = false;
 std::set<int> g_logged_lock_slots;  // identity log dedup (game-thread only)
 std::set<int> g_logged_chain_slots; // identity log dedup for KeyBlockChain (game-thread only)
 
-// Resolve a live KeyBlock's effective s_rItemCollection slot (the warp-resolved id the unlock bit
-// uses). KeyBlock+0x2d0 is only cached for "PairLock" locks; otherwise it is -1 and the game
-// name-scans. Mirrors the SetSaveUnlocked fallback. Returns -1 if genuinely unmatched.
-// out_key (optional): receives the derived name-hash compare key (0 on the cached fast path),
-// for diagnosing an unresolved (-1) lock in one in-game pass (key==0 => entity chain broke).
+// A live KeyBlock's effective s_rItemCollection slot (the warp-resolved id the unlock bit uses). KeyBlock+0x2d0 is cached only for "PairLock" locks; otherwise
+// it is -1 and the game name-scans, as SetSaveUnlocked's fallback does. -1 if unmatched. out_key (optional) receives the name-hash key, 0 on the cached path;
+// key 0 on an unresolved lock means the entity chain broke.
 [[nodiscard]] int resolve_effective_slot(void *self, std::uint64_t *out_key = nullptr)
 {
     if (out_key != nullptr)
@@ -48,10 +46,9 @@ std::set<int> g_logged_chain_slots; // identity log dedup for KeyBlockChain (gam
     return mth::tables::collection_slot_for_name_key(key);
 }
 
-// A lock already spawned solid when its slot was removed won't self-open (the unlock bit is only
-// read at spawn). Remove the block live; seed_removed_locks has set the persistent bit so the chain
-// "all-opened" door still fires and the lock re-spawns open on room re-entry. QueueDestroy is idempotent,
-// and it only queues, so it cannot mutate the entity list being walked.
+// A lock spawned solid before its slot was removed won't self-open (the unlock bit is read only at spawn), so the block is removed live. seed_removed_locks has
+// set the persistent bit, so the chain's all-opened door still fires and re-entry spawns it open. QueueDestroy is idempotent and only queues, so the walked
+// list is not mutated.
 void open_key_block(void *self)
 {
     if (g_locks == nullptr)
@@ -72,9 +69,8 @@ void open_key_block(void *self)
         mod::queue_destroy_entity(world, ent, false);
 }
 
-// Resolve a live KeyBlockChain's effective slot. A chain has no cached +0x2d0; its identity is the
-// SpawnPoint it gates (KeyBlockChain+0x1c0), whose name-key drives the same s_rItemCollection scan +
-// warp remap the chain ctor uses to self-gate. Returns -1 if no SpawnPoint / unmatched.
+// A live KeyBlockChain's effective slot. A chain has no cached +0x2d0; its identity is the SpawnPoint it gates (KeyBlockChain+0x1c0), whose name key goes
+// through the same scan and warp remap the chain ctor uses. -1 if no SpawnPoint or unmatched.
 [[nodiscard]] int resolve_chain_slot(void *self)
 {
     if (!mth::tables::collection_resolved() || self == nullptr)
@@ -101,7 +97,7 @@ void open_chain(void *base)
     if (slot < 0 || !g_locks->is_removed(slot))
         return;
 
-    // Already opening/killed? leave the native transition alone (idempotent).
+    // Already opening or killed: leave the native transition alone.
     if (pal::at<int>(base, mth::layout::kChainStateCurOff) == mth::layout::kChainOpenState)
         return;
 
@@ -109,13 +105,11 @@ void open_chain(void *base)
     pal::at<unsigned char>(base, mth::layout::kChainStatePendingOff) = 1;
 }
 
-// No room holds anywhere near this many of one type, so a larger count means the list is not what we
-// think it is. Walk nothing rather than read that many pointers.
+// No room holds anywhere near this many of one type, so a larger count means the list is not what we think; walk nothing.
 constexpr std::size_t kEntityListCap = 4096;
 bool g_list_cap_logged = false;
 
-// Enumerate one of the world's per-type entity lists. The entries are the components themselves, i.e. the
-// same pointer the old ::Update detour received as `this`.
+// Enumerates one of the world's per-type entity lists. The entries are the components themselves (the `this` each class's ::Update receives).
 void for_each_entity(void *world, const char *list, void (*fn)(void *))
 {
     const std::size_t count = mod::world_entity_list(world, list, nullptr, 0);
@@ -144,18 +138,15 @@ void for_each_entity(void *world, const char *list, void (*fn)(void *))
 
 std::set<int> g_logged_chest_slots; // identity log dedup (game-thread only)
 
-// One MM_WeakPtr* per live Chest, never a raw Chest*: a chest can be freed between two sweeps and the
-// weak pointer is the only thing that reports it. Game-thread only.
+// One MM_WeakPtr* per live Chest, never a raw Chest*: a chest can be freed between sweeps and only the weak pointer reports it. Game thread only.
 std::vector<void *> g_chests;
 
-// A room holds a handful of chests, so nearing this means the registry is not being drained. Stop
-// growing rather than leak a handle per construct.
+// A room holds a handful of chests, so nearing this means the registry is not being drained; stop growing.
 constexpr std::size_t kMaxTrackedChests = 512;
 bool g_overflow_logged = false;
 
-// Resolve a live locked Chest's effective s_rItemCollection slot. A chest has no cached slot; its
-// identity is the SpawnPoint name-key reached through its entity ref, scanned against s_rItemCollection +
-// warp-remapped exactly as the chest ctor's own gate does. -1 if unmatched.
+// A live locked Chest's effective slot: the SpawnPoint name key reached through its entity ref, scanned and warp-remapped like the chest ctor's own check. -1
+// if unmatched.
 [[nodiscard]] int resolve_chest_slot(void *self)
 {
     if (!mth::tables::collection_resolved() || self == nullptr)
@@ -167,9 +158,7 @@ bool g_overflow_logged = false;
     return mth::tables::collection_slot_for_name_key(key);
 }
 
-// Clear the locked flag for a registered slot so the chest opens with no kear; the ctor only reads the
-// unlock bit at spawn, so an already-spawned chest needs this. seed_removed_locks handles re-entry; the
-// clear is idempotent.
+// Clears a registered chest's locked flag so it opens without a kear, since the ctor reads the unlock bit only at spawn. seed_removed_locks handles re-entry.
 void unlock_chest(void *base)
 {
     if (g_locks == nullptr)
@@ -190,8 +179,7 @@ void unlock_chest(void *base)
     pal::logf(pal::LogLevel::Info, "chest: cleared kear-lock on slot=%d (registered for removal)", slot);
 }
 
-// Native ChestConstruct callback: the ctx hands back the real Chest*, so there is no per-platform
-// subobject fixup and no per-frame detour.
+// Native ChestConstruct callback. The ctx hands back the real Chest*, so no per-platform subobject fixup is needed.
 void on_chest_construct(void *chest)
 {
     void *weak = mod::weak_ptr_create(chest);
@@ -252,10 +240,8 @@ LockRegistry &LockHooks::locks()
     return locks_;
 }
 
-// Open every already-spawned lock whose slot is registered for removal. Walks the world's own per-type
-// entity lists instead of detouring each class's update, so it covers both platforms with no signature.
-// Then walks the live chests, clearing the lock on the registered ones and dropping whatever the game
-// freed; that half runs with no live player too, so freed handles do not pile up.
+// Opens every spawned lock whose slot is registered, walking the world's per-type entity lists (both platforms, no signature). Then walks the live chests,
+// unlocking registered ones and dropping freed handles; that half runs without a live player too so freed handles do not pile up.
 void LockHooks::sweep()
 {
     // No live player means no room to open anything in.
@@ -304,8 +290,8 @@ void LockHooks::seed_kear_blocks(const ApState &state)
     }
 }
 
-// Set the native unlock bit for every removed lock so the KeyBlock ctor gate spawns it open.
-// Idempotent; runs each tick in the pre-World::Update window. Replicates KeyBlock::SetSaveUnlocked's math.
+// Sets the native unlock bit for every removed lock so the KeyBlock ctor spawns it open, replicating KeyBlock::SetSaveUnlocked's math. Idempotent; runs each
+// tick in the pre-World::Update window.
 void LockHooks::seed_removed_locks()
 {
     if (!tables::collection_resolved())
@@ -323,8 +309,7 @@ void LockHooks::seed_removed_locks()
     {
         if (slot < 0 || slot >= layout::kLocationCount)
             continue;
-        // 0xff is the table's "no unlock bit" sentinel and shipping rows do use it; shifting by it
-        // is UB and on x86 wraps to bit 63, silently unlocking an unrelated lock in the save.
+        // 0xff is the table's "no unlock bit" sentinel, used by shipping rows. Shifting by it is UB and wraps to bit 63 on x86, unlocking an unrelated lock.
         const std::uint8_t bit = tables::collection_bit_index(slot);
         if (!tables::collection_bit_usable(bit))
         {

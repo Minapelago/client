@@ -29,5 +29,5 @@ TEST_CASE("blob validation requires the ycData header", "[savestore]")
     REQUIRE(mth::looks_like_save_blob("[YCD Version: 1]\nSaveSlot\n{}"));
     REQUIRE_FALSE(mth::looks_like_save_blob(""));
     REQUIRE_FALSE(mth::looks_like_save_blob("garbage"));
-    REQUIRE_FALSE(mth::looks_like_save_blob("[YCD Version: 1]")); // header but no SaveSlot body
+    REQUIRE_FALSE(mth::looks_like_save_blob("[YCD Version: 1]"));
 }

@@ -5,10 +5,8 @@
 namespace mth
 {
 
-// Static half of the gate's inputs; App fills in liveness as it arrives. Each probe logs its own
-// result, so a refusal names the check that failed. Call after pal::init_hook_engine() and before
-// any mod-side write to game memory: tables::repurpose_dummy_item() would otherwise leave this
-// validating our own patch.
+// Static half of the gate's inputs; App adds liveness. Each probe logs its result. Call after pal::init_hook_engine() and before any mod write to game
+// memory, or this validates the patch tables::repurpose_dummy_item() made.
 [[nodiscard]] GateInputs run_static_gate_probes(unsigned int game_revision);
 
 } // namespace mth

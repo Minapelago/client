@@ -19,10 +19,8 @@
 namespace
 {
 
-// Console args are arbitrary user text parsed on the render thread, inside the present
-// hook. A throwing conversion would unwind into the game's render loop through the
-// trampoline, so these report failure by value and the caller prints usage instead.
-// The whole argument must be consumed: "5x" is a typo, not 5.
+// Console args are user text parsed inside the present hook, where a throw would unwind into the game's render loop, so these report failure by value.
+// The whole argument must parse ("5x" fails).
 template <typename T> bool parse_num(const std::string &s, T &out)
 {
     const char *end = s.data() + s.size();
@@ -56,7 +54,7 @@ namespace mth
 
 DevConsole::DevConsole(App &app, BannerQueue &banner_queue) : app_(app), banner_(banner_queue)
 {
-    // Observer runs on arbitrary threads; must never call pal::logf.
+    // The observer runs on arbitrary threads and must never call pal::logf.
     pal::set_log_observer([this](pal::LogLevel, std::string_view msg) { log_.push(msg); });
     println("mth dev console. type 'help'.");
 }
@@ -83,7 +81,7 @@ void DevConsole::draw(bool console_open)
 
 void DevConsole::draw_version_hud()
 {
-    // Foreground draw list: never steals input, always visible.
+    // Foreground draw list: never takes input, always visible.
     char label[64];
     std::snprintf(label, sizeof(label), "mth-apclient v%.*s", static_cast<int>(version::string.size()), version::string.data());
 
@@ -94,9 +92,7 @@ void DevConsole::draw_version_hud()
     dl->AddText(pos, IM_COL32(255, 255, 255, 215), label);
 }
 
-// The gate's annunciator. Drawn on the foreground draw list for the same reason the overlay is
-// the right channel at all: it depends on the graphics API, not on game symbols, so it still
-// renders on exactly the builds where the game-side hooks are what failed.
+// The gate's annunciator. The overlay depends on the graphics API and no game symbols, so it still renders on builds where the game-side hooks failed.
 void DevConsole::draw_gate_banner()
 {
     const GateStatus g = app_.gate_status();

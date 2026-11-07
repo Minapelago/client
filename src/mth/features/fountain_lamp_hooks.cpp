@@ -14,9 +14,8 @@
 namespace
 {
 
-// HubFountain::Bulb::Update(float dt, bool lit): forces lit=true for AP-granted generator lamps.
-// Prototype order (self, dt, lit) matches the mangled Update(float,bool) on both ABIs; never reorder.
-// Reads the force-lit masks (bit i => force lamp index i lit) per bulb per frame.
+// HubFountain::Bulb::Update(float dt, bool lit): forces lit for AP-granted generator lamps (bit i of either mask lights lamp i), read per bulb per frame. The
+// prototype order (self, dt, lit) matches the mangled Update(float,bool) on both ABIs; keep it.
 std::atomic<std::uint32_t> g_slot_mask{0};    // slot_data lamps, from the game-thread tick
 std::atomic<std::uint32_t> g_console_mask{0}; // sticky console override, from the render thread
 [[clang::no_destroy]] pal::ScopedHook g_fountain_hook;

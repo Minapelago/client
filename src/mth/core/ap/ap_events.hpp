@@ -61,8 +61,8 @@ struct ApItemReceived
 {
     ReceivedItem item;
 };
-// Locations the SERVER reports checked (Connected full set + RoomUpdate deltas): Collect, same-slot
-// coop, or connect-time self-heal. Reconciled locally without re-sending.
+// Locations the server reports checked (Connected full set + RoomUpdate deltas): Collect, same-slot coop, or connect-time self-heal.
+// Reconciled locally without re-sending.
 struct ApLocationsChecked
 {
     std::vector<std::int64_t> ap_location_ids;
@@ -86,22 +86,19 @@ struct ApDeathReceived
     std::string source; // who died: a slot name, or a character name from within the sender's game
     std::string cause;  // full sentence already naming the dead player; empty when the sender supplied none
 };
-// Filtered + pre-rendered on the net thread (apclientpp resolution is net-thread-only); the
-// coordinator forwards it to the banner.
+// Filtered and pre-rendered on the net thread (apclientpp resolves names only there); the coordinator forwards it to the banner.
 struct ApPrintBroadcast
 {
     std::vector<BannerSegment> segments;
 };
-// Scouted shop locations, resolved to display strings on the net thread (apclientpp resolution is
-// net-thread-only), carried to the game thread to fill App's scout map.
+// Scouted shop locations, resolved to display strings on the net thread; App fills its scout map from them on the game thread.
 struct ApScoutInfo
 {
     std::vector<ScoutInfo> locations;
 };
 
-// The server authenticated a different (seed, player_slot) than this process was on. Emitted immediately
-// before that connection's ApConnected so the old session is dropped in stream order, never after the new
-// one's data lands. A reconnect to the same seed+slot does not emit this: that state is still valid.
+// The server authenticated a different (seed, player_slot) than this process was on. Emitted just before that connection's ApConnected so the old
+// session drops first. Not emitted on a same seed+slot reconnect.
 struct ApSessionEnded
 {
 };

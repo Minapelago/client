@@ -17,10 +17,8 @@
 namespace
 {
 
-// SwitchOre fields, carved off its constructor in the Linux build. SwitchOre carries a second vptr at
-// +0x178 for its CombatCoreImplementor sub-object, which is exactly the shape where MSVC and Itanium can
-// disagree about layout, so these are NOT known to hold on Windows. Run the `switches` probe there and
-// check the values look sane before trusting the feature on that platform.
+// SwitchOre fields, carved from its Linux constructor. Its second vptr at +0x178 (CombatCoreImplementor sub-object) is where MSVC and Itanium layouts can
+// disagree, so these are unverified on Windows; check the `switches` probe output there first.
 constexpr std::ptrdiff_t kStateOff = 0x194;      // int; 0 = on, 2 = off
 constexpr std::ptrdiff_t kWorldOff = 0x168;      // ptr; the SwitchManager hangs off it
 constexpr std::ptrdiff_t kTimerOff = 0x200;      // float; < 0 = untimed, > 0 = auto-off after this long
@@ -28,16 +26,13 @@ constexpr std::ptrdiff_t kSwitchIdOff = 0x204;   // int; indexes the SwitchManag
 constexpr std::ptrdiff_t kColorOff = 0x208;      // uint 0..4
 constexpr std::ptrdiff_t kCanTurnOffOff = 0x210; // bool; cleared by the CantTurnOff level property
 
-// SwitchManager, reached as *(switch + kWorldOff) + kManagerOff. Its state array is the live authority for
-// whether a switch is on: the switch polls its own entry each tick and transitions to match, and so does
-// everything else keyed to the same SwitchID, the colored platforms included. Writing the entry is
-// therefore the whole feature, and the switch's own state entry does the vanilla persist on the way.
+// SwitchManager, reached as *(switch + kWorldOff) + kManagerOff. Its state array is the live authority: the switch and everything keyed to the same SwitchID
+// (the colored platforms too) poll their entry and follow it. Writing the entry is the whole feature, and the switch's own state does the vanilla persist.
 constexpr std::ptrdiff_t kManagerOff = 0x3a8;
 constexpr std::ptrdiff_t kStateArrayOff = 0x470;
 constexpr int kMaxSwitchId = 0x40; // the game's own bound on SwitchID, and the length of the array
 
-// Ticks before a failed walk is retried, matching the other scene-walking features. Only the failure paths
-// wait: an established list is reused every frame with no walk at all.
+// Ticks before a failed walk is retried, as in the other scene walks. An established list is reused every frame without walking.
 constexpr int kRetryCooldownTicks = 60;
 
 // Level-data order, which is what the palette table pins the Color property to.
@@ -60,9 +55,8 @@ const char *color_name(std::uint32_t c)
     }
 }
 
-// One switch this feature drives. The component is held through a weak pointer, the game's own answer to
-// outliving the thing you found: it reports the object's death rather than leaving a raw pointer that has
-// to be guessed about. The id and color are copied so a reused slot can be told from the original.
+// One switch this feature drives, held through the game's weak pointer so its death is reported. The id and color are copied so a reused slot can be told from
+// the original.
 struct Managed
 {
     void *weak;
@@ -105,8 +99,7 @@ int *manager_entry(const void *component, int id)
         return nullptr;
     const char *sw = static_cast<const char *>(component);
     void *world = *reinterpret_cast<void *const *>(sw + kWorldOff);
-    // Vtable range check rather than a bare pointer test: this hop is the one that would otherwise carry a
-    // plausible-looking value into a raw offset read if the object layout ever drifted.
+    // Vtable range check: a drifted layout would otherwise carry a plausible value from this hop into a raw offset read.
     if (!mth::looks_like_component(world))
         return nullptr;
     void *mgr = *reinterpret_cast<void *const *>(static_cast<const char *>(world) + kManagerOff);
@@ -115,12 +108,8 @@ int *manager_entry(const void *component, int id)
     return reinterpret_cast<int *>(static_cast<char *>(mgr) + kStateArrayOff + id * 4);
 }
 
-// The shortcut switches are the permanent, untimed ones. A CantTurnOff switch that still carries a timer is
-// a legal authoring combination the game has palettes for, and driving one would fight its own auto-off.
-//
-// This is the whole discriminator, and it is an assumption: only the four switches of one mirror-hub room
-// have been seen, so a permanent untimed rainbow switch elsewhere in the hub would be driven too. Every
-// switch the feature takes charge of is logged for that reason.
+// The shortcut switches are the permanent, untimed ones; a CantTurnOff switch with a timer would fight its own auto-off. This is the whole discriminator and an
+// assumption, since only the four switches of one mirror-hub room have been seen, so every switch taken over is logged.
 bool is_shortcut_switch(const void *component)
 {
     const char *sw = static_cast<const char *>(component);
@@ -138,8 +127,7 @@ void dump_switch(void *component, int n)
               *reinterpret_cast<const std::uint8_t *>(sw + kCanTurnOffOff) != 0 ? 1 : 0, static_cast<double>(*reinterpret_cast<const float *>(sw + kTimerOff)));
 }
 
-// Drives every managed switch to the granted set. False means the list no longer describes the room, which
-// is the caller's signal to drop it and walk again rather than write through the rest of it.
+// Drives every managed switch to the granted set. false means the list no longer describes the room, so the caller drops it and walks again.
 bool apply(std::uint32_t granted)
 {
     for (const Managed &m : g_managed)
@@ -153,16 +141,14 @@ bool apply(std::uint32_t granted)
         const int want = ((granted >> m.color) & 1u) != 0 ? 1 : 0;
         if (*entry == want)
             continue;
-        // Only a real transition logs, so this marks the grant, or the moment a switch the player hit by
-        // hand went back to shut, rather than repeating every frame.
+        // Only a real transition logs: the grant, or a hand-hit switch going back to shut.
         *entry = want;
         pal::logf(pal::LogLevel::Info, "switches: %s switch (id %d) forced %s (#28)", color_name(m.color), m.id, want != 0 ? "open" : "shut");
     }
     return true;
 }
 
-// The set as a log line. Silence about an empty mask is what makes a switch that never opens look like a
-// broken clamp rather than an item that never arrived.
+// The set as a log line. Logging an empty mask tells a switch that never opens apart from a broken clamp.
 std::string granted_names(std::uint32_t mask)
 {
     if (mask == 0)
@@ -183,8 +169,7 @@ std::uint32_t granted_colors(const mth::ApState &state)
     return mask;
 }
 
-// Takes charge of one switch found by the walk. Everything it refuses is reported, because the failure mode
-// of the whole feature is a switch quietly not being driven.
+// Takes charge of one switch found by the walk. Every refusal is logged, since this feature fails by a switch quietly not being driven.
 void manage(void *component)
 {
     const int id = switch_id(component);
@@ -198,7 +183,7 @@ void manage(void *component)
     for (const Managed &m : g_managed)
         if (m.color == color)
         {
-            // One AP item would drive both, which is a level-data reading this feature cannot honor.
+            // One AP item would drive both, which this feature cannot honor.
             pal::logf(pal::LogLevel::Warn, "switches: a second %s switch (id %d) shares this room; left vanilla (#28)", color_name(color), id);
             return;
         }
@@ -209,9 +194,8 @@ void manage(void *component)
         return;
     }
     g_managed.push_back({weak, id, color});
-    // Logged here rather than over the finished list, so it says what was taken charge of exactly when that
-    // happened. The discriminator is an assumption and one of the five has never been seen, so a room that
-    // reports nothing is how either would surface without anyone running the probe.
+    // Logged per switch as it is taken over. The discriminator is an assumption and one of the five has never been seen, so a room that logs nothing surfaces
+    // either problem without the probe.
     pal::logf(pal::LogLevel::Info, "switches: driving the %s switch (id %d) from AP (#28)", color_name(color), id);
 }
 
@@ -238,19 +222,15 @@ void mirror_switches_on_world_destroy()
 void tick_mirror_switches(const ApState &state, bool slot_ok)
 {
     const bool probe = g_probe_requested.exchange(false);
-    // Confined to the one area the shortcut switches live in, so everywhere else costs a comparison. The
-    // clamp drives a state entry the switch persists, which makes it a durable write, so it waits for the
-    // bound AP save the way every other durable write in the mod does.
-    // The console override replaces the session gate rather than adding to it, which is the only way to
-    // exercise this offline: the seed flag it normally waits on cannot be set by hand. It cannot weaken
-    // anything, since it only ever turns enforcement on. The gamestate test is not part of the policy and
-    // stays either way.
+    // Confined to the switches' area, so elsewhere this costs a comparison. The clamp drives a state entry the switch persists, so it waits for the bound AP
+    // save like every durable write. The console override replaces the session gate, since the seed flag cannot be set by hand offline; it only turns
+    // enforcement on. The gamestate test applies either way.
     const bool console = g_console_override.load();
     const bool armed = console || (state.authenticated() && slot_ok && state.config().mirror_switch_rando);
     const bool in_hub = mod::current_game_state() == kGameStateMirrorHub && mod::room_index() != kGameStateMirrorHubPathToAO;
     const bool wanted = armed && in_hub;
-    // Standing among the switches with nothing driving them is indistinguishable from a broken clamp, and
-    // the console override does not survive a restart, so say which condition is missing. Once per visit.
+    // Standing among undriven switches looks like a broken clamp, and the console override does not survive a restart, so log the missing condition once per
+    // visit.
     if (!in_hub)
         g_logged_inert = false;
     else if (!armed && !g_logged_inert)
@@ -259,9 +239,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
         pal::logf(pal::LogLevel::Debug, "switches: not driving these switches (authed=%d bound_save=%d seed_flag=%d console=%d) (#28)",
                   state.authenticated() ? 1 : 0, slot_ok ? 1 : 0, state.config().mirror_switch_rando ? 1 : 0, console ? 1 : 0);
     }
-    // The probe only reads, so it needs the walk alone; driving the switches also needs somewhere to keep
-    // them. Reported once, because otherwise the feature is simply absent on a build whose modding API is
-    // inert and a seed that asked for the switches would never say why they stayed shut.
+    // The probe only needs the walk; driving also needs weak pointers. Warned once so a seed with the switches on an inert modding API says why they stay shut.
     const bool walk_api = mod::entity_walk_api_available();
     const bool enforce = wanted && walk_api && mod::weak_ptr_api_available();
     if (wanted && !enforce && !g_warned_api)
@@ -276,7 +254,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
         return;
     if (!walk_api)
     {
-        if (probe) // an explicit console action always gets an answer, latch or no latch
+        if (probe) // an explicit console action always gets an answer
             pal::logf(pal::LogLevel::Warn, "switches: the modding entity-walk API is unavailable (revision=%u)", mod::game_revision());
         return;
     }
@@ -318,8 +296,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
                                                          manage(c);
                                                  });
         g_walker.report(walk);
-        // Latched only on a room that actually held some, so a walk landing before the room finished
-        // building is retried rather than remembered as empty.
+        // Latched only on a room that held some, so a walk before the room finished building is retried.
         if (enforce && g_managed_world == nullptr)
         {
             if (g_managed.empty())

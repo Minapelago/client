@@ -24,18 +24,17 @@ namespace
 mth::RandoBridge *g_bridge = nullptr;
 const std::map<int, mth::ScoutInfo> *g_scout = nullptr;
 
-// Kear key gating (slot_data "kear_rando" mode), game-thread only. Neutralize runs in every AP mode: a
-// kear pickup is an AP location, so the free key its collect would grant is always cancelled (the server
-// owns the reward). Suppress (pin usable keys to 0 via reconcile) runs only in the AP-item modes, where
-// usable keys are meaningless; vanilla mode instead credits received Universal Kears (see credit_kear_key).
+// Kear key gating (slot_data "kear_rando"), game thread only. Neutralize runs in every AP mode: a kear pickup is an AP location, so the free key its collect
+// grants is cancelled. Suppress (pin usable keys to 0 via reconcile) runs only in the AP-item modes; vanilla mode credits received Universal Kears instead
+// (credit_kear_key).
 bool g_kear_neutralize = false;
 bool g_kear_suppress = false;
 
-// Live Player* accessor (set by App via HookManager). Kear key edits must move the Player+0x11b0 spent
-// mirror alongside SaveSlot+0x1f8, or the spend gate discards the SaveSlot-only write on the next lock.
+// Live Player* accessor (set by App via HookManager). Kear key edits move the Player+0x11b0 spent mirror with SaveSlot+0x1f8, or the spend gate discards a
+// SaveSlot-only write on the next lock.
 std::function<void *()> g_kear_player_getter;
 
-constexpr int kKearStorageKind = 8; // s_rItems kind 8: kear/key items; their collected-bit IS the usable-key bit (+0x1f0).
+constexpr int kKearStorageKind = 8; // s_rItems kind 8: kear/key items, whose collected bit is the usable-key bit (+0x1f0)
 
 // Offset self-checks (build drift): cleared on first mismatch, disabling the feature loudly.
 bool g_pickup_offsets_ok = true;
@@ -44,16 +43,14 @@ bool g_shop_offsets_ok = true;
 // Latched by the first vanilla small-treasure payout, to keep the rest at Debug (#148).
 bool g_small_treasure_seen = false;
 
-// Kear offset self-check: the usable-key count lives in a u64 bitfield (+0x1f0) and its spent counter
-// (+0x1f8). A real spent count is non-negative and never exceeds the keys collected (popcount of the
-// bitfield). An implausible read means +0x1f0/+0x1f8 drifted; disable the kear writes rather than corrupt.
+// Kear offset self-check for the usable-key u64 bitfield (+0x1f0) and its spent counter (+0x1f8). An implausible read means they drifted, so kear writes are
+// disabled.
 bool g_kear_offsets_ok = true;
 
 [[nodiscard]] bool kear_fields_plausible(int spent)
 {
-    // The vanilla credit ledger intentionally drives spent negative (usable = popcount - spent, and a
-    // received kear lowers spent below the 0 collected-bits floor), bounded by the 50 kears in the game.
-    // A real garbage read (a pointer/float landing on the field) lands far outside this window.
+    // The vanilla credit ledger drives spent negative (usable = popcount - spent, and a received kear lowers spent below the 0 floor), bounded by the game's 50
+    // kears. A garbage read (a pointer or float) lands far outside this window.
     return spent >= -64 && spent <= 64;
 }
 
@@ -66,12 +63,9 @@ bool g_kear_offsets_ok = true;
     return pal::at<int>(self, mth::layout::kPickupItemTypeOff);
 }
 
-// A kear collect records its bit in the SaveSlot+0x1f0 bitfield, which doubles as the usable-key count
-// (usable = popcount(Player+0x11a8) - spent(+0x1f8)). A kear pickup is an AP location, so the key it grants
-// is the server's to award: for each bit the just-run SetItemCollected NEWLY set (`new_bits`, vs `before`),
-// bump the spent-counter in lockstep to cancel the free key. The spend gate snaps SaveSlot+0x1f8 =
-// Player+0x11b0 + 1 on the next lock, so the Player mirror MUST move too or this cancel is discarded (a
-// leaked key). Delta-based so a re-collected (already-set) bit is a no-op and can't corrupt the count.
+// A kear collect sets its bit in the SaveSlot+0x1f0 bitfield, which doubles as the usable-key count (usable = popcount(Player+0x11a8) - spent(+0x1f8)). The
+// server awards kear-location keys, so each bit SetItemCollected newly set bumps spent to cancel the free key. The spend gate snaps SaveSlot+0x1f8 =
+// Player+0x11b0 + 1 on the next lock, so the Player mirror moves too. Delta-based, so re-collecting a set bit is a no-op.
 void neutralize_kear_grant(int loc_idx, void *slot, std::uint64_t before)
 {
     if (!g_kear_offsets_ok)
@@ -96,16 +90,14 @@ void neutralize_kear_grant(int loc_idx, void *slot, std::uint64_t before)
     const int n = std::popcount(new_bits);
     spent += n;
     if (player_spent != nullptr)
-        *player_spent += n; // keep the Player mirror in lockstep so the spend gate can't discard the cancel
+        *player_spent += n; // keep the Player mirror in lockstep
     pal::logf(pal::LogLevel::Info, "kear_rando: neutralized kear grant locIdx=%d new_bits=%d spent+=%d (player_mirror=%d)", loc_idx, n, n,
               player_spent != nullptr);
 }
 
-// Reload-durable counterpart to neutralize_kear_grant: the collect-time spent bump above is not rebuilt on
-// reload (only the +0x1f0 collected bitfield is), so after loading a save the AP-collected kears read as
-// usable keys again ("one kear on load"). Run every tick under kear_rando to raise +0x1f8 back up to
-// popcount(+0x1f0), cancelling the leaked keys; never lowers it, so real lock-spends survive. SaveSlot is the
-// authoritative usable-key source (no Player mirror exists - see neutralize_kear_grant).
+// Reload-durable counterpart to neutralize_kear_grant: a reload rebuilds only the +0x1f0 bitfield, not the collect-time spent bump, so AP-collected kears read
+// as usable keys again ("one kear on load"). Each tick under kear_rando this raises +0x1f8 to popcount(+0x1f0), never lowering it, so real lock-spends survive.
+// Only the SaveSlot counter is written.
 void reconcile_kear_keys()
 {
     if (!g_kear_suppress)
@@ -132,12 +124,9 @@ void reconcile_kear_keys()
     spent = reconciled;
 }
 
-// Vanilla kear mode (#130): a received Universal Kear must grant one usable key. usable =
-// popcount(Player+0x11a8) - spent, and no collected-bit corresponds to an AP receipt (the bitfield is
-// per-location), so instead lower the spent-counter by one. The spend gate snaps SaveSlot+0x1f8 =
-// Player+0x11b0 + 1 on the next lock, so BOTH mirrors must move together or the credit is discarded on the
-// first spend. Returns false (caller retries, does not mark) until a save slot + player are live; the
-// once-per-receipt guard is the InboundGranter's ApSaveState marker.
+// Vanilla kear mode (#130): a received Universal Kear grants one usable key. No collected bit matches an AP receipt (the bitfield is per-location), so spent
+// drops by one instead (usable = popcount(Player+0x11a8) - spent). The spend gate snaps SaveSlot+0x1f8 = Player+0x11b0 + 1 on the next lock, so both mirrors
+// move together. false (caller retries) until a save slot and player are live; InboundGranter's ApSaveState marker guards once-per-receipt.
 bool credit_kear_key(void *player)
 {
     if (!g_kear_offsets_ok || player == nullptr)
@@ -161,12 +150,9 @@ bool credit_kear_key(void *player)
     return true;
 }
 
-// Write the native durable collected-bit for a location where SetItemCollected is side-effect-free
-// (is_durable_bit_kind: 8=key/kear, 12=bonestone, 19=fish), so the game's own reload gate treats it as
-// collected - the chest spawns opened, pickup respawn is suppressed - exactly as a live player collect
-// does. No-op (returns false) for other kinds or if SetItemCollected is unresolved. Kear (kind 8)
-// neutralizes the usable key it would grant under kear_rando. Idempotent: re-writing an already-set bit is
-// a no-op (SetItemCollected sees the bit set; the delta-based kear neutralize acts only on newly-set bits).
+// Writes the native durable collected bit where SetItemCollected is side-effect-free (is_durable_bit_kind: 8=key/kear, 12=bonestone, 19=fish), so the game's
+// reload check treats the location like a live collect: the chest spawns opened and the pickup does not respawn. false for other kinds or if SetItemCollected
+// is unresolved. Under kear_rando a kear's usable key is neutralized. Idempotent: a set bit is a no-op and the kear neutralize acts only on new bits.
 bool apply_native_collected(int loc_idx)
 {
     const int kind = mth::tables::native_location_kind(loc_idx);
@@ -181,7 +167,7 @@ bool apply_native_collected(int loc_idx)
     mod::set_item_collected(loc_idx, true, nullptr, nullptr);
 
     if (neutralize && slot != nullptr)
-        neutralize_kear_grant(loc_idx, slot, before); // kear collected-bit == usable key; cancel it (AP controls keys)
+        neutralize_kear_grant(loc_idx, slot, before); // kear collected bit == usable key; cancel it
     else if (neutralize)
         pal::logf(pal::LogLevel::Warn, "kear_rando: no active save slot; kear grant NOT neutralized (locIdx=%d)", loc_idx);
     return true;
@@ -197,18 +183,13 @@ void collect_ap_location(int loc_idx)
                   mth::tables::native_location_kind(loc_idx));
 }
 
-// Server-collected (Collect/coop) locations only get their .state marked; unlike a live collect, the native
-// durable collected-bit is never written, so a "normal" durable-bit chest (keys/bonestone/fish) reads
-// uncollected at spawn and stays closed. Re-assert the native bit for every durable-bit checked slot once a
-// save is active, so those chests spawn opened like a live collect. Locations the seed removed are covered
-// too, so a pruned dungeon's kears/bonestones/fish read as obtained to the game's own tallies, including any
-// all-of-a-kind reward. Cheap: re-runs only when the combined set's size changes or after a world teardown
-// re-arms it (via reset_native_bit_enforcement). Guarded on a resolved collection and a bound save slot,
-// retrying each tick until both exist; the title/profile-select screen already binds a slot, so this can run
-// before the player has chosen a profile. Idempotent. Game-thread, per-tick.
+// Server-collected (Collect/coop) locations only get .state marked, never the native durable bit, so a durable-bit chest (keys/bonestone/fish) spawns closed.
+// Once a save is active this re-asserts the bit for every checked durable-bit slot, plus seed-removed locations so a pruned dungeon's kears, bonestones and
+// fish count toward the game's own tallies and all-of-a-kind rewards. Re-runs only when the combined set's size changes or reset_native_bit_enforcement re-arms
+// it. Waits for a resolved collection and a bound save slot; the title/profile-select screen already binds one, so this can run before a profile is chosen.
+// Game thread, per tick.
 int g_native_last_checked_count = -1;
-// Log filter only. WorldDestroy fires per room, so the re-arm replays the same set on every room
-// transition; without this it reported an unchanged set ~30 times a session.
+// Log filter only: WorldDestroy fires per room, so the re-arm replays the same set on every transition.
 std::set<int> g_native_applied_last;
 
 void enforce_checked_native_bits()
@@ -220,7 +201,7 @@ void enforce_checked_native_bits()
 
     const std::set<int> *checked = g_bridge->checked_slots();
     const std::set<std::int64_t> &removed = g_bridge->removed_slots();
-    // Removed locations apply before a save state attaches too, so a null checked set is "empty", not "skip".
+    // Removed locations apply before a save state attaches too, so a null checked set counts as empty.
     const int total = static_cast<int>((checked != nullptr ? checked->size() : 0) + removed.size());
     if (total == g_native_last_checked_count)
         return; // nothing new since the last pass
@@ -240,8 +221,7 @@ void enforce_checked_native_bits()
     g_native_applied_last = std::move(applied);
 }
 
-// Re-arm the enforcement so the next tick re-applies: a save reload clears s_rItemCollection of our
-// in-memory writes, and a world teardown is the signal that one may have happened.
+// Re-arms the enforcement for the next tick: a save reload clears our in-memory s_rItemCollection writes, and a world teardown signals one may have happened.
 void reset_native_bit_enforcement()
 {
     g_native_last_checked_count = -1;
@@ -254,15 +234,15 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     if (g_orig_pickup_init)
         g_orig_pickup_init(self, item_type, loc_idx, flag);
 
-    // Offset self-check: if the entity doesn't store loc_idx at our offset, layout shifted; disable redirect.
-    // A vanilla small-treasure payout is not drift; the pickup is no longer this AP location (#148).
+    // Offset self-check: a stored loc_idx that differs from the argument means the layout shifted, so the redirect is disabled. A vanilla small-treasure payout
+    // is the exception, since the pickup is no longer this AP location (#148).
     if (g_pickup_offsets_ok && pickup_loc_idx(self) != loc_idx)
     {
         const int stored_loc = pickup_loc_idx(self);
         if (mth::tables::is_small_treasure_collect_rewrite(stored_loc, pickup_item_type(self)))
         {
-            // Once per session at Info: a layout drift that happened to read as this pair would take the
-            // same early return on every pickup, and Debug alone would leave that silent in a user's log.
+            // Info once per session: drift that happened to read as this pair would take this return on every pickup, and Debug alone would hide it in a user's
+            // log.
             pal::logf(g_small_treasure_seen ? pal::LogLevel::Debug : pal::LogLevel::Info,
                       "Pickup::Init locIdx=%d -> vanilla collected-treasure payout (small bones)", loc_idx);
             g_small_treasure_seen = true;
@@ -275,11 +255,9 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     if (!g_pickup_offsets_ok || g_bridge == nullptr)
         return;
 
-    // #67: the WeaponMerchant (Legovich) forge spawns the forged-weapon Pickup with loc_idx == the pending
-    // weapon index SaveSlot+0xc70. The mod suppresses that grant, so the vanilla OnPickupDone `if(c70==loc)
-    // c70=-1` reset never runs and c70 sticks on the checked AP weapon location, leaving the merchant
-    // uninteractable. Clear it here - after g_orig_pickup_init built the pickup (above), so the forge asset is
-    // resolved and the merchant can't re-spawn with itemType 0 (clearing c70 before that spawn freezes).
+    // #67: the WeaponMerchant (Legovich) forge spawns the forged-weapon Pickup with loc_idx == the pending weapon index SaveSlot+0xc70. The mod suppresses that
+    // grant, so vanilla OnPickupDone's `if(c70==loc) c70=-1` reset never runs and the merchant stays uninteractable. Cleared here, after g_orig_pickup_init
+    // built the pickup, because clearing c70 before that spawn freezes with itemType 0.
     void *wsave = pal::active_save_slot();
     const int weapon_idx = wsave != nullptr ? pal::at<int>(wsave, mth::layout::kSaveWeaponIndexOff) : -1;
     if (weapon_idx >= 0 && loc_idx == weapon_idx)
@@ -296,41 +274,33 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
         void *world = ent != nullptr ? pal::at<void *>(ent, mth::layout::kEntityWorldOff) : nullptr;
         if (ent != nullptr && world != nullptr)
         {
-            pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) |= 1u; // killed flag
+            pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) |= 1u;
             mod::queue_destroy_entity(world, ent, false);
             pal::logf(pal::LogLevel::Info, "outbound: already-checked AP location locIdx=%d -> QueueDestroy", loc_idx);
         }
         return;
     }
 
-    // #93: for a have-bit location (kinds 1/9/11) the game self-kills the box when IsItemCollected reports the
-    // item owned, which any AP grant of that item does while the location is still unchecked. The IsItemCollected
-    // hook redirects that read, but MSVC inlines IsItemCollected into the Pickup ctor's copy of the self-kill,
-    // out of the hook's reach (GCC keeps a real call, so Linux is unaffected). The ctor arms the kill via
-    // Pickup+0x3ac; clearing it for these locations skips the inlined gate. Checked ones returned via QueueDestroy above.
-    // Only for a location still worth collecting: an already-suppressed one wants the vanilla self-kill, and
-    // this is the only suppression left when QueueDestroy is unresolved.
+    // #93: for a have-bit location (kinds 1/9/11) the game self-kills the box when IsItemCollected reports the item owned, which any AP grant of it does while
+    // the location is unchecked. The IsItemCollected hook redirects that read, but MSVC inlines it into the Pickup ctor's self-kill (GCC keeps a real call, so
+    // Linux is unaffected). The ctor arms the kill via Pickup+0x3ac, so clearing it skips the inlined check. Only for unchecked AP locations: a checked one
+    // wants the vanilla self-kill, the only suppression left when QueueDestroy is unresolved.
     if (g_bridge->is_ap_location(loc_idx) && !g_bridge->is_checked(loc_idx) &&
         mth::tables::is_item_keyed_collected_kind(mth::tables::native_location_kind(loc_idx)))
         pal::at<unsigned char>(self, mth::layout::kPickupSaveTrackedFlagOff) = 0;
 
-    // The dummy-itemType redirect is deferred to the PickupOnPickup hook, not done here: the Pickup ctor's
-    // surprise-spawn emerge block runs AFTER Init and reads s_rItems[storedType].kind to decide whether to
-    // detach the revealed pickup from the dying wall (SpawnPoint::DisownParent); the dummy's kind 0 misses
-    // that branch, so a hidden-room kear stays attached and invisible until a room reload (#86). Init builds
-    // the sprite from the real itemType regardless, so deferring changes no visual.
-    // locIdx < 0 is an untracked pickup and by far the commonest case; logging those buried the rest
-    // of the stream (they were half of a 23-minute field log).
+    // The dummy-itemType redirect waits for the PickupOnPickup hook. The ctor's surprise-spawn emerge block runs after Init and reads s_rItems[storedType].kind
+    // to decide whether to detach the revealed pickup from the dying wall (SpawnPoint::DisownParent); the dummy's kind 0 would leave a hidden-room kear
+    // attached and invisible until a room reload (#86). Init builds the sprite from the real itemType, so no visual changes. locIdx < 0 is an untracked pickup,
+    // by far the commonest case, and is not logged.
     if (g_bridge->is_ap_location(loc_idx))
         pal::logf(pal::LogLevel::Debug, "Pickup::Init locIdx=%d itemType=%d -> AP location (dummy redirect deferred to collect)", loc_idx, item_type);
     else if (loc_idx >= 0)
         pal::logf(pal::LogLevel::Debug, "Pickup::Init locIdx=%d itemType=%d -> vanilla (location not in this seed)", loc_idx, item_type);
 }
 
-// Start of Pickup::OnPickup. The hook ctx carries the real Pickup*, so this needs none of the
-// per-platform subobject recovery the detour did (MSVC passed the PickupListener base). The original
-// always runs afterward; it re-reads the itemType field live, so rewriting it here is what makes
-// OnPickupDone see the dummy.
+// Start of Pickup::OnPickup. The hook ctx carries the real Pickup*, so no per-platform subobject recovery is needed. The original runs afterward and re-reads
+// the itemType live, so rewriting it here makes OnPickupDone see the dummy.
 void on_pickup_collected(void *pickup)
 {
     if (!g_pickup_offsets_ok || g_bridge == nullptr)
@@ -342,18 +312,18 @@ void on_pickup_collected(void *pickup)
         return;
     pal::logf(pal::LogLevel::Info, "outbound: collected AP location locIdx=%d", loc_idx);
     collect_ap_location(loc_idx);
-    // No-op the vanilla grant: deferred from Pickup::Init (see #86). Kind 0 means no grant.
+    // Deferred from Pickup::Init (#86); kind 0 means no vanilla grant.
     pickup_item_type(pickup) = mth::layout::kApDummyItemType;
 }
 
-// Shared shop-purchase AP logic; the PAL owns the per-platform hook + field reads and calls this.
-// Returns the itemType to store: a dummy to suppress the vanilla grant (where the platform redirects), else unchanged.
+// Shared shop-purchase AP logic; the PAL owns the per-platform hook and field reads. Returns the itemType to store: the dummy to suppress the vanilla grant
+// where the platform redirects, else unchanged.
 int on_shop_buy(int loc_idx, int item_type)
 {
     if (!g_shop_offsets_ok || g_bridge == nullptr)
         return item_type;
 
-    // Offset self-check: garbage reads mean the ShopMenu layout shifted; disable the check.
+    // Offset self-check: garbage reads mean the ShopMenu layout shifted, so the check is disabled.
     if (loc_idx < -1 || loc_idx >= mth::layout::kLocationCount || item_type < 0 || item_type >= mth::layout::kItemTypeCount)
     {
         g_shop_offsets_ok = false;
@@ -364,8 +334,8 @@ int on_shop_buy(int loc_idx, int item_type)
     {
         pal::logf(pal::LogLevel::Info, "outbound: bought AP shop item locIdx=%d", loc_idx);
         collect_ap_location(loc_idx);
-        // Linux suppresses the vanilla grant via this returned dummy itemType; Windows can't redirect, so
-        // the OnPickupDone detour skips the grant for AP locations instead. Real item arrives via AP inbound.
+        // Linux suppresses the vanilla grant via this dummy itemType. Windows cannot redirect, so the OnPickupDone hook skips the grant for AP locations; the
+        // real item arrives via AP inbound.
         return mth::layout::kApDummyItemType;
     }
     return item_type;
@@ -380,13 +350,9 @@ int on_shop_stock(int loc_idx)
     return g_bridge->is_checked(loc_idx) ? 2 : 1;
 }
 
-// ShopItem::Refresh. We suppress the vanilla grant for AP buys, and that grant is what normally
-// advances the slot and zeroes its stock, so replay it from AP state instead: advance tiered slots
-// past bought levels and sell out only when every level is checked (issue #48).
-//
-// ShopMenu::SetupBoxes already advanced the active variant (ShopItem+0xf8) past bought levels before
-// calling Refresh, so do NOT advance it again: re-advancing double-counts and skips a level per buy
-// (#94). Only the stock count is corrected. A slot with no AP-location levels is left untouched.
+// ShopItem::Refresh. The suppressed vanilla grant is what normally zeroes a slot's stock, so stock is replayed from AP state: a slot sells out only when every
+// level is checked (#48). ShopMenu::SetupBoxes already advanced the active variant (ShopItem+0xf8) past bought levels, so advancing it again would skip a level
+// per buy (#94). A slot with no AP-location levels is untouched.
 void on_shop_item_refresh(void *shop_item)
 {
     void *def = pal::at<void *>(shop_item, mth::layout::kShopItemDefOff);
@@ -418,25 +384,21 @@ void on_shop_item_refresh(void *shop_item)
         *stock = remaining;
 }
 
-// Shop flattening is active while the AP bridge is attached (LocationHooks lifetime == connected
-// session). Polled per Shop::Get; the PAL ORs the never-stack bit when this returns true.
+// Flattening is active while the AP bridge is attached (the LocationHooks lifetime, i.e. a connected session). Polled per Shop::Get.
 bool on_shop_flatten()
 {
     return g_bridge != nullptr;
 }
 
-// ShopMenu::SetCursor post-hook: idempotently scout any unscouted AP box location, then rewrite the
-// selected box's name+description from the scout map. Leaves vanilla text for non-AP / not-yet-scouted
-// selections. The enumerate sink is a captureless lambda: g_bridge/g_scout are file-local globals, so
-// the plain C function-pointer sink stays valid.
+// ShopMenu::SetCursor post-hook: scouts any unscouted AP box location, then rewrites the selected box's name and description from the scout map, leaving
+// vanilla text otherwise. The enumerate sink is captureless because g_bridge/g_scout are file-scope globals.
 void on_shop_set_cursor(void *shop_menu)
 {
     if (g_bridge == nullptr || g_scout == nullptr)
         return;
 
-    // Scout any box location not yet in the scout map. A location whose reply hasn't landed stays
-    // "unknown" and is re-requested on the next cursor move; the server dedups the scout+hint, so this
-    // retry-until-resolved is intentional and cheap.
+    // Scout every box location missing from the scout map. One whose reply has not landed is re-requested on the next cursor move; the server dedups the scout
+    // and hint, so retrying is cheap.
     std::vector<int> unknown;
     mth::shop_enumerate_locs(
         shop_menu,
@@ -463,9 +425,8 @@ void on_shop_set_cursor(void *shop_menu)
     {
         const std::uint32_t color = mth::banner_color("item_id", "", si->item_flags, 0, si->is_self);
         mod::set_text(name_w, si->item_name.c_str());
-        // SetCursor rebinds the widget's palette on every cursor move, so this re-applies each
-        // time. SetColor last: it raises the dirty flag that forces the re-resolve. Only on a
-        // successful swap, since an untouched palette would resolve color to entry 0.
+        // SetCursor rebinds the widget's palette on every cursor move, so this re-applies each time. SetColor goes last because it raises the dirty flag that
+        // forces the re-resolve, and only after a successful swap, since an untouched palette resolves the color to entry 0.
         if (mth::shop_apply_name_palette(name_w, color))
             mod::set_text_color(name_w, color);
     }
@@ -473,20 +434,6 @@ void on_shop_set_cursor(void *shop_menu)
         mod::set_text(desc_w, mth::format_scout_desc(*si).c_str());
 }
 
-// Items::IsItemCollected override for locations whose vanilla collected-state aliases item-ownership, so
-// the game reports them collected before the player ever opens the chest:
-//   - capacity-upgrade pieces (#8): the collected bit aliases the mod's AP capacity counter (apply_upgrades
-//     sets low bits of SaveSlot+0x130 etc. for received Magic/Health/Spark/Vial/Trinket upgrades), so a
-//     boss skips spawning the rose reward.
-//   - have-item-bit kinds 1/9/11 (#61): IsItemCollected keys these on the item's identity/type, so an
-//     out-of-order AP grant of the vanilla item (trinket, subweapon, vessel, ...) marks the location
-//     collected and its chest spawns already-open, sending no check.
-// For such AP locations report the AP checked-state; pass everything else through (-1). The cheap
-// kind/itemType checks fast-reject the vast majority of (hot-path) queries before the AP-location lookup.
-// `ownership_query` is IsItemCollected's param5 (b5): the weapon-swap chest reads weapon ownership via
-// IsItemCollected with b5=true, and must see the real have-item bit - redirecting it to the location's
-// AP checked-state hides any weapon received from another player (its own location never checked). So
-// ownership queries on weapon-kind (1) locations pass through; see should_redirect_collected_query.
 // SaveSlot+0xc70: the WeaponMerchant's pending weapon-upgrade index (-1 = none / save unavailable).
 [[nodiscard]] int current_weapon_index()
 {
@@ -494,9 +441,8 @@ void on_shop_set_cursor(void *shop_menu)
     return slot != nullptr ? pal::at<int>(slot, mth::layout::kSaveWeaponIndexOff) : -1;
 }
 
-// Set while Shop::IsOutOfStock runs (game thread; a depth counter survives any re-entry). Lets the
-// IsItemCollected override below tell the WeaponMerchant's stock tally apart from every other reader of the
-// same weapon locations - chiefly the weapon-swap chest, which must keep seeing the real have-item bit.
+// Depth counter set while Shop::IsOutOfStock runs (game thread). Lets the IsItemCollected override tell the WeaponMerchant's stock tally from other readers of
+// the same weapon locations, chiefly the weapon-swap chest.
 int g_shop_oos_depth = 0;
 std::uint64_t (*g_orig_shop_oos)(void *, void *) = nullptr;
 
@@ -508,18 +454,19 @@ std::uint64_t repl_shop_is_out_of_stock(void *shop_def, void *out_info)
     return r;
 }
 
+// Items::IsItemCollected override for AP locations whose vanilla collected state aliases item ownership, so the game reports them collected before the chest is
+// opened: capacity-upgrade pieces (#8), whose bit is the mod's AP capacity counter (a boss then skips the rose reward), and have-item kinds 1/9/11 (#61), keyed
+// on the item's type, so an out-of-order AP grant opens the chest with no check sent. Those report the AP checked state and everything else passes through
+// (-1); cheap kind/itemType checks reject most hot-path queries first. `ownership_query` is IsItemCollected's b5: the weapon-swap chest reads weapon ownership
+// with b5=true and must see the real have-item bit, or a weapon received from another player stays hidden. See should_redirect_collected_query.
 int on_item_collected_query(int loc_idx, bool ownership_query)
 {
     if (g_bridge == nullptr)
         return -1;
-    // Legovich (#67 follow-up): the WeaponMerchant's out-of-stock tally must count AP purchases, not weapons
-    // received from the multiworld - otherwise a received weapon inflates the count and Armand arms early.
-    // Report AP-checked-state for his slots, but ONLY while his shop is the one tallying stock; the weapon-swap
-    // chest reads these same locations and must see the real have-item bit, so it (b5 ownership query, not under
-    // IsOutOfStock) falls through to the normal path below. EXCLUDE the slot currently being forged
-    // (SaveSlot+0xc70 == loc): vanilla counts the in-progress slot once via its "+1 for pending" term, and that
-    // slot is already AP-checked at buy-confirm, so counting it here too double-counts the first buy -> Armand
-    // after one purchase.
+    // Legovich (#67): the WeaponMerchant's out-of-stock tally must count AP purchases, not weapons received from the multiworld, or Armand arms early. His
+    // slots report AP checked state only under IsOutOfStock, so the weapon-swap chest falls through below. The slot being forged (SaveSlot+0xc70 == loc) is
+    // excluded: vanilla's "+1 for pending" term already counts it, and it is AP-checked at buy-confirm, so counting it here would arm Armand after one
+    // purchase.
     if (g_shop_oos_depth > 0 && mth::is_legovich_location(loc_idx) && g_bridge->is_ap_location(loc_idx))
         return (g_bridge->is_checked(loc_idx) && loc_idx != current_weapon_index()) ? 1 : 0;
     const bool is_cap = mth::tables::is_capacity_upgrade_location(loc_idx);
@@ -599,7 +546,7 @@ LocationHooks::~LocationHooks()
     remove_shop_text_hook();
     remove_shop_flatten_hook();
     pal::remove_shop_purchase_hook();
-    // g_bridge/g_scout nulled before the ScopedHook members remove the detours; the repls null-check them.
+    // Nulled before the ScopedHook members remove the detours; the repls null-check them.
     g_bridge = nullptr;
     g_scout = nullptr;
 }

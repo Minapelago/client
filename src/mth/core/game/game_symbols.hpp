@@ -4,29 +4,23 @@ namespace mth::sym
 {
 
 // Mangled symbol names. Stable across recompiles; verified against the unstripped Linux binary.
-//
-// Deliberately NOT here, so nobody re-adds them: World::Update, Items::OnPickup, Items::IsItemCollected,
-// Pickup::OnPickup, ShopItem::Refresh, AreaManager::NewArea and the Chest ctor run through named mod
-// hooks; ycWorld::QueueDestroy, Items::SetItemCollected, Player::UpdateStats, PhysicsComponent::GetAABB,
-// CarryManager::GetClosestCarryableObject, WaterListener::IsInDeepWaterInternal and the ycTextComponent
-// text/color mutators are native API entries; KeyBlock::Update and KeyBlockChain::UpdateState are a sweep
-// over the world's own entity lists; ycUpdateQueue::Update was only ever a tick source and Game::FixedUpdate
-// covers that.
+// Resolved elsewhere, so not listed: World::Update, Items::OnPickup, Items::IsItemCollected, Pickup::OnPickup, ShopItem::Refresh,
+// AreaManager::NewArea and the Chest ctor are named mod hooks; ycWorld::QueueDestroy, Items::SetItemCollected, Player::UpdateStats,
+// PhysicsComponent::GetAABB, CarryManager::GetClosestCarryableObject, WaterListener::IsInDeepWaterInternal and the ycTextComponent text/color
+// mutators are native API entries; KeyBlock::Update and KeyBlockChain::UpdateState are swept from the world's entity lists; Game::FixedUpdate
+// is the tick source.
 inline constexpr const char *game_fixed_update = "_ZN4Game11FixedUpdateEv"; // Game::FixedUpdate()
-// Items::OnPickupDone(...): resolved for its ADDRESS only (inbound AP grants call it directly); its
-// pre-hook runs through the native "ItemsOnPickupDone" mod hook.
+// Items::OnPickupDone(...): resolved for its address only (inbound AP grants call it directly); its pre-hook is the native "ItemsOnPickupDone"
+// mod hook.
 inline constexpr const char *on_pickup_done = "_ZN5Items12OnPickupDoneEiiP6PlayerRK6ycVec3iijb";
 inline constexpr const char *process_sdl_event = "_Z15ProcessSDLEventR9SDL_Event"; // ProcessSDLEvent(SDL_Event&)
 
 // s_rItems: 195-entry item table (stride 0x68, kind at +0x28).
 inline constexpr const char *s_r_items = "_ZN12_GLOBAL__N_18s_rItemsE";
 
-// The screen id is polled from the native GetCurrentGameState/GetRoomIndex accessors on the
-// "WorldUpdateEnd" mod hook; RoomManager::Update is no longer symbol-resolved.
+// The screen id is polled from the native GetCurrentGameState/GetRoomIndex accessors on the "WorldUpdateEnd" mod hook.
 
 inline constexpr const char *pickup_init = "_ZN6Pickup4InitEiib"; // Pickup::Init(int itemType, int locIdx, bool)
-// Pickup::OnPickup's collect detection runs through the native "PickupOnPickup" mod hook, so it is not
-// symbol-resolved either.
 
 // ShopMenu::ItemPresent(): shop-buy grant funnel; calls Items::OnPickup directly (no Pickup entity).
 // Menu stashes locIdx at ShopMenu+0x218 and itemType at +0x21c before this fires.
@@ -35,7 +29,7 @@ inline constexpr const char *shop_item_present = "_ZN8ShopMenu11ItemPresentEv"; 
 inline constexpr const char *shop_init_state = "_ZN8ShopMenu9InitStateEv"; // ShopMenu::InitState()
 // Shop::IsOutOfStock(ShopDef const*, OutInfo&): tallies a shop's remaining stock via Items::IsItemCollected
 // per slot. Hooked only to bracket a flag so the IsItemCollected override can tell the WeaponMerchant's stock
-// query apart from the weapon-swap chest (both read the same weapon locations) (#67 follow-up).
+// query apart from the weapon-swap chest, which reads the same weapon locations (#67).
 inline constexpr const char *shop_is_out_of_stock = "_ZN4Shop12IsOutOfStockEPK7ShopDefRNS_7OutInfoE";
 
 // Shop::Get(unsigned long nameHash): linear-searches the static ShopDef table (stride 0x460) and
@@ -46,9 +40,6 @@ inline constexpr const char *shop_get = "_ZN4Shop3GetEm"; // Shop::Get(unsigned 
 // ShopMenu::SetCursor(int index, bool): fires on box selection change; hooked to rewrite the selected
 // item's name+description widgets from scouted AP data.
 inline constexpr const char *shop_set_cursor = "_ZN8ShopMenu9SetCursorEib"; // ShopMenu::SetCursor(int,bool)
-// ycWorld::QueueDestroy, Items::SetItemCollected and the ycTextComponent text/color mutators are no
-// longer resolved: the native API carries WorldQueueDestroyEntity, ItemsSetItemCollected,
-// TextComponentSetText/GetText and TextComponentSetColor.
 
 // s_rItemCollection: 361 x 0x50, native itemType at +0x18, maps locIdx to vanilla contents kind.
 inline constexpr const char *s_r_item_collection = "_ZN12_GLOBAL__N_117s_rItemCollectionE"; // s_rItemCollection location table
@@ -63,14 +54,12 @@ inline constexpr const char *save_slot_clear = "_ZN8SaveSlot5ClearEb"; // SaveSl
 // address; see mth::layout::kSaveSlotArrayOff and pal::layout::kSaveManagerMasterOff.
 inline constexpr const char *save_slot_init_gamestate = "_ZN8SaveSlot13InitGamestateEv"; // SaveSlot::InitGamestate()
 
-// SaveManager::WriteSaveData(bool): the "persist a slot" chokepoint, hooked observe-only as the
-// flush trigger for mod-owned saves. Stands in for RequestWriteSaveData, which GCC fully inlined
-// (absent from both the symbol table and DWARF); same cadence.
+// SaveManager::WriteSaveData(bool): the "persist a slot" chokepoint, hooked observe-only as the flush trigger for mod-owned saves.
+// RequestWriteSaveData has the same cadence but GCC fully inlined it (no symbol, no DWARF).
 inline constexpr const char *save_manager_write_save_data = "_ZN11SaveManager13WriteSaveDataEb"; // SaveManager::WriteSaveData(bool)
 
-// Deathlink no longer resolves game symbols: detection polls the Player+0x1380 death-guard byte edge each
-// tick (DeathBroadcastGate) and apply goes through the native MinaModAPI PlayerDie. The old
-// Player::InitDeath (DETECT) and Player::TriggerDeath (APPLY) sigs were dropped (broke on game rebuilds).
+// Deathlink resolves no game symbols: detection polls the Player+0x1380 death-guard byte edge each tick (DeathBroadcastGate), and apply uses
+// the native MinaModAPI PlayerDie.
 
 // Modifiers ("cheats"). Apply hub reads SaveSlot at *(g_saveManager+0x08); live gameplay uses
 // *(g_saveManager+0x18). ToggleCheat (menu) + SetCheatApplied (cheat-code) are the only two
@@ -98,18 +87,15 @@ inline constexpr const char *bounce_plant_collide = "_ZN11BouncePlant11CollideWi
 // Floating puffs bounce inline in CollideWith; ground/burrow-underable puffs launch out-of-line here
 // (called from Player land/wall/update paths), so both chokepoints must be gated (issue #47).
 inline constexpr const char *bounce_plant_launch = "_ZN11BouncePlant12BounceLaunchEP6Player";
-// Neither BouncePlant entry launches anything: both only stash a bounce target in Player+0x252c.
-// OnBounce is its sole consumer and the only writer of the launch velocity, so it is the universal
-// gate. Bone Beach bounce bushes are Breakables, not BouncePlants, and reach it through a dispatch
-// inlined into Player::Update / Player::SlideOutOfWall that skips both entries above (issue #168).
+// Neither BouncePlant entry launches anything; both stash a bounce target in Player+0x252c. OnBounce is its only consumer and the only writer
+// of launch velocity, so it is the universal gate. Bone Beach bounce bushes are Breakables and reach it through a dispatch inlined into
+// Player::Update / Player::SlideOutOfWall that skips both entries above (#168).
 inline constexpr const char *player_on_bounce = "_ZN6Player8OnBounceEv";
 inline constexpr const char *spring_bellows_collide = "_ZN13SpringBellows11CollideWithER18PhysicsContactPair";
-// SpringBellows inherits PhysicsCollisionListener as a secondary base at +376, and its ctor stores
-// that subobject into PhysicsComponent+0x118, so physics dispatch never reaches the entry above.
-// Linux compiled the secondary slot as a full duplicate body rather than an adjustor jmp, which
-// makes the exported symbol a copy nothing calls: a detour there installs and never fires (#188).
-// BouncePlant, whose listener base sits at +384, got a real thunk, so it needs no equivalent.
-// Windows emits one body taking the adjusted this, so this entry is Linux-only.
+// SpringBellows inherits PhysicsCollisionListener as a secondary base at +376 and its ctor stores that subobject in PhysicsComponent+0x118, so
+// physics dispatch never reaches the entry above. Linux compiled that slot as a duplicate body with no adjustor jmp, so a detour on the exported
+// symbol installs and never fires (#188); BouncePlant (base at +384) got a real thunk. Windows emits one body taking the adjusted this, so this
+// entry is Linux-only.
 inline constexpr const char *spring_bellows_collide_listener = "_ZThn376_N13SpringBellows11CollideWithER18PhysicsContactPair";
 inline constexpr const char *player_pickup_carryable = "_ZN6Player30PickUpAnyNearbyCarryableObjectEbbb";
 // #56: burrow-emerge commit. With carry disabled we suppress the emerge when a carryable is overhead so
@@ -117,8 +103,7 @@ inline constexpr const char *player_pickup_carryable = "_ZN6Player30PickUpAnyNea
 // the game's own grab query, read-only, through the native AABB and carryable accessors.
 inline constexpr const char *mina_on_burrow_jump = "_ZN4Mina12OnBurrowJumpEv";
 inline constexpr const char *train_authority_on_npc_event = "_ZN14TrainAuthority10OnNPCEventEjP17InteractEventInfo";
-// PawnShopNPC::OnNPCEvent: the pawn shop ("Pawnty") interaction dispatcher. Its own class (not a
-// shared NPCBehavior_*), so suppressing it to disable Pawnty cannot affect any other shop.
+// PawnShopNPC::OnNPCEvent: the pawn shop ("Pawnty") interaction dispatcher. It is its own class, so suppressing it affects no other shop.
 inline constexpr const char *pawn_shop_on_npc_event = "_ZN11PawnShopNPC10OnNPCEventEjP17InteractEventInfo";
 
 // HubFountain::Bulb::Update(float,bool): per-lamp visual; detoured to force lit (bulb index at this+0x10)
@@ -127,9 +112,8 @@ inline constexpr const char *hub_fountain_bulb_update = "_ZN11HubFountain4Bulb6U
 // TitleScreen::UpdateState(): owns the menu cursor wrap and the option dispatch. Hooked to keep
 // the cursor off "Start Game" while disconnected.
 inline constexpr const char *title_screen_update_state = "_ZN11TitleScreen11UpdateStateEv";
-// TitleScreen::StartGame(): retail sets the next substate rather than transitioning. Suppressed
-// while disconnected; allowed through while connected, because the substate it requests is what
-// builds the profile-select menu the takeover drives.
+// TitleScreen::StartGame(): retail only sets the next substate. Suppressed while disconnected; allowed while connected, since that substate builds
+// the profile-select menu the takeover drives.
 inline constexpr const char *title_screen_start_game = "_ZN11TitleScreen9StartGameEv";
 
 } // namespace mth::sym

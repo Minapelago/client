@@ -25,9 +25,7 @@ pal::ShopBuyFn g_on_shop_buy = nullptr;
 void (*g_orig_init_state)(void *) = nullptr;
 int g_shop_last_locidx = -1; // dedup: InitState is re-entered while in the buy-confirm state
 
-// Run the original FIRST: state 7 writes locIdx/itemType partway through InitState, so they are only
-// valid post-init. The grant has already run by then, so the vanilla item can't be redirected here; it
-// is instead suppressed in the Items::OnPickupDone detour (which skips real grants at AP locations).
+// Original first: state 7 writes locIdx/itemType partway through InitState, after the grant, so the Items::OnPickupDone hook suppresses the vanilla item.
 void repl_init_state(void *self)
 {
     if (g_orig_init_state)
@@ -46,8 +44,7 @@ void repl_init_state(void *self)
             // Informational: surfaces the bought slot for serverless testing.
             pal::logf(pal::LogLevel::Debug, "shop: buy-confirm locIdx=%d itemType=%d flags=0x%x", loc_idx, item_type, flags);
 
-            // Entering state 7 is the confirmed-buy grant (deducts money + grants).
-            // Skip pawn-sells (flags bit 0x4) and dedup the per-frame InitState re-entries.
+            // Entering state 7 is the confirmed-buy grant. Skip pawn sells (flags bit 0x4) and dedup the per-frame InitState re-entries.
             if ((flags & 0x4u) == 0 && loc_idx != g_shop_last_locidx)
             {
                 g_shop_last_locidx = loc_idx;      // dedup this confirmed buy
@@ -61,9 +58,7 @@ void repl_init_state(void *self)
     }
 }
 
-// Items::IsItemCollected override lives in native_mod_entry.cpp (native modding hook; cross-platform).
-// This also catches clang-cl's inlined copies of IsItemCollected (e.g. the Pickup-ctor self-kill), which a
-// standalone-function detour could not - so the #93 have-bit box workaround is no longer platform-specific.
+// The Items::IsItemCollected override is the native "IsItemCollected" hook in mod/mod_api.cpp, which also catches clang-cl's inlined copies.
 
 } // namespace
 
@@ -97,25 +92,20 @@ void remove_shop_purchase_hook()
 
 } // namespace pal
 
-// ---- per-stat level cap (Windows). The cap is inlined into the menu's state machine (no cap fn to detour
-// like Linux), so we wrap LevelUpMenu::Update and, before its inlined buy-gate runs, fake the cursor-
-// selected at-cap stat's stored level to trip the game's own cap gate (native "max level", no buy, no
-// spend); restored after. Only the selected stat is faked: the commit handler re-applies the defense level
-// (SaveSlot+0x178) to combat and the bank/level rows commit without the buy-gate, so faking an unselected
-// stat would leave combat defense pinned to the sentinel for the screen.
+// ---- per-stat level cap (Windows). The cap is inlined into the menu's state machine, so this wraps LevelUpMenu::Update and fakes the cursor-selected
+// at-cap stat's stored level to trip the game's own cap gate (native "max level", no buy, no spend), then restores it. Only the selected stat is faked:
+// the commit handler re-applies the defense level (SaveSlot+0x178) to combat and the bank/level rows skip the buy gate, so faking another stat would pin
+// combat defense to the sentinel.
 namespace
 {
 constexpr std::ptrdiff_t kSaveStatArrOff = 0x174; // *(saveSlot + 0x174 + stat*4) = int stat level
 constexpr int kLvlMaxRealStat = 2;                // stats 0..2 = attack/defense/sidearm; 3 = bone bank
 constexpr int kMaxedLevel = 1000;                 // present an at-cap stat as this so the inlined cap gate trips
-// LevelUpMenu state field on the derived `this` (r148714): the state-machine switch value. 3 = the
-// interactive selection/row-display state that runs the inlined buy-gate + SetDescription; 0 = entry gate,
-// 4 = commit, 6 = reopen. We present capped stats as maxed only in state 3, so the entry gate stays on the
-// real level (menu opens, bank row reachable, level-up pulse resolves) and the commit recompute is never fed
-// a fake level.
+// LevelUpMenu state-machine value on the derived `this` (r148714): 3 is the interactive state that runs the inlined buy gate and SetDescription, 0 the
+// entry gate, 4 commit, 6 reopen. Faking only in state 3 keeps the entry gate and the commit recompute on the real level.
 constexpr std::ptrdiff_t kLevelUpMenuStateOff = 0x64;
 constexpr int kLevelUpMenuInteractiveState = 3;
-// menu cursor row (int): 0..2 real stats, 3/4 level/bank. Same offset as Linux; the fake is scoped to it.
+// menu cursor row (int): 0..2 real stats, 3/4 level/bank. Same offset as Linux.
 constexpr std::ptrdiff_t kLevelUpMenuStatOff = 0xb8;
 
 std::uintptr_t g_lc_addr_update = 0;
@@ -126,14 +116,13 @@ pal::LevelUpMenuFn g_lc_after_update = nullptr;
 bool g_lc_resolved = false;
 bool g_lc_ok = false;
 
-// LevelUpMenu::Update wrapper: fake the cursor-selected at-cap stat's level so the inlined cap gate reads it
-// as maxed, then restore. provide(stat, sentinel) returns the granted count while enforcing and the sentinel
-// otherwise, so vanilla play (level < sentinel) is untouched.
+// Fakes the cursor-selected at-cap stat's level so the inlined cap gate reads it as maxed, then restores it. g_lc_cap_fn(s, 0x7fffffff) returns
+// 0x7fffffff when unrestricted, so vanilla play is untouched.
 void repl_lvlup_update(void *self, void *ctx)
 {
     void *slot = pal::active_save_slot(); // the SaveSlot the menu reads
     int saved[3] = {-1, -1, -1};
-    // Interactive state only: faking at the entry state (0) would trip the open gate (menu never opens).
+    // Interactive state only: faking at the entry state (0) trips the open gate and the menu never opens.
     const int menu_state = self != nullptr ? pal::at<int>(self, kLevelUpMenuStateOff) : -1;
     const int cursor_stat = self != nullptr ? pal::at<int>(self, kLevelUpMenuStatOff) : -1;
     const bool interactive = menu_state == kLevelUpMenuInteractiveState;

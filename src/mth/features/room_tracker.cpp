@@ -19,22 +19,15 @@ namespace mth::room_tracker
 
 void poll()
 {
-    // Menu worlds (title, profile select, the in-run overlays) tick World::Update too, and GetRoomIndex
-    // keeps returning the last room throughout, so the gamestate is what separates "in a room" from
-    // "in a menu". Reporting nothing outside a room is the contract AreaReporter is built on: it
-    // early-returns on an absent screen without clearing what it last sent, so a menu neither
-    // publishes a bogus screen nor re-publishes the real one on the way back.
+    // Menu worlds tick World::Update too and GetRoomIndex keeps returning the last room, so the gamestate tells a room from a menu. AreaReporter relies on an
+    // absent screen outside rooms: it early-returns without clearing what it last sent.
     const int gs = mod::current_game_state();
     if (!is_gameplay_game_state(gs))
         return;
 
-    // RoomManager::BeginRoomTransition recomputes the room index by walking the camera's bound list and
-    // stores 0 when nothing matches - and 0 is also a legitimate room - so a mid-transition reading
-    // cannot be told from a real one by value. That same call zeroes the room timer BEFORE recomputing
-    // the index, and every transition state leaves the timer frozen, so a positive timer is the game's
-    // own "this room is settled" signal. Fails open if the build lacks the entry: reporting a transient
-    // beats reporting nothing. Known hole: Player::UpdateResurrectur rewrites the index without zeroing
-    // the timer, so a failed lookup on respawn would still get through.
+    // RoomManager::BeginRoomTransition zeroes the room timer, then recomputes the index from the camera's bound list and stores 0 on no match (0 is also a real
+    // room). Every transition state keeps the timer frozen, so a positive timer means the room is settled. Fails open without the entry. Known hole:
+    // Player::UpdateResurrectur rewrites the index without zeroing the timer.
     if (mod::room_time_api_available() && !(mod::room_time() > 0.0f))
         return;
 

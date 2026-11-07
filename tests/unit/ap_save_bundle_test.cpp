@@ -102,16 +102,16 @@ TEST_CASE("bundle upgrades from a legacy ycsave", "[bundle]")
 
     auto store = f.make();
     REQUIRE(store.load("S", "2").value() == kBlob);
-    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip")); // lazy: a read alone writes nothing
+    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 
     REQUIRE(store.stage_state("S", "2", "c 1\n"));
     REQUIRE(store.store("S", "2", kBlob));
     REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 
     auto reader = f.make();
-    REQUIRE(reader.load("S", "2").value() == kBlob); // carried into the container
+    REQUIRE(reader.load("S", "2").value() == kBlob);
     REQUIRE(reader.load_state("S", "2").value() == "c 1\n");
-    REQUIRE(std::filesystem::exists(f.saves / mth::ap_save_filename("S", "2"))); // legacy left untouched
+    REQUIRE(std::filesystem::exists(f.saves / mth::ap_save_filename("S", "2")));
 }
 
 TEST_CASE("bundle upgrades from a legacy state file", "[bundle]")
@@ -126,7 +126,7 @@ TEST_CASE("bundle upgrades from a legacy state file", "[bundle]")
     auto reader = f.make();
     REQUIRE(reader.load_state("S", "2").value() == "c 4\ns 1\n");
     REQUIRE(reader.load("S", "2").value() == kBlob);
-    REQUIRE(std::filesystem::exists(f.root / "ap_S_2.state")); // legacy left untouched
+    REQUIRE(std::filesystem::exists(f.root / "ap_S_2.state"));
 }
 
 TEST_CASE("bundle upgrades from both legacy files at once", "[bundle]")
@@ -163,7 +163,7 @@ TEST_CASE("bundle rotates a backup on rewrite", "[bundle]")
     auto store = f.make();
     REQUIRE(store.stage_state("S", "2", "c 1\n"));
     REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak")); // nothing to back up yet
+    REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak"));
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
     REQUIRE(store.store("S", "2", kBlob));
     REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak"));
@@ -178,7 +178,7 @@ TEST_CASE("bundle backs up once per session, not once per write", "[bundle]")
     auto store = f.make();
     REQUIRE(store.stage_state("S", "2", "c 1\n"));
     REQUIRE(store.store("S", "2", kBlob));
-    REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n")); // rotates the first generation out
+    REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
     REQUIRE(store.store("S", "2", kBlob));
     const auto backup = f.saves / "ap_S_2.zip.bak";
     REQUIRE(std::filesystem::exists(backup));
@@ -186,8 +186,7 @@ TEST_CASE("bundle backs up once per session, not once per write", "[bundle]")
     std::ifstream in(backup, std::ios::binary);
     const std::string pinned((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>{});
 
-    // Further writes in the same session must leave that generation alone, or the backup decays to
-    // "one location check ago" and protects nothing.
+    // Further writes in the same session leave that generation alone, or the backup decays to "one location check ago".
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\nc 3\n"));
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\nc 3\nc 4\n"));
     REQUIRE(store.store("S", "2", kBlob));
@@ -211,7 +210,7 @@ TEST_CASE("bundle recovers from the backup when the container is missing", "[bun
     std::filesystem::remove(f.saves / "ap_S_2.zip");
 
     auto reader = f.make();
-    REQUIRE(reader.load_state("S", "2").value() == "c 1\n"); // the backup holds the previous generation
+    REQUIRE(reader.load_state("S", "2").value() == "c 1\n");
 }
 
 TEST_CASE("bundle falls back to legacy when the container is corrupt", "[bundle]")
@@ -228,7 +227,7 @@ TEST_CASE("bundle treats a foreign manifest as not ours", "[bundle]")
 {
     Fixture f;
     auto store = f.make();
-    REQUIRE(store.store("a b", "2", kBlob)); // sanitizes to ap_a_b_2.zip
+    REQUIRE(store.store("a b", "2", kBlob));
 
     // "a_b" sanitizes to the same filename but is a different raw seed.
     auto reader = f.make();
@@ -258,10 +257,8 @@ TEST_CASE("bundle switches cleanly between sessions", "[bundle]")
 TEST_CASE("bundle ignores an unsafe legacy state name", "[bundle]")
 {
     Fixture f;
-    // A seed carrying a separator must not be turned into a path to read. The pre-container name
-    // interpolates it raw, so this seed builds "ap_../../etc/passwd_2.state". Plant both the
-    // directory the traversal steps through and the file it lands on, inside the fixture's own tree:
-    // without the refusal that read succeeds and the planted text becomes the session's AP state.
+    // A seed carrying a separator must not become a path to read: the pre-container name interpolates it raw ("ap_../../etc/passwd_2.state").
+    // Plant the directory and file the traversal lands on inside the fixture's tree; without the refusal the planted text becomes the AP state.
     std::filesystem::create_directories(f.root / "ap_..");
     f.write_file(f.root / "etc" / "passwd_2.state", "c 999\n");
 
@@ -272,8 +269,7 @@ TEST_CASE("bundle ignores an unsafe legacy state name", "[bundle]")
 TEST_CASE("bundle ignores a malformed save entry inside a container", "[bundle]")
 {
     Fixture f;
-    // A container with a corrupt save entry but an intact state entry, the way a user editing the
-    // zip could produce.
+    // A container with a corrupt save entry but an intact state entry, as a user editing the zip could produce.
     f.write_file(f.saves / "ap_S_2.zip", mth::zip::write({
                                              mth::zip::compress("manifest.json", "{\"format\":1,\"seed\":\"S\",\"slot\":\"2\"}"),
                                              mth::zip::compress("save.ycsave", "not a save at all"),
@@ -281,15 +277,15 @@ TEST_CASE("bundle ignores a malformed save entry inside a container", "[bundle]"
                                          }));
 
     auto reader = f.make();
-    REQUIRE_FALSE(reader.load("S", "2").has_value()); // refused, not staged into the game
+    REQUIRE_FALSE(reader.load("S", "2").has_value());
     REQUIRE(reader.load_state("S", "2").value() == "c 1\n");
 }
 
 TEST_CASE("bundle reads and stages without rewriting a container it declined to use", "[bundle]")
 {
     Fixture f;
-    // A structurally valid container whose save blob the mod does not recognise: exactly what a game
-    // update bumping the ycData header version would produce. Ordinary play must not delete it.
+    // A valid container whose save blob the mod does not recognise, as a game update bumping the ycData header version would produce. Ordinary play
+    // must not delete it.
     const std::string future = "[YCD Version: 2]\nSaveSlot\n{ m_iFoo: 1 }";
     f.write_file(f.saves / "ap_S_2.zip", mth::zip::write({
                                              mth::zip::compress("manifest.json", "{\"format\":1,\"seed\":\"S\",\"slot\":\"2\"}"),
@@ -298,7 +294,7 @@ TEST_CASE("bundle reads and stages without rewriting a container it declined to 
                                          }));
 
     auto store = f.make();
-    REQUIRE_FALSE(store.load("S", "2").has_value()); // not usable
+    REQUIRE_FALSE(store.load("S", "2").has_value());
     // Checking locations stages without writing, so ordinary play cannot reach the container at all.
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\nc 3\n"));
@@ -323,8 +319,8 @@ TEST_CASE("bundle refuses to overwrite a container belonging to another run", "[
     {
         auto store = f.make();
         REQUIRE(store.stage_state("a b", "2", "c 1\n"));
-        REQUIRE(store.store("a b", "2", kBlob)); // sanitizes to ap_a_b_2.zip
-        REQUIRE(store.store("a b", "2", kBlob)); // a second generation, so a backup exists to protect
+        REQUIRE(store.store("a b", "2", kBlob));
+        REQUIRE(store.store("a b", "2", kBlob));
     }
 
     const auto container = f.saves / "ap_a_b_2.zip";
@@ -359,7 +355,7 @@ TEST_CASE("bundle leaves both copies alone when the container cannot be written"
         auto store = f.make();
         REQUIRE(store.stage_state("S", "2", "c 1\n"));
         REQUIRE(store.store("S", "2", kBlob));
-        REQUIRE(store.store("S", "2", kBlob)); // a second generation, so a backup exists to protect
+        REQUIRE(store.store("S", "2", kBlob));
     }
 
     const auto container = f.saves / "ap_S_2.zip";
@@ -374,9 +370,8 @@ TEST_CASE("bundle leaves both copies alone when the container cannot be written"
     REQUIRE_FALSE(before.empty());
     REQUIRE_FALSE(backup_before.empty());
 
-    // A directory sitting where the writer wants its temp file, so the open fails the way a full or
-    // read-only disk would. The saves directory itself stays writable, so a rotation done in the
-    // wrong order would still be able to consume the backup, and this case would catch it.
+    // A directory sits where the writer wants its temp file, so the open fails like a full disk. The saves directory stays writable, so a rotation done
+    // in the wrong order would consume the backup and fail this case.
     std::filesystem::create_directory(f.saves / "ap_S_2.zip.tmp");
 
     auto store = f.make();
@@ -399,7 +394,7 @@ TEST_CASE("bundle survives a manifest with wrong field types", "[bundle]")
                                              }));
         auto store = f.make();
         REQUIRE_NOTHROW(store.load("S", "2"));
-        REQUIRE_FALSE(store.load("S", "2").has_value()); // unreadable, not adopted
+        REQUIRE_FALSE(store.load("S", "2").has_value());
     }
 }
 
@@ -407,8 +402,7 @@ TEST_CASE("bundle game saves are on disk before store returns", "[bundle]")
 {
     Fixture f;
     auto store = f.make();
-    // The mod is leaked and never runs a destructor, so the game's save has to be the durability
-    // point rather than something merely queued.
+    // The mod is leaked and never runs a destructor, so the game's save is the durability point.
     REQUIRE(store.store("S", "2", kBlob));
     REQUIRE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 
@@ -423,8 +417,7 @@ TEST_CASE("bundle does not publish staged state when destroyed", "[bundle]")
         auto store = f.make();
         REQUIRE(store.stage_state("S", "2", "c 1\n"));
         REQUIRE(store.store("S", "2", kBlob));
-        // Staged after the last game save. Teardown must not hand it a durability point the run
-        // itself never got.
+        // Staged after the last game save; teardown must not give it a durability point the run never got.
         REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
     }
 
@@ -466,8 +459,7 @@ TEST_CASE("bundle keeps the save blob intact across same-length state writes", "
     Fixture f;
     auto store = f.make();
     REQUIRE(store.store("S", "2", kBlob));
-    // Staged states coalesce into the single commit the game save triggers, and the blob rides
-    // along without ever being confused for a changed one.
+    // Staged states coalesce into the single commit the game save triggers, and the blob rides along unchanged.
     for (int i = 0; i < 5; ++i)
         REQUIRE(store.stage_state("S", "2", "c " + std::to_string(i) + "\n"));
     REQUIRE(store.store("S", "2", kBlob));

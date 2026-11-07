@@ -110,13 +110,11 @@ std::vector<BannerFrame> BannerQueue::update(double now)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Retire any faded-out banners. All share the same lifetime and start in arrival order, so the oldest
-    // (front) always expires first; erasing in place keeps the rest ordered.
+    // Retire faded banners. All share one lifetime and start in arrival order, so the front expires first.
     while (!active_.empty() && now - active_.front().start >= kHoldSeconds + kFadeSeconds)
         active_.pop_front();
 
-    // One banner per interval, so a batch of messages pushed in the same frame does not appear all at once.
-    // A banner promoted now starts its hold from `now`.
+    // One banner per interval so a same-frame batch staggers; a promoted banner starts its hold at `now`.
     if (!pending_.empty() && static_cast<int>(active_.size()) < kMaxVisible && now >= next_promote_)
     {
         active_.push_back(Active{std::move(pending_.front()), now});

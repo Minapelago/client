@@ -34,8 +34,8 @@ TEST_CASE("AbilityGate blocks only randomized, ungranted abilities on the AP slo
     const std::function<bool(std::int64_t)> granted = [](std::int64_t) { return true; };
     const std::function<bool(std::int64_t)> ungranted = [](std::int64_t) { return false; };
 
-    REQUIRE(gate.blocked(Ability::Burrow, true, ungranted));        // randomized, AP slot, not granted -> block
-    REQUIRE_FALSE(gate.blocked(Ability::Burrow, true, granted));    // granted -> allow
-    REQUIRE_FALSE(gate.blocked(Ability::Burrow, false, ungranted)); // not the AP slot -> allow
-    REQUIRE_FALSE(gate.blocked(Ability::Swim, true, ungranted));    // not randomized -> allow
+    REQUIRE(gate.blocked(Ability::Burrow, true, ungranted));
+    REQUIRE_FALSE(gate.blocked(Ability::Burrow, true, granted));
+    REQUIRE_FALSE(gate.blocked(Ability::Burrow, false, ungranted));
+    REQUIRE_FALSE(gate.blocked(Ability::Swim, true, ungranted));
 }

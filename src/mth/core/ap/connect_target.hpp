@@ -6,8 +6,8 @@
 namespace mth
 {
 
-// How a login target expects to reach the server. apclientpp arms its own wss/ws alternation only when the URI it
-// receives carries no scheme (it looks for "://" and sets _tryWSS), so writing one in is what takes the fallback away.
+// How a login target expects to reach the server. apclientpp alternates wss/ws only for a schemeless URI (it looks for "://" and sets _tryWSS),
+// so adding a scheme disables the fallback.
 enum class TlsMode
 {
     Off,       // the caller pinned ws://, or the host is loopback: never encrypted, no bundle needed
@@ -27,8 +27,7 @@ struct ConnectTarget
         return {std::string(server), TlsMode::Pinned};
     if (server.starts_with("ws://"))
         return {std::string(server), TlsMode::Off};
-    // A local server almost never terminates TLS, and each rejected scheme costs a reconnect interval, so pinning the
-    // loopback names keeps the dev loop from paying a few seconds on every connect.
+    // Local servers rarely terminate TLS and each rejected scheme costs a reconnect interval, so loopback names get ws://.
     if (server.starts_with("localhost") || server.starts_with("127.0.0.1"))
         return {"ws://" + std::string(server), TlsMode::Off};
     return {std::string(server), TlsMode::Preferred};

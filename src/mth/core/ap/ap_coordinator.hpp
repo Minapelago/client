@@ -16,13 +16,9 @@ struct ScoutInfo;
 class ApCoordinator
 {
   public:
-    // on_session_reset fires on the game thread (from tick()) when a fresh ApConnected or ApDisconnected
-    // event is drained: a session boundary, so callers reset any per-session state keyed off the prior
-    // connection (e.g. clearing a scout cache) without racing a render-thread caller of the same state.
-    // on_session_end fires on the game thread when the link reports a different (seed, slot), immediately
-    // before that connection's ApConnected is applied. Callers drop the previous session's state there; a
-    // reconnect to the same seed+slot never fires it.
-    // on_death carries the bounce's source (who died) and cause so the death can be attributed to a player.
+    // Callbacks run on the game thread from tick(). on_session_reset: an ApConnected or ApDisconnected was drained (e.g. clear the scout cache).
+    // on_session_end: the link reports a different (seed, slot), just before that connection's ApConnected applies; never on a same seed+slot reconnect.
+    // on_death gets the bounce's source (who died) and cause.
     ApCoordinator(IApLink &link, ApState &state, std::function<void(const std::string &source, const std::string &cause)> on_death = {},
                   std::function<void(const std::vector<BannerSegment> &)> on_broadcast = {}, std::function<void(const std::vector<ScoutInfo> &)> on_scout = {},
                   std::function<void()> on_session_reset = {}, std::function<void()> on_session_end = {});

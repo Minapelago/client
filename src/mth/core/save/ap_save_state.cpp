@@ -34,7 +34,7 @@ std::string ApSaveState::serialize() const
 
 void ApSaveState::deserialize(std::string_view text)
 {
-    // Replaces rather than merges, so it is the inverse of serialize() however many times it runs.
+    // Replaces the state, so it inverts serialize() however often it runs.
     checked_.clear();
     granted_.clear();
     game_slot_ = -1;

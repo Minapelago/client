@@ -1,14 +1,9 @@
-// Linux crash handler: POSIX signal handlers for the fatal signals that log a
-// backtrace as module(+offset) lines into the mod log, then re-raise the default
-// disposition so the process still dies (and dumps core if enabled).
+// Linux crash handler: fatal-signal handlers log a backtrace as module(+offset) lines into the mod log, then re-raise with the default disposition so
+// the process still dies (and dumps core if enabled).
 //
-// Async-signal-safety is the hard constraint: the handler must touch nothing that
-// can take a lock or call malloc, because the crash may have happened mid-logf or
-// inside the allocator. So it does NOT call pal::logf; it writes straight to the
-// log fd (captured at install) with backtrace_symbols_fd() and hand-rolled
-// integer formatting. backtrace()/backtrace_symbols_fd() are the documented
-// signal-safe pair and are ancient glibc symbols (GLIBC_2.2.5), so they stay
-// within the Steam Linux Runtime symbol-version pin.
+// The handler must be async-signal-safe, since the crash may be mid-logf or inside the allocator: no pal::logf, no malloc, no locks. It writes to the
+// log fd captured at install with backtrace_symbols_fd() and hand-rolled formatting. backtrace()/backtrace_symbols_fd() are the signal-safe pair and
+// date from GLIBC_2.2.5, inside the Steam Linux Runtime pin.
 
 #include <cstring>
 
@@ -29,8 +24,7 @@ constexpr int kMaxFrames = 64;
 void *g_frames[kMaxFrames]; // reused in the handler; a crash is effectively single-shot
 int g_log_fd = -1;          // captured at install so the handler never calls into the logger
 
-// 64 KiB alternate stack so a stack-overflow SIGSEGV can still run the handler.
-// Fixed size (not SIGSTKSZ, which is a non-constant sysconf call on glibc >= 2.34).
+// 64 KiB alternate stack so a stack-overflow SIGSEGV can still run the handler. Fixed because SIGSTKSZ is a sysconf call on glibc >= 2.34.
 char g_altstack_mem[64 * 1024];
 
 void safe_write(int fd, const char *s)
@@ -94,8 +88,7 @@ void handler(int sig, siginfo_t *info, void * /*ucontext*/)
         safe_write(fd, " ***\n");
     }
 
-    // module(+0xRVA)[abs] per frame, no malloc; map game frames to the un-stripped
-    // binary in Ghidra and libmthap.so frames to our code.
+    // module(+0xRVA)[abs] per frame; map game frames to the unstripped binary in Ghidra and mod frames to our code.
     const int n = backtrace(g_frames, kMaxFrames);
     for (const int fd : fds)
     {
@@ -103,8 +96,7 @@ void handler(int sig, siginfo_t *info, void * /*ucontext*/)
             backtrace_symbols_fd(g_frames, n, fd);
     }
 
-    // Re-raise with the default disposition so the process terminates normally
-    // (and writes a core dump if ulimit -c allows).
+    // Re-raise with the default disposition so the process dies normally (and dumps core if ulimit -c allows).
     signal(sig, SIG_DFL);
     raise(sig);
 }
@@ -121,8 +113,7 @@ void install_crash_handler()
     ss.ss_flags = 0;
     sigaltstack(&ss, nullptr);
 
-    // Pre-warm backtrace(): its first call can dlopen libgcc / allocate, which we
-    // must not do for the first time inside the handler.
+    // Pre-warm backtrace(): its first call can dlopen libgcc or allocate, which must not first happen inside the handler.
     void *warm[4];
     (void)backtrace(warm, 4);
 

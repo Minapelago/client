@@ -9,10 +9,8 @@
 namespace mth
 {
 
-// Per-(seed, slot) run state: checked location indices and granted item indices. Staged through
-// the store seam, which holds it until the game saves so the two can never disagree.
-// Sets rather than cursors: robust to gaps/out-of-order. Received-items list is
-// server state and is never persisted.
+// Per-(seed, slot) run state: checked location indices and granted item indices, staged through the store seam until the game saves so the two
+// never disagree. Sets, so gaps and out-of-order indices are fine; the received-items list is server state and never persisted.
 class ApSaveState
 {
   public:

@@ -11,9 +11,8 @@
 namespace mth
 {
 
-// slot_data "kear_rando". Vanilla puts Universal Kear items (itemType 63) in the pool and they must grant
-// real usable keys; the AP-item modes remove each lock (or each area's locks) with a dedicated AP item, so
-// usable keys carry no meaning and stay pinned at zero. Kear pickup spots are AP locations in every mode.
+// slot_data "kear_rando". Vanilla: Universal Kear items (itemType 63) grant real usable keys. The AP-item modes remove each lock (or each area's
+// locks) with a dedicated item, so usable keys stay at zero. Kear pickup spots are AP locations in every mode.
 enum class KearMode : int
 {
     Vanilla = 0,
@@ -48,17 +47,15 @@ struct SlotDataConfig
     std::uint64_t broken_generator_mask{kAllGeneratorsMask}; // "broken_generators": these count toward the goal
     int goal_bosses{99};                                     // "goal_bosses": bosses needed (default unreachable)
     bool wallet_cap{false};                                  // "wallet_cap": cap the bone wallet by received wallet items
-    // "mirror_switch_rando": the Mirrors End shortcut switches are AP items. Absent means vanilla, since a
-    // seed that does not shuffle them has no way to grant one and would otherwise hold all five shut.
+    // "mirror_switch_rando": the Mirrors End shortcut switches are AP items. Absent means vanilla, since nothing could grant them otherwise.
     bool mirror_switch_rando{false};
     std::uint32_t lit_generator_lamp_mask{0}; // "lit_generators": force these Ossex fountain lamps lit (visual only)
     // "removed_locations": ids the apworld pruned from the pool; treated as already collected.
     std::vector<std::int64_t> removed_locations{};
 };
 
-// Map a server slot_data blob onto the config. A non-object blob (older/absent slot_data) yields every
-// default. Out-of-range and non-integer array entries are warned about and skipped; a value whose JSON
-// type does not match the field throws out of nlohmann.
+// Maps a slot_data blob onto the config. A non-object blob yields all defaults; bad array entries are warned and skipped; a field of the wrong
+// JSON type throws out of nlohmann.
 [[nodiscard]] SlotDataConfig parse_slot_data(const nlohmann::json &data);
 
 } // namespace mth

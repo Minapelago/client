@@ -6,8 +6,7 @@
 namespace mth
 {
 
-// File format: "server <host:port>" / "slot <name>", one per line. The value is the rest of
-// the line, not a token: AP slot names routinely contain spaces.
+// File format: "server <host:port>" / "slot <name>", one per line. The value is the rest of the line, since AP slot names contain spaces.
 LoginPrefs::LoginPrefs(std::filesystem::path path) : path_(std::move(path))
 {
     load();
@@ -15,9 +14,8 @@ LoginPrefs::LoginPrefs(std::filesystem::path path) : path_(std::move(path))
 
 namespace
 {
-// The file is one record per line, so a newline inside a value would reload as a second record: a slot
-// of "Mina\nslot Evil" comes back as slot "Evil". Trimming at the setter keeps what is held in memory
-// equal to what a reload produces.
+// One record per line, so a newline in a value would reload as a second record ("Mina\nslot Evil" comes back as slot "Evil"). Trimming in the
+// setter keeps memory equal to what a reload produces.
 std::string one_line(std::string value)
 {
     const std::size_t cut = value.find_first_of("\r\n");

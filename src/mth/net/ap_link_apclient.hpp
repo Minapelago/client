@@ -15,7 +15,7 @@
 #include "mth/core/ap/ap_link.hpp"
 #include "mth/core/ap/connect_target.hpp"
 
-class APClient; // forward-declared; full type only in the .cpp
+class APClient; // full type only in the .cpp
 
 namespace mth::net
 {
@@ -52,9 +52,8 @@ class ApLink final : public mth::IApLink
     std::unique_ptr<APClient> client_; // net thread only
     bool encrypted_attempt_{true};     // net thread only; mirrors which scheme apclientpp will try next
     int last_item_index_{-1};          // net thread only
-    // Identity of the AP session this process is on, as reported by the server. Survives disconnects on
-    // purpose: only a server authenticating a DIFFERENT seed/slot ends the session. Empty until the first
-    // connect authenticates, so that one always counts as a new session.
+    // Server-reported identity of this process's AP session. It survives disconnects; only a different seed/slot authenticating ends it. Empty until the
+    // first connect, which always counts as a new session.
     std::string session_seed_;                                              // net thread only
     int session_slot_{-1};                                                  // net thread only
     std::string slot_name_;                                                 // net thread only; captured on connect for bounce source
@@ -62,9 +61,8 @@ class ApLink final : public mth::IApLink
 
     std::atomic<bool> running_{true};
     std::atomic<bool> connected_{false};
-    // Effective deathlink = slot_deathlink_ && !force_off_. deathlink_ is the cached effective gate that the
-    // send/receive/tag paths read; force_off_ is a sticky client-side opt-out (survives reconnect); slot_deathlink_
-    // remembers the last slot_data "death_link" so clearing the opt-out can defer back to it.
+    // Effective deathlink = slot_deathlink_ && !force_off_, cached in deathlink_ for the send/receive/tag paths. force_off_ is the sticky console opt-out
+    // (survives reconnect); slot_deathlink_ keeps slot_data "death_link" so clearing the opt-out defers to it.
     std::atomic<bool> deathlink_{false};
     std::atomic<bool> force_off_{false};
     std::atomic<bool> slot_deathlink_{false};

@@ -15,8 +15,7 @@ namespace
 
 using mth::looks_like_component;
 
-// The game's ownership link, and the only path that names THIS vendor's component. Both offsets are
-// Linux-derived, so both hops are validated.
+// The game's ownership link, the only path that names this vendor's component. Both offsets are Linux-derived, so both hops are validated.
 [[nodiscard]] void *interact_via_owner(void *behavior)
 {
     void *owner = *reinterpret_cast<void **>(static_cast<char *>(behavior) + mth::layout::kSewerCatEntityOff);
@@ -37,11 +36,9 @@ SewerCatGate::SewerCatGate(std::function<bool()> should_disable) : should_disabl
 {
 }
 
-// The owner link decides. The sibling is a fallback for a moved owner offset, usable only when the child
-// list held exactly one interact component: nothing binds a sibling to a particular NPC, so guessing with
-// two NPCs on one entity disables the wrong one and then hides it, every later walk finding the byte
-// already set. The winning path is logged because a sibling win means the owner offset needs re-checking.
-// Writes only on a 0->1 transition, so the log marks the tick that changed something.
+// The owner link decides. The sibling is a fallback for a moved owner offset, used only when the child list holds exactly one interact component: with two NPCs
+// on one entity a guess disables the wrong one, and every later walk sees the byte already set. A sibling win in the log means the owner offset needs
+// re-checking. Writes only on a 0->1 transition.
 void SewerCatGate::disable_vendor(void *behavior, void *sibling_interact, bool sibling_unique)
 {
     const char *via = "owner";
@@ -72,9 +69,8 @@ void SewerCatGate::tick()
     if (root == nullptr)
         return;
 
-    // Behaviour and interact component are docked as siblings, so one node's children yield both. The
-    // count is what makes the sibling usable: one under this entity can only be his, several cannot be
-    // told apart.
+    // Behaviour and interact component are docked as siblings, so one node's children yield both. The sibling is his only when it is the sole interact
+    // component under this entity.
     const SceneWalk walk = walker_.walk(root,
                                         [&](std::span<void *const> children)
                                         {

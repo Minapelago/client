@@ -16,8 +16,7 @@ std::string make_deathlink_payload(const std::string &source, const std::string 
 {
     nlohmann::json j;
     j["time"] = time_epoch_s;
-    // `source` goes out even when empty. Receivers read it unguarded whenever the cause is absent, and the
-    // KeyError there drops that player from the multiworld rather than skipping one death.
+    // `source` is sent even when empty: receivers read it unguarded when the cause is absent, and that KeyError drops the player from the multiworld.
     j["source"] = source;
     if (!cause.empty())
         j["cause"] = cause;

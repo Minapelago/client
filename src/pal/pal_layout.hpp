@@ -3,9 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-// Game data offsets and code patterns that differ between the Linux (GCC) and Windows (MSVC) builds.
-// Shared code in mth/ reads these instead of branching on the platform. Layout that is the same on
-// both builds lives in mth/core/game/game_layout.hpp or next to the code that uses it.
+// Game data offsets and code patterns that differ between the Linux (GCC) and Windows (MSVC) builds, so mth/ need not branch on the platform. Layout
+// shared by both lives in mth/core/game/game_layout.hpp or next to its user.
 namespace pal::layout
 {
 
@@ -24,11 +23,9 @@ inline constexpr std::ptrdiff_t kSaveManagerMasterOff = 0x10;
 // menu owner sits at +0x40 where Linux reads +0x1b0. The case-0x15 chain is self+0x40 -> +0xc8 -> +0x21c.
 inline constexpr std::ptrdiff_t kTrainAuthOwnerOff = 0x40;
 
-// This build's TitleScreen::UpdateState detour is handed the secondary state-machine base (Ghidra's
-// param_1), not the TitleScreen base that mth::layout::kTitle* are relative to. Linux's "non-virtual
-// thunk to TitleScreen::UpdateState()" subtracts exactly this much before calling the true-base
-// UpdateState, and Windows RVA 0xb0a490 reads its cursor field at param_1+0x128 where Linux reads
-// true-base+0x160 (0x128 + 0x38 == 0x160), confirming the delta.
+// The TitleScreen::UpdateState detour here gets the secondary state-machine base (Ghidra's param_1), which mth::layout::kTitle* are not relative to.
+// Linux's "non-virtual thunk to TitleScreen::UpdateState()" subtracts exactly this, and Windows RVA 0xb0a490 reads its cursor at param_1+0x128 where
+// Linux reads true-base+0x160.
 inline constexpr std::ptrdiff_t kTitleSecondaryBaseAdjust = 0x38;
 
 // ShopMenu::SetupBoxes' always-shown train-line test. MSVC expands the mask into

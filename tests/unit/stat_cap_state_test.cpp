@@ -67,8 +67,8 @@ TEST_CASE("enforced cap passes through at and below vanilla", "[stat_cap]")
 {
     mth::StatCapState caps;
     caps.set_counts(9, 5, 0);
-    REQUIRE(caps.enforced_cap(0, 9) == 9); // count == vanilla: full unlock (displayed level 10)
-    REQUIRE(caps.enforced_cap(1, 9) == 5); // count < vanilla: passes through unchanged
+    REQUIRE(caps.enforced_cap(0, 9) == 9);
+    REQUIRE(caps.enforced_cap(1, 9) == 5);
 }
 
 TEST_CASE("console-injected cap-up counts like a socket item and leaves the cursor", "[stat_cap]")
@@ -227,11 +227,9 @@ TEST_CASE("boneup_with_cap_suffix leaves text alone when the first line is empty
 
 namespace
 {
-// The panel's level widget wraps at a fixed width and renders the overflow ABOVE the box, so the
-// constraint on the annotated label is its rendered width, not its wording. Nothing outside the game
-// can measure that width, so the tests below use a character count as the proxy: "LVL 9 (14)" was
-// reported rendering on one line and "LVL 14 (14)" was reported wrapping, which makes ten the longest
-// label with in-game evidence behind it.
+// The panel's level widget wraps at a fixed width and renders the overflow above the box, so the constraint on the annotated label is its rendered
+// width. Nothing outside the game can measure that, so the tests use a character count as the proxy: "LVL 9 (14)" rendered on one line and
+// "LVL 14 (14)" wrapped, so ten is the longest label with in-game evidence.
 constexpr std::size_t kPanelFitChars = 10;
 } // namespace
 

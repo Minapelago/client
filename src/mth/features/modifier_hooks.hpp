@@ -12,15 +12,13 @@
 namespace mth
 {
 
-// Owns the modifier hooks (modifier_hooks.cpp) and the enforcement policy. Installs unconditionally when modifiers
-// are available; the hooks no-op while disarmed. Armed from construction, so an AP session enforces
-// the deny list without any configuration; `modifiers unlock` is the manual override.
+// Owns the modifier hooks and enforcement policy. Installs whenever modifiers are available; the hooks no-op while disarmed. Armed from construction so an AP
+// session enforces the deny list; `modifiers unlock` overrides.
 class ModifierHooks
 {
   public:
-    // `on_save_loaded` runs on the game thread when a save slot is activated with a real load;
-    // title/profile-menu re-activations do not fire it. It rides the ActivateSaveSlot hook, so it is
-    // inert while modifiers are unavailable, and the destructor clears it after removing the hook.
+    // `on_save_loaded` runs on the game thread when a save slot is activated by a real load (title/profile-menu re-activations skip it). It rides the
+    // ActivateSaveSlot hook, and the destructor clears it after removing the hook.
     explicit ModifierHooks(std::function<void()> on_save_loaded);
     ~ModifierHooks();
     ModifierHooks(const ModifierHooks &) = delete;
@@ -29,14 +27,13 @@ class ModifierHooks
     // Console/AP seams (any thread).
     void set_armed(bool on);
     void set_live(int idx, bool on); // enqueue a live change; applied on the game thread
-    // Gate for both seed and lockdown; vanilla play (not connected, not test mode) is never affected.
+    // Gates both seed and lockdown; off for vanilla play (not connected, not test mode).
     void set_enforce_live(bool on);
     // True (authed AP session): scope the seed to the AP game's slot, captured on first load.
     void set_ap_scoped(bool on);
     // slot_data seam: add/remove Landing Done from the AP force-on set (Warp Home is always forced).
     void set_ossex_start(bool on);
-    // Persistence of the AP-game slot (App bridges this to ApSaveState across sessions): seed a
-    // previously-recorded slot so capture is skipped, and read back the slot captured this session.
+    // AP-game slot persistence (App bridges it to ApSaveState): seeds a recorded slot so capture is skipped, and reads back the slot captured this session.
     void set_ap_slot(int slot);
     [[nodiscard]] int captured_ap_slot() const;
     [[nodiscard]] std::vector<std::string> status_lines() const;

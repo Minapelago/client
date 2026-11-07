@@ -5,8 +5,8 @@
 
 using mth::hookhash::hash64;
 
-// The reference values are the movabs immediates read out of the game's own RunHooks dispatch sites,
-// so this pins the implementation against the shipping binary rather than against itself.
+// The reference values are the movabs immediates read out of the game's own RunHooks dispatch sites, so this pins the implementation to the
+// shipping binary.
 static_assert(hash64("FixedUpdate") == 0xd7aa418c4961d6baULL);
 static_assert(hash64("GameInit") == 0xcd6c390c7a5949a6ULL);
 static_assert(hash64("GameShutdown") == 0xfa1005f0dfb0b999ULL);

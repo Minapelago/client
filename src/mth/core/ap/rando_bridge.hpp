@@ -23,28 +23,23 @@ class RandoBridge
     // Attach durable per-(seed,slot) state on connect; before this, checks are session-only.
     void attach_save_state(ApSaveState &save);
 
-    // Session boundary: release the save and re-arm the one-shot goal, so the next connection behaves
-    // like the first since launch (without the goal re-arm a second server is never told it was reached).
+    // Session boundary: releases the save and re-arms the one-shot goal, so a second server is also told the goal was reached.
     void reset_session();
 
-    // Release the attached state. The caller owns the ApSaveState and may destroy it immediately after,
-    // so this must run first. Checks fall back to session-only dedup until the next attach.
+    // Releases the attached state; call before destroying the ApSaveState. Checks fall back to session-only dedup until the next attach.
     void detach_save_state();
 
     // Record a collected slot (persisted if attached); send check if connected, else wait for flush().
     void on_location_collected(int collection_slot);
 
-    // Mark a slot checked because the SERVER reported it (Collect / same-slot coop), not the player.
-    // Persists into the attached save state but NEVER sends to the server. Returns true if this call
-    // newly checked a valid AP location (save attached, not already checked), so the caller can batch a
-    // single save() per reconcile pass. No-op returning false when no save is attached.
+    // Marks a slot checked because the server reported it (Collect / same-slot coop); persists to the attached save state and never sends.
+    // Returns true if this call newly checked a valid AP location, so the caller can batch one save() per reconcile pass; false with no save attached.
     [[nodiscard]] bool reconcile_server_checked(int collection_slot);
 
     // Resend the full checked-set (server dedups). Call on (re)connect.
     void flush();
 
-    // Request scout (item/player) info for the given collection slots; non-AP-location slots are
-    // dropped. Results arrive later as an ApScoutInfo event. No-op if none of the slots are AP locations.
+    // Requests scout info for the given collection slots, dropping non-AP-location ones; results arrive as an ApScoutInfo event.
     void request_scouts(const std::vector<int> &collection_slots);
 
     // Send the AP goal (final boss defeated). One-shot per session; no-op unless authenticated.
@@ -53,8 +48,7 @@ class RandoBridge
     [[nodiscard]] bool is_ap_location(int collection_slot) const;
     [[nodiscard]] bool is_checked(int collection_slot) const; // false for negative/non-location slots
 
-    // slot_data pruned this location out of the pool. Reads as an already-checked AP location so the
-    // in-world suppression fires, but is excluded from every outbound path.
+    // Pruned by slot_data. Reads as checked so in-world suppression fires, but never goes outbound.
     [[nodiscard]] bool is_removed(int collection_slot) const;
 
     // The slot_data removed-location ids. Game-thread; used by the native collected-bit enforcement so a

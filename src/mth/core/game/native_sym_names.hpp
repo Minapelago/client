@@ -8,10 +8,8 @@
 namespace mth::sym
 {
 
-// GetSymAddr takes the game's plain source-level name, not the mangled one every other resolution
-// path here keys off. Only names the API documents as supported belong in this table; an unlisted
-// one is not an error, it falls through to the platform resolver. These addresses come from the game
-// itself, so they cannot drift.
+// GetSymAddr takes the game's plain source-level name (the other paths key off the mangled one). Only names the API documents as supported belong
+// here; unlisted ones fall through to the platform resolver. The game supplies these addresses, so they can't drift.
 struct NativeSymName
 {
     const char *mangled;
@@ -42,13 +40,9 @@ inline constexpr NativeSymName kNativeSymNames[] = {
     {hub_fountain_bulb_update, "HubFountain::Bulb::Update"},
 };
 
-// Mangled symbol -> a mod hook dispatched from inside that function. The hook's name hash is inlined
-// at the dispatch site, which anchors the function without a carved signature. Deriving from the
-// hook NAME is what makes it durable: a mask that happens to be unique is not a substitute.
-//
-// An entry here is worth it whenever the mod needs the ADDRESS, which includes functions it detours
-// rather than hooks. Game::FixedUpdate is anchored but still detoured, because the hook fires at the
-// top of the function while the tick has to run after the original.
+// Mangled symbol -> a mod hook dispatched from inside that function. The hook name's hash is inlined at the dispatch site, so it anchors the
+// function without a carved signature. Add an entry whenever the mod needs the address, detours included: Game::FixedUpdate is anchored but
+// still detoured, because the hook fires at the top and the tick must run after the original.
 struct HookAnchor
 {
     const char *mangled;
@@ -56,8 +50,7 @@ struct HookAnchor
 };
 
 inline constexpr HookAnchor kHookAnchors[] = {
-    // Its carved signature broke on r149150, which disabled inbound AP grants. Nothing in the API
-    // grants an item by type, so the address is still needed to call it.
+    // Its carved signature broke on r149150. The API has no grant-by-type call, so the address is needed to call it.
     {on_pickup_done, "ItemsOnPickupDone"},
     {game_fixed_update, "FixedUpdate"},
 };

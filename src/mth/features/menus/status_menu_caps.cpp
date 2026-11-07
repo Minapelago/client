@@ -15,8 +15,7 @@ namespace mth
 {
 namespace
 {
-// The labels are rewritten only on menu build and language change, so a few frames of latency after
-// the pause screen opens go unnoticed. Walking every tick would pay a full traversal for nothing.
+// Labels change only on menu build or language change, so a few frames of latency go unnoticed.
 constexpr int kWalkEveryTicks = 10;
 } // namespace
 
@@ -33,7 +32,7 @@ void StatusMenuCaps::on_world_update_end(void *world)
 {
     if (world == nullptr)
         return;
-    // A player who never connects would otherwise pay a traversal several times a second all session.
+    // Skips the traversal when not enforcing, e.g. a player who never connects.
     if (caps_.display_cap_for(0) < 0)
         return;
     if (++ticks_ < kWalkEveryTicks)
@@ -48,8 +47,7 @@ void StatusMenuCaps::on_world_update_end(void *world)
 
     // StatusMenu is a plain ycComponent, so it is a leaf: the walk never descends into it.
     const SceneWalk walk = walker_.find_first(root, rtti::kStatusMenu, [&](void *c) { annotate(c); });
-    // Absence is the normal case (the pause screen is open for seconds at a time), so only a walk that
-    // reached nothing at all is worth reporting.
+    // Absence is normal (the pause screen is open for seconds at a time), so only a walk that reached nothing is reported.
     walker_.report_silence(walk, true);
 }
 
@@ -68,8 +66,7 @@ void StatusMenuCaps::annotate(void *status_menu)
             continue; // not enforcing: leave the vanilla label alone
 
         void *widget = *reinterpret_cast<void **>(static_cast<char *>(status_menu) + mth::layout::status_lvl_widget_offset(stat));
-        // A drifted offset can land on another live object, and this path writes to what it finds, so
-        // the vtable is checked against the module the way the scene walks check theirs.
+        // A drifted offset can land on another live object and this path writes, so the vtable is checked against the module like the scene walks do.
         if (!looks_like_component(widget))
         {
             pal::logf(pal::LogLevel::Debug, "statuscaps: stat=%d level widget rejected (%p)", stat, widget);

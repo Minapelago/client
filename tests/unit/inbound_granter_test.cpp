@@ -110,9 +110,8 @@ TEST_CASE("InboundGranter does not mark on failure and retries", "[inbound]")
     REQUIRE(save.is_granted(0));
 }
 
-// #130: in vanilla kear mode a received Universal Kear (id 63) must grant a real usable key. It does NOT
-// go through the itemType-grant path (OnPickupDone with slot=-1 aliases every kear onto bit 63); instead
-// each new receipt fires the injected key-credit effect once, marked durable per index like any grant.
+// #130: in vanilla kear mode a received Universal Kear (id 63) must grant a usable key. It skips the itemType-grant path (OnPickupDone with slot=-1
+// aliases every kear onto bit 63); each new receipt fires the injected key-credit effect once, durable per index.
 TEST_CASE("InboundGranter credits vanilla kears instead of granting itemType 63", "[inbound]")
 {
     mth::ApState state;
@@ -131,7 +130,7 @@ TEST_CASE("InboundGranter credits vanilla kears instead of granting itemType 63"
     state.apply(recv(mth::ap_item_id(63), 1));
     inbound.tick();
     REQUIRE(credits == 2);
-    REQUIRE(granter.granted.empty()); // never routed through the itemType-63 grant
+    REQUIRE(granter.granted.empty());
     REQUIRE(save.is_granted(0));
     REQUIRE(save.is_granted(1));
 
@@ -159,7 +158,7 @@ TEST_CASE("InboundGranter retries a vanilla kear credit that is not ready", "[in
     state.apply(recv(mth::ap_item_id(63), 0));
     inbound.tick();
     REQUIRE(credits == 0);
-    REQUIRE_FALSE(save.is_granted(0)); // not marked while unavailable
+    REQUIRE_FALSE(save.is_granted(0));
 
     ready = true;
     inbound.tick();
@@ -167,8 +166,7 @@ TEST_CASE("InboundGranter retries a vanilla kear credit that is not ready", "[in
     REQUIRE(save.is_granted(0));
 }
 
-// In the AP-item kear modes the pool never carries id 63; the credit effect must stay dormant so those
-// modes keep their existing behavior (this fix is vanilla-only).
+// In the AP-item kear modes the pool never carries id 63, so the credit effect stays dormant (the fix is vanilla-only).
 TEST_CASE("InboundGranter does not credit kears outside vanilla mode", "[inbound]")
 {
     mth::ApState state;
@@ -186,7 +184,7 @@ TEST_CASE("InboundGranter does not credit kears outside vanilla mode", "[inbound
     state.apply(recv(mth::ap_item_id(63), 0));
     inbound.tick();
     REQUIRE(credits == 0);
-    REQUIRE(granter.granted == std::vector<int>{63}); // falls through to the normal vanilla-grant path
+    REQUIRE(granter.granted == std::vector<int>{63});
 }
 
 TEST_CASE("InboundGranter skips stat-cap items", "[inbound]")
@@ -207,8 +205,7 @@ TEST_CASE("InboundGranter skips categories it cannot grant", "[inbound]")
     mth::ApState state;
     mth::ApSaveState save = detached();
     FakeGranter granter;
-    // Mirrors TrapHooks::arm's first branch, which is the only thing that rejects an id in the trap
-    // segment that no trap row claims. Without it every index would report Unavailable regardless.
+    // Mirrors TrapHooks::arm's first branch, the only check that rejects a trap-segment id no trap row claims; without it every index is Unavailable.
     mth::InboundGranter inbound(granter, state, save, {},
                                 [](int idx) { return mth::trap_for_modifier(idx) != nullptr ? mth::TrapArm::Armed : mth::TrapArm::Unavailable; });
 
@@ -218,7 +215,7 @@ TEST_CASE("InboundGranter skips categories it cannot grant", "[inbound]")
     state.apply(recv(mth::ap_item_id(9), 3));          // vanilla item -> granted
     inbound.tick();
     REQUIRE(granter.granted == std::vector<int>{9});
-    REQUIRE(save.is_granted(2)); // Unavailable consumes the receipt rather than retrying it forever
+    REQUIRE(save.is_granted(2));
 }
 
 TEST_CASE("InboundGranter translates progressive weapons to tiered itemTypes", "[inbound]")
@@ -295,7 +292,7 @@ TEST_CASE("InboundGranter retries the fishing rod at its correct tier after a fa
 
     granter.ok = true;
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{87, 88}); // tiers recomputed correctly, both granted
+    REQUIRE(granter.granted == std::vector<int>{87, 88});
 }
 
 TEST_CASE("InboundGranter retries a weapon at its correct tier after a failure", "[inbound]")
@@ -314,12 +311,11 @@ TEST_CASE("InboundGranter retries a weapon at its correct tier after a failure",
 
     granter.ok = true;
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{2, 3}); // tiers recomputed correctly, both granted
+    REQUIRE(granter.granted == std::vector<int>{2, 3});
 }
 
-// #175: the real granter only QUEUES on grant(); the item lands later, inside the engine's update
-// window. Persisting "granted" on acceptance loses the item for good if that window never comes,
-// because is_granted() then suppresses it on every future launch.
+// #175: the real granter only queues on grant(); the item lands later in the engine's update window. Persisting "granted" on acceptance loses the
+// item for good if that window never comes.
 TEST_CASE("InboundGranter does not persist a receipt the granter has only queued", "[inbound]")
 {
     mth::ApState state;
@@ -330,8 +326,8 @@ TEST_CASE("InboundGranter does not persist a receipt the granter has only queued
 
     state.apply(recv(mth::ap_item_id(5), 0));
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{5}); // accepted
-    REQUIRE_FALSE(save.is_granted(0));               // but not applied, so not durable yet
+    REQUIRE(granter.granted == std::vector<int>{5});
+    REQUIRE_FALSE(save.is_granted(0));
 
     granter.apply_queued();
     REQUIRE(save.is_granted(0));
@@ -350,16 +346,16 @@ TEST_CASE("InboundGranter does not re-queue an in-flight receipt", "[inbound]")
     inbound.tick();
     inbound.tick();
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{5}); // queued once, not once per tick
+    REQUIRE(granter.granted == std::vector<int>{5});
 
     granter.apply_queued();
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{5}); // and not again after it lands
+    REQUIRE(granter.granted == std::vector<int>{5});
     REQUIRE(save.is_granted(0));
 }
 
-// The loss window in #175: the player quits with the batch still queued. Nothing was persisted, so a
-// fresh granter over the same save file must hand the item out again rather than skip it forever.
+// #175 loss window: the player quits with the batch still queued. Nothing was persisted, so a fresh granter over the same save file hands the item
+// out again.
 TEST_CASE("InboundGranter retries a receipt that was queued but never applied", "[inbound]")
 {
     mth::ApState state;
@@ -383,12 +379,11 @@ TEST_CASE("InboundGranter retries a receipt that was queued but never applied", 
     FakeGranter granter;
     mth::InboundGranter inbound(granter, state, reloaded);
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{5}); // recovered, not lost
+    REQUIRE(granter.granted == std::vector<int>{5});
     REQUIRE(reloaded.is_granted(0));
 }
 
-// A session change drops the queue, so those receipts must be retried against the new save rather
-// than acked into it.
+// A session change drops the queue; those receipts are retried against the new save, not acked into it.
 TEST_CASE("InboundGranter re-queues receipts dropped by a session change", "[inbound]")
 {
     mth::ApState state;
@@ -407,13 +402,12 @@ TEST_CASE("InboundGranter re-queues receipts dropped by a session change", "[inb
 
     mth::InboundGranter rebuilt(granter, state, save); // the next session, against its own save
     rebuilt.tick();
-    REQUIRE(granter.granted == std::vector<int>{5}); // offered again, never silently dropped
+    REQUIRE(granter.granted == std::vector<int>{5});
     REQUIRE_FALSE(save.is_granted(0));
 }
 
-// The granter outlives its InboundGranter and holds the applied sink. If a replacement is built
-// before the incumbent is torn down, the incumbent's teardown must disarm only its own sink. Wiping
-// the installed one leaves grants applying with nothing marked, so they all re-apply next launch.
+// The granter outlives its InboundGranter and holds the applied sink. If a replacement is built before the incumbent is torn down, the incumbent's
+// teardown must disarm only its own sink, or grants apply with nothing marked and re-apply next launch.
 TEST_CASE("InboundGranter teardown does not disarm a successor's applied sink", "[inbound]")
 {
     mth::ApState state;
@@ -429,7 +423,7 @@ TEST_CASE("InboundGranter teardown does not disarm a successor's applied sink", 
     second->tick();
     REQUIRE(granter.granted == std::vector<int>{5});
     granter.apply_queued();
-    REQUIRE(save.is_granted(0)); // false if the teardown wiped the live sink
+    REQUIRE(save.is_granted(0));
 }
 
 TEST_CASE("InboundGranter arms a trap and marks it granted", "[inbound][trap]")
@@ -473,8 +467,8 @@ TEST_CASE("InboundGranter retries a trap that is not ready yet", "[inbound][trap
 
     state.apply(recv(mth::kTrapItemBase + 204, 0));
     inbound.tick();
-    REQUIRE(probes > 0);               // the arm was attempted
-    REQUIRE_FALSE(save.is_granted(0)); // not ready: nothing is marked, so the receipt survives
+    REQUIRE(probes > 0);
+    REQUIRE_FALSE(save.is_granted(0));
 
     result = mth::TrapArm::Armed;
     inbound.tick();
@@ -482,7 +476,7 @@ TEST_CASE("InboundGranter retries a trap that is not ready yet", "[inbound][trap
     REQUIRE(save.is_granted(0));
 
     inbound.tick();
-    REQUIRE(armed == std::vector<int>{204}); // the retry must not arm the trap twice
+    REQUIRE(armed == std::vector<int>{204});
     REQUIRE(save.is_granted(0));
 }
 
@@ -495,7 +489,7 @@ TEST_CASE("InboundGranter consumes a trap the player already enabled", "[inbound
 
     state.apply(recv(mth::kTrapItemBase + 204, 0));
     inbound.tick();
-    REQUIRE(save.is_granted(0)); // consumed, not retried forever
+    REQUIRE(save.is_granted(0));
 }
 
 TEST_CASE("InboundGranter does not block later items on a trap", "[inbound][trap]")
@@ -511,9 +505,8 @@ TEST_CASE("InboundGranter does not block later items on a trap", "[inbound][trap
     REQUIRE(granter.granted == std::vector<int>{9});
 }
 
-// A trap stuck on NotReady must not hold up every receipt behind it. An Armed trap (the case above)
-// reaches the same continue either way, so it cannot tell break from continue; only a trap that
-// stays NotReady for the whole tick can.
+// A trap stuck on NotReady must not hold up the receipts behind it. An Armed trap reaches the same continue either way; only a trap that stays
+// NotReady for the whole tick tells break from continue.
 TEST_CASE("InboundGranter does not block a later item on a trap that is not ready", "[inbound][trap]")
 {
     mth::ApState state;
@@ -524,6 +517,6 @@ TEST_CASE("InboundGranter does not block a later item on a trap that is not read
     state.apply(recv(mth::kTrapItemBase + 204, 0));
     state.apply(recv(mth::ap_item_id(9), 1));
     inbound.tick();
-    REQUIRE(granter.granted == std::vector<int>{9}); // the stalled trap does not hold up the item behind it
-    REQUIRE_FALSE(save.is_granted(0));               // trap receipt stays unmarked and retries next tick
+    REQUIRE(granter.granted == std::vector<int>{9});
+    REQUIRE_FALSE(save.is_granted(0));
 }

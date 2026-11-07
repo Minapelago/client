@@ -71,7 +71,7 @@ cmake --preset mingw-x64-debug
 cmake --build --preset mingw-x64-debug
 ```
 
-It is a compile check only. It produces a MinGW-ABI binary, not a shippable artifact.
+It is not the release build: CI and releases use clang-cl. The MinGW-ABI binary it produces is for local use and testing.
 
 ## Testing the Linux build
 

@@ -1,11 +1,7 @@
 # Notices.cmake - stage each linked dependency's own licence file into the drop-in.
 #
-# One level deep on purpose: these are the libraries this mod links against. What
-# those libraries vendor in turn is reachable from their own upstream, so copying
-# their licence verbatim is both the honest record and the whole job.
-#
-# Sources are the trees the build already fetched, so each platform stages exactly
-# what that platform links: Frida-gum on Linux, MinHook on Windows.
+# One level deep: these are the libraries the mod links against, and what they vendor is reachable from their upstream. Sources are the trees the
+# build already fetched, so each platform stages what it links: Frida-gum on Linux, MinHook on Windows.
 include_guard(GLOBAL)
 
 # Fetched but not linked into the mod, so nothing of theirs ships.
@@ -14,10 +10,8 @@ set(_MTHAP_NOTICE_SKIP
     minamodapi  # game ABI declarations, no upstream licence file
 )
 
-# Stage licence files under <dropin>/third_party_notices/<component>/ and return the
-# staged paths in out_var so the caller can hang them off a target. They are real
-# custom-command outputs rather than a POST_BUILD step so that deleting mods/ makes
-# the build restore them instead of reporting nothing to do.
+# Stage licence files under <dropin>/third_party_notices/<component>/ and return the staged paths in out_var. They are custom-command outputs, not a
+# POST_BUILD step, so deleting mods/ restores them.
 function(mthap_stage_notices dropin out_var)
     set(_dir "${dropin}/third_party_notices")
     set(_staged "")
@@ -57,8 +51,7 @@ function(mthap_stage_notices dropin out_var)
         message(WARNING "notices: no licence file found for ${_missing_text}")
     endif()
 
-    # Configured into the build tree and copied in as a real output, like mod.yc, so
-    # that deleting mods/ restages it instead of leaving ninja with a missing input.
+    # Configured into the build tree and copied in as a real output, like mod.yc, so deleting mods/ restages it.
     set(_readme_src "${CMAKE_BINARY_DIR}/generated/third_party_notices.md")
     configure_file("${CMAKE_SOURCE_DIR}/packaging/third_party_notices.md.in" "${_readme_src}" @ONLY)
     add_custom_command(
@@ -72,8 +65,7 @@ function(mthap_stage_notices dropin out_var)
     set(${out_var} "${_staged}" PARENT_SCOPE)
 endfunction()
 
-# Copy one component's licence files, keeping their upstream names so the record
-# stays recognisable against the source it came from.
+# Copy one component's licence files under their upstream names.
 function(_mthap_stage_notice_files dir component files staged_var)
     set(_staged "${${staged_var}}")
     foreach(_file IN LISTS files)

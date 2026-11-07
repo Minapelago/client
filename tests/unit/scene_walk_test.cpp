@@ -57,7 +57,7 @@ TEST_CASE("scene walk: descends entities and reports leaves to the visitor", "[s
     REQUIRE((found[0] == shallow || found[0] == deep));
     REQUIRE((found[1] == shallow || found[1] == deep));
     REQUIRE(found[0] != found[1]);
-    REQUIRE(r.visited > 0); // only feeds the "reached no components" warning, so zero is the failure
+    REQUIRE(r.visited > 0);
     REQUIRE_FALSE(r.stopped_by_visitor);
     REQUIRE_FALSE(r.node_budget_spent);
     mod::set_api(nullptr);
@@ -85,13 +85,12 @@ TEST_CASE("scene walk: a visitor returning false stops the walk", "[scene]")
 
     REQUIRE(calls == 1);
     REQUIRE(r.stopped_by_visitor);
-    REQUIRE(w.pending.empty()); // no game pointer outlives the walk, early exit included
+    REQUIRE(w.pending.empty());
     mod::set_api(nullptr);
 }
 
-// ComponentIsa is a hierarchy test in the engine, so one object can be a ycEntity AND the type a search
-// is looking for. Such a node is descended into and withheld from the visitor, which is how a search
-// silently misses a hit that sits on an entity.
+// ComponentIsa is a hierarchy test, so one object can be a ycEntity and the searched type. Such a node is descended into and withheld from the
+// visitor, so a search misses a hit on an entity.
 TEST_CASE("scene walk: a node that is also an entity is descended into and withheld from the visitor", "[scene]")
 {
     mth::test::ScopedFakeApi scoped;
@@ -111,8 +110,8 @@ TEST_CASE("scene walk: a node that is also an entity is descended into and withh
               return true;
           });
 
-    REQUIRE(std::find(seen.begin(), seen.end(), hybrid) == seen.end()); // withheld, target type or not
-    REQUIRE(std::find(seen.begin(), seen.end(), below) != seen.end());  // and its subtree still walked
+    REQUIRE(std::find(seen.begin(), seen.end(), hybrid) == seen.end());
+    REQUIRE(std::find(seen.begin(), seen.end(), below) != seen.end());
     mod::set_api(nullptr);
 }
 
@@ -155,7 +154,7 @@ TEST_CASE("scene walk: a node wider than the child cap is walked as a prefix and
                                        return true;
                                    });
 
-    REQUIRE(seen == mth::kSceneMaxChildren); // a prefix, rather than the subtree being abandoned
+    REQUIRE(seen == mth::kSceneMaxChildren);
     REQUIRE(r.widest_node == root);
     mod::set_api(nullptr);
 }

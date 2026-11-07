@@ -18,10 +18,8 @@
 namespace pal
 {
 
-// The AP gate logs every required symbol's result itself, so the plain signature path stays quiet on
-// success to avoid duplicating it 1:1. What the gate cannot report is logged here: which source
-// produced an address when it was not the signature table, and how a signature failed (miss,
-// ambiguous pattern, or out-of-range DataRef).
+// The AP gate logs every required symbol's result, so the signature path is quiet on success. Logged here is what the gate cannot see: which source
+// produced a non-signature address, and how a signature failed (miss, ambiguous pattern, out-of-range DataRef).
 std::uintptr_t resolve_by_hook_anchor(std::uint64_t hook_hash)
 {
     const TextRange tr = game_text_range();
@@ -34,7 +32,7 @@ std::uintptr_t resolve_by_hook_anchor(std::uint64_t hook_hash)
     std::uintptr_t anchor = 0;
     std::uint8_t want[sizeof(hook_hash)];
     std::memcpy(want, &hook_hash, sizeof(want));
-    // memchr on the first byte rather than a memcmp per offset: .text is ~13MB and this runs at init.
+    // memchr on the first byte: .text is ~13MB and this runs at init.
     const std::uint8_t *cur = text;
     const std::uint8_t *end = text + tr.size;
     while (cur + sizeof(want) <= end)
@@ -66,9 +64,7 @@ std::uintptr_t resolve_by_hook_anchor(std::uint64_t hook_hash)
         return 0;
     }
 
-    // Read the entry as its fixed x64 layout {BeginAddress, EndAddress, UnwindInfoAddress}: MSVC
-    // leaves the third field in an anonymous union while mingw names it, so member access does not
-    // compile on both toolchains.
+    // Read the entry as its fixed x64 layout {BeginAddress, EndAddress, UnwindInfoAddress}; MSVC and mingw spell the third member differently.
     const auto *entry = reinterpret_cast<const std::uint32_t *>(rf);
 
     // Follow chained unwind info: the compiler splits cold blocks into fragments whose BeginAddress
@@ -106,22 +102,19 @@ std::uintptr_t scan_resolve(const char *mangled_name)
     if (!mangled_name)
         return 0;
 
-    // Not thread-safe; symbol resolution runs single-threaded during init,
-    // matching the other PAL globals (hook-engine globals).
+    // Not thread-safe; symbol resolution runs single-threaded during init.
     static std::unordered_map<std::string, std::uintptr_t> cache;
     if (auto it = cache.find(mangled_name); it != cache.end())
         return it->second;
 
-    // Ask the game first for the names it exposes: that address cannot drift, so it beats a carve.
-    // The source is logged because it is the first thing worth knowing when a game update misbehaves.
+    // Ask the game first for the names it exposes, since that address cannot drift. The source is logged for diagnosing game updates.
     if (const char *plain = mth::sym::native_sym_name(mangled_name); plain != nullptr)
     {
         if (void *p = mod::sym_addr(plain); p != nullptr)
         {
             const std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(p);
-            // DataRef entries are the ones the mod WRITES through (tables::repurpose_dummy_item
-            // make_writable's s_rItems and stores into it), so a wrong base here is not a failed
-            // hook, it is stores into arbitrary game memory. Cross-check those against the carve.
+            // The mod writes through DataRef entries (tables::repurpose_dummy_item patches s_rItems), so a wrong base means stores into arbitrary game
+            // memory. Cross-check them against the carve.
             if (const std::uintptr_t scanned = scan_only(mangled_name, mth::sig::Kind::DataRef); scanned != 0 && scanned != addr)
                 logf(LogLevel::Error, "sig: %s DISAGREEMENT GetSymAddr=0x%llx scan=0x%llx; using GetSymAddr (check gate item_table_shape_ok)", mangled_name,
                      static_cast<unsigned long long>(addr), static_cast<unsigned long long>(scanned));
@@ -130,8 +123,7 @@ std::uintptr_t scan_resolve(const char *mangled_name)
         }
     }
 
-    // Then a hook the function itself dispatches. That name hash derives from the hook name rather
-    // than surrounding code, so it survives the codegen churn that breaks a carve.
+    // Then a hook the function dispatches; that hash comes from the hook name, so it survives the codegen churn that breaks a carve.
     if (const char *hook = mth::sym::hook_anchor_for(mangled_name); hook != nullptr)
     {
         if (const std::uintptr_t addr = resolve_by_hook_anchor(mth::hookhash::hash64(hook)); addr != 0)
@@ -143,11 +135,8 @@ std::uintptr_t scan_resolve(const char *mangled_name)
         logf(LogLevel::Warn, "sig: %s hook anchor \"%s\" did not resolve; trying the signature table", mangled_name, hook);
     }
 
-    // g_saveManager is too hot to carve as a DataRef (~2300 xrefs). But the game's only
-    // `cmove r9,[rip+g_saveManager]` (4c 0f 44 0d, 8-byte) - the "default a null SaveSlot* to the
-    // active slot" idiom - is UNIQUE in .text, so scan the whole section for it and read its RIP
-    // target. Survives function moves across builds (no anchor symbol needed); a future build that
-    // adds a second such cmov makes the scan ambiguous, and it fails rather than picking one.
+    // g_saveManager has ~2300 xrefs, too many to carve as a DataRef. The game's only `cmove r9,[rip+g_saveManager]` (4c 0f 44 0d, 8 bytes), the "default
+    // a null SaveSlot* to the active slot" idiom, is unique in .text, so scan for it and read its RIP target. A second such cmov makes the scan fail.
     if (std::strcmp(mangled_name, "g_saveManager") == 0)
     {
         std::uintptr_t addr = 0;
@@ -181,10 +170,7 @@ std::uintptr_t scan_resolve(const char *mangled_name)
         const std::uintptr_t addr = mth::sig::resolve(text, region_base, e);
         if (addr == 0)
         {
-            // Classify the failure so a future game update is diagnosable: a miss
-            // means the function changed/moved (the signature is now stale and,
-            // crucially, fails loud instead of mis-hooking); ambiguous means the
-            // pattern is no longer unique and must be re-carved longer.
+            // Classify the failure: a miss means the function changed or moved, ambiguous means the pattern needs re-carving longer.
             const mth::sig::Match m = mth::sig::find_masked(text, e.pattern, e.mask, e.len);
             const char *why = !m.found    ? "no .text match (function moved/changed?)"
                               : !m.unique ? "ambiguous: multiple .text matches"

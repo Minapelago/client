@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# Format all tracked C/C++ sources with clang-format. With no arguments it formats in place.
-# Arguments go straight to clang-format instead, so CI runs: bash format.sh --dry-run --Werror
-# external/ is a submodule and build/ is untracked, so git ls-files already leaves them out.
+# Format all tracked C/C++ sources with clang-format. With no arguments it formats in place; arguments go straight to clang-format
+# (CI runs: bash format.sh --dry-run --Werror). git ls-files leaves out external/ (submodule) and build/ (untracked).
 #
-# Pin note: CI uses clang-format 21.1.8.
+# CI uses clang-format 21.1.8.
 #
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"

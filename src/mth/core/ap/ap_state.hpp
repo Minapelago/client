@@ -62,9 +62,8 @@ class ApState
     {
         return config_;
     }
-    // Usable keys are meaningless unless the pool carries Universal Kear items, so every mode but Vanilla
-    // pins them to zero. The world-kear collect grant is neutralized in ALL modes (the spot is an AP
-    // location, so the server owns its reward).
+    // Usable keys only mean something when the pool carries Universal Kear items, so every mode but Vanilla pins them to zero. The world-kear
+    // collect grant is neutralized in every mode, since the spot is an AP location.
     [[nodiscard]] bool kear_keys_suppressed() const
     {
         return config_.kear_mode != KearMode::Vanilla;
@@ -73,8 +72,7 @@ class ApState
     {
         return valid_locations_.contains(id);
     }
-    // slot_data "removed_locations": pruned from the pool, so the client treats them as already
-    // collected. Disjoint from valid_locations_ by construction (see apply): the server's view wins.
+    // slot_data "removed_locations": pruned from the pool, so the client treats them as already collected. Disjoint from valid_locations_ (see apply).
     [[nodiscard]] bool is_removed_location(std::int64_t id) const
     {
         return removed_locations_.contains(id);
@@ -101,10 +99,8 @@ class ApState
                 return true;
         return false;
     }
-    // Drop everything a connection accumulates, so the next starts as it would have at launch. Must run
-    // before the next connection's events are applied, which is why the ApSessionEnded marker driving it is
-    // ordered ahead of ApConnected; running it after would discard the new server's item stream and its
-    // authoritative checked-location report.
+    // Drops everything a connection accumulates. Runs before the next connection's events apply (ApSessionEnded is ordered ahead of ApConnected);
+    // after them it would discard the new item stream and checked-location report.
     void reset_session();
 
   private:

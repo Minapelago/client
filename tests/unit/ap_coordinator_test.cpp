@@ -125,7 +125,7 @@ TEST_CASE("ap_coordinator: ApSessionEnded fires on_session_end before the new Ap
                              [&]
                              {
                                  ++end_calls;
-                                 slot_when_cleared = state.player_slot(); // must still be the OLD session's
+                                 slot_when_cleared = state.player_slot(); // must still be the old session's
                                  state.reset_session();
                              });
 
@@ -141,8 +141,8 @@ TEST_CASE("ap_coordinator: ApSessionEnded fires on_session_end before the new Ap
     coord.tick();
 
     REQUIRE(end_calls == 1);
-    REQUIRE(slot_when_cleared == 1); // cleared while A was still the applied identity
-    // B's ApConnected and its items landed on TOP of the clear, not under it.
+    REQUIRE(slot_when_cleared == 1);
+    // B's ApConnected and its items landed on top of the clear, not under it.
     REQUIRE(state.player_slot() == 9);
     REQUIRE(state.authenticated());
     REQUIRE(state.received_items().size() == 1);

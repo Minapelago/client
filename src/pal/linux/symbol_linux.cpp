@@ -19,14 +19,13 @@ std::uintptr_t resolve_game_symbol(const char *mangled_name)
 
 namespace
 {
-// See pal_module.hpp. Kept next to the resolver so a platform's list cannot drift
-// away from the platform that consumes it.
+// See pal_module.hpp. Kept next to the resolver so the list stays with the platform that uses it.
 constexpr const char *kPlatformSymbols[] = {
     mth::sym::get_new_game_max_level_player,
     mth::sym::level_up_menu_update_state,
     mth::sym::shop_item_present,
-    // Required, not optional: it is the only reachable SpringBellows::CollideWith here, and its name
-    // carries the +376 subobject offset, so a layout change renames it and must fail loudly (#188).
+    // Required: it is the only reachable SpringBellows::CollideWith here, and its name carries the +376 subobject offset, so a layout change renames it
+    // and must fail loudly (#188).
     mth::sym::spring_bellows_collide_listener,
 };
 } // namespace

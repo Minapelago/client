@@ -18,9 +18,8 @@ struct ModuleInfo
 ModuleInfo game_module();
 ModuleInfo self_module();
 
-// Executable-code range of the game module. A module-wide range is NOT sufficient: the mod API
-// struct and the statics next to it live inside the module, so only an executable-section test
-// distinguishes a real function pointer from adjacent static data read past the struct's end.
+// Executable-code range of the game module. The mod API struct and its neighbouring statics live inside the module, so only an executable-section test
+// tells a real function pointer from static data read past the struct's end.
 struct TextRange
 {
     std::uintptr_t base{0};
@@ -59,13 +58,10 @@ inline void set_game_text_range(TextRange r) noexcept
     return v >= r.base && v < r.base + r.size;
 }
 
-// Symbols this platform hooks that the other platform does not: the two compilers inline
-// different functions, so each PAL has its own small set on top of the shared list. Consumed by
-// the AP gate's startup validation.
+// Symbols only this platform hooks, since the compilers inline different functions. The AP gate's startup validation adds them to the shared list.
 [[nodiscard]] std::span<const char *const> required_platform_symbols();
 
-// Reads the full symbol table (incl. local symbols); requires init_hook_engine() first.
-// Returns 0 if not found.
+// Reads the full symbol table, local symbols included; requires init_hook_engine() first. 0 if not found.
 std::uintptr_t resolve_game_symbol(const char *mangled_name);
 
 } // namespace pal

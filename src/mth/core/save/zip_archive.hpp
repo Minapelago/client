@@ -12,8 +12,7 @@ namespace mth::zip
 inline constexpr std::uint16_t kStore = 0;
 inline constexpr std::uint16_t kDeflate = 8;
 
-// One entry, already compressed and ready to emit. Held rather than the plain bytes so an unchanged
-// entry can be re-emitted without paying deflate again on the game thread.
+// One entry, already compressed, so an unchanged entry is re-emitted without paying deflate again on the game thread.
 struct Blob
 {
     std::string name;
@@ -37,8 +36,7 @@ struct Entry
 // produces identical bytes.
 [[nodiscard]] std::string write(const std::vector<Blob> &blobs);
 
-// nullopt on malformed, truncated, CRC-mismatched, encrypted, zip64, or unsafely-named input, so a
-// damaged container reads as "no save" rather than as garbage.
+// nullopt on malformed, truncated, CRC-mismatched, encrypted, zip64, or unsafely-named input, so a damaged container reads as "no save".
 [[nodiscard]] std::optional<std::vector<Entry>> read(std::string_view image);
 
 } // namespace mth::zip

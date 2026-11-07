@@ -12,9 +12,8 @@
 namespace mth
 {
 
-// Runs the modifier traps. Owns the countdowns and performs every game-facing write, keeping
-// TrapState pure. The bit goes into the runtime cheat mask only, so the effect lands the same
-// frame, nothing reaches the save file, and the save's achievement byte is left alone.
+// Runs the modifier traps: owns the countdowns and does every game-facing write, so TrapState stays pure. The bit goes into the runtime cheat mask only, so it
+// applies the same frame and never reaches the save file or its achievement byte.
 class TrapHooks
 {
   public:
@@ -28,16 +27,13 @@ class TrapHooks
     // replaces the table's duration; the dev console uses it to test short traps.
     TrapArm arm(int modifier_index, float seconds_override = 0.0f);
 
-    // Any thread. Hands arm() to the next tick instead of running it here, so a caller off the game
-    // thread does not mutate the countdown lists while tick() is walking them. The outcome lands in
-    // the log rather than coming back to the caller.
+    // Any thread. Defers arm() to the next tick so an off-thread caller cannot mutate the countdown lists mid-walk; the outcome is logged.
     void queue_arm(int modifier_index, float seconds_override = 0.0f);
 
     // Game thread, once per frame. Ages the running traps, lifts what ran out, re-asserts the rest.
     void tick();
 
-    // Lifts every running trap. Session change and teardown both need this, and the destructor calls
-    // it: dropping the state without lifting the bits would strand a modifier on.
+    // Lifts every running trap. Session change, teardown and the destructor call it so no modifier is stranded on.
     void clear();
 
     // Render thread. Reads the snapshot tick() publishes; state_ itself stays game-thread-only.
@@ -54,16 +50,13 @@ class TrapHooks
     TrapState state_;
     RoomClock room_clock_;
     bool timing_source_logged_ = false;
-    // Indices whose lift-write failed (set_runtime_modifier returned false meaning "not right
-    // now"); TrapState has already dropped them, and tick() retries these on the next call.
+    // Indices whose lift-write failed (set_runtime_modifier returned false, "not right now"). TrapState has dropped them; tick() retries.
     std::vector<int> pending_off_;
-    // Modifier indices arm() has already warned about failing to arm (NotReady). A set rather than
-    // one scalar, since distinct traps can stall concurrently; erased once that index's write goes
-    // through, so a later stall on the same index warns again instead of staying silent forever.
+    // Indices arm() has warned about (NotReady), tracked per index since traps can stall concurrently. Erased once that index's write lands, so a later stall
+    // warns again.
     std::set<int> notready_warned_;
 
-    // Guards the two members the render thread touches, and nothing else: every countdown list above
-    // stays game-thread-only.
+    // Guards only the two members the render thread touches; the countdown lists stay game-thread-only.
     mutable std::mutex mtx_;
     std::vector<std::pair<int, float>> pending_arm_; // (modifier index, seconds override) queued for the game thread
     std::vector<ActiveTrap> snapshot_;               // what was running at the end of the last tick

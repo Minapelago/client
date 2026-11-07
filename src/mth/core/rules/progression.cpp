@@ -63,9 +63,8 @@ std::string with_cap_suffix(const std::string &text, int display_cap, const char
     if (head.empty())
         return text; // no title line to annotate
 
-    // Only a bare number is treated as ours to replace, and the callers annotate the three real stats
-    // only, whose first line is "<Stat> Level <n>". The bone-bank row, the one description that ends in
-    // a parenthesised number, never reaches here.
+    // Only a bare number is ours to replace. Callers annotate the three real stats only, whose first line is "<Stat> Level <n>"; the bone-bank
+    // row, the one description ending in a parenthesised number, never reaches here.
     const std::size_t close_len = std::strlen(close);
     if (head.size() >= close_len && head.compare(head.size() - close_len, close_len, close) == 0)
     {
@@ -93,8 +92,7 @@ std::string boneup_with_cap_suffix(const std::string &text, int display_cap)
 
 std::string status_panel_with_cap_suffix(const std::string &text, int display_cap)
 {
-    // Two digits is what the panel's remaining width buys, so a slot configured to the game's absolute
-    // ceiling shows 99 rather than wrapping the label out of the box.
+    // Two digits fit the panel's remaining width, so a slot at the game's absolute ceiling shows 99 without wrapping the label out of the box.
     return with_cap_suffix(text, std::min(display_cap, 99), "/", "");
 }
 

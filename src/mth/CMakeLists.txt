@@ -1,10 +1,8 @@
-# mth-apclient: pure game logic (mthap_core) + final mod module (mthap).
+# mth-apclient: game logic (mthap_core) and the final mod module (mthap).
 #
-#   mthap_core : pure, cross-platform logic plus the MinaModAPI wrapper (mod::). The unit tests
-#                link it without the module or a hook backend, so it has no PAL-impl, backend or
-#                OS headers; header includes from src/pal/ are fine.
-#   mthap      : final module (mod.so / mod.dll). Composition root; also holds the PAL, the net
-#                link and the ImGui overlay sources.
+#   mthap_core : cross-platform logic plus the MinaModAPI wrapper (mod::). Unit tests link it without the module or a hook backend, so it takes no
+#                PAL-impl, backend or OS headers; includes from src/pal/ headers are fine.
+#   mthap      : final module (mod.so / mod.dll). Composition root; also holds the PAL, the net link and the ImGui overlay sources.
 #
 # Source lists are globs. CONFIGURE_DEPENDS re-runs the glob when a file is added or removed.
 
@@ -14,7 +12,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # crc32 + raw deflate for the save container.
 find_package(ZLIB REQUIRED)
 
-# The save container writes on its own thread so the game thread never waits on disk.
+# mthap_core's mutexes guard state the game thread shares with the net and render threads.
 find_package(Threads REQUIRED)
 
 find_package(asio CONFIG REQUIRED)
@@ -30,9 +28,8 @@ target_compile_features(mthap_core PUBLIC cxx_std_23)
 
 add_git_version_info(mthap_core)
 
-# PAL: the platform-neutral TUs in pal/ plus the per-platform directory. The platform-neutral ones
-# read only struct offsets that match on both builds, or reach a divergent offset through a pal::
-# seam. Anything whose offsets differ stays in linux/ or windows/.
+# PAL: the platform-neutral TUs in pal/ plus the per-platform directory. Neutral TUs read only offsets that match on both builds or go through a pal::
+# seam; anything with divergent offsets stays in linux/ or windows/.
 if(WIN32)
     set(_mthap_pal_platform windows)
 else()
@@ -41,16 +38,14 @@ endif()
 file(GLOB _mthap_pal_sources CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/src/pal/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/pal/${_mthap_pal_platform}/*.cpp")
-# llvm-mingw + static link needs an __imp__vsnprintf shim for vcpkg's OpenSSL (msvcrt dllimport);
-# clang-cl/MSVC does not.
+# llvm-mingw's static link needs an __imp__vsnprintf shim for vcpkg's OpenSSL; clang-cl/MSVC does not.
 if(NOT MINGW)
     list(REMOVE_ITEM _mthap_pal_sources "${CMAKE_SOURCE_DIR}/src/pal/windows/mingw_crt_shim.cpp")
 endif()
 
 file(GLOB_RECURSE _mthap_module_sources CONFIGURE_DEPENDS app/*.cpp features/*.cpp ui/*.cpp net/*.cpp)
 
-# MinaMod_Init (pal/native_mod_entry.cpp) is a direct source of the module, so no archive
-# drops it as unreferenced.
+# MinaMod_Init (pal/native_mod_entry.cpp) is a direct source of the module so no archive drops it as unreferenced.
 add_library(mthap MODULE
     ${_mthap_module_sources}
     ${_mthap_pal_sources}
@@ -82,16 +77,13 @@ else()
 endif()
 
 if(WIN32)
-    # Output is `mod.dll`: loaded by the native MinaModAPI from mods/apclient/.
-    # CRT linkage is controlled by CMAKE_MSVC_RUNTIME_LIBRARY (per-preset,
-    # static via the x64-windows-static triplet).
+    # Output is mod.dll, loaded by the native MinaModAPI from mods/apclient/. CRT linkage comes from CMAKE_MSVC_RUNTIME_LIBRARY per preset.
     set(_mthap_mod_name "mod.dll")
     set_target_properties(mthap PROPERTIES
         OUTPUT_NAME "mod"
         PREFIX ""
         SUFFIX ".dll"
-        # Without this the PDB is named after the target (mthap.pdb) and mod.dll's debug
-        # directory points at the wrong file.
+        # Names the PDB mod.pdb so mod.dll's debug directory points at it.
         PDB_NAME "mod"
     )
 else()
@@ -101,39 +93,31 @@ else()
         PREFIX ""
         SUFFIX ".so"
     )
-    # Static-link our C++ runtime so the dynamic linker can't resolve our
-    # modern libstdc++ symbols against whatever the Steam runtime provides.
+    # Static-link the C++ runtime so the loader can't resolve our libstdc++ symbols against the Steam runtime's.
     target_link_options(mthap PRIVATE
         -static-libgcc
         -static-libstdc++
         "LINKER:-z,now"
         "LINKER:--exclude-libs,ALL"
     )
-    # Guard against the .so requiring glibc symbol versions newer than the oldest
-    # supported host distro (which makes the mod fail to load in-game silently:
-    # no log, no window). Turns that into a loud build failure. See the script's
-    # header for why the ceiling is not the sniper container's own glibc.
+    # Fail the build when the .so needs glibc symbols newer than the oldest supported host; otherwise the mod fails to load silently.
+    # See the script's header for the ceiling.
     add_custom_command(TARGET mthap POST_BUILD
         COMMAND "${CMAKE_SOURCE_DIR}/scripts/check-glibc-max.sh" "$<TARGET_FILE:mthap>"
         VERBATIM
         COMMENT "Checking max required glibc symbol version (host glibc floor)")
 endif()
 
-# Mod manifest: packed semver + configured game-version range. add_git_version_info
-# (called on mthap_core above) exported MTHAP_MOD_VERSION into this scope. Staged outside the
-# drop-in so the copy rules below, not configure, own everything that lands in mods/apclient/.
+# Mod manifest: packed semver and game-version range. add_git_version_info (above) exports MTHAP_MOD_VERSION into this scope.
+# Staged outside the drop-in; the copy rules below own mods/apclient/.
 configure_file(
     "${CMAKE_SOURCE_DIR}/packaging/mod.yc.in"
     "${CMAKE_BINARY_DIR}/generated/mod.yc"
     @ONLY
 )
 
-# Assemble the drop-in: mods/apclient/{mod.yc, mod.<dll|so>, LICENSE,
-# third_party_notices/}. The library is self-contained (static runtime + deps), so no
-# sidecar libraries ship, but the licences of what is linked in travel with it.
-# These are declared OUTPUTs of a target rather than a POST_BUILD step because a POST_BUILD is
-# invisible to the generator: deleting mods/ (the directory you copy into the game) left the
-# build reporting "no work to do" and shipping nothing. As real outputs they get restored.
+# Assemble the drop-in mods/apclient/{mod.yc, mod.<dll|so>, LICENSE, third_party_notices/}. The library is self-contained; linked-in licences ship with it.
+# These are OUTPUTs of a target, not a POST_BUILD step, so deleting mods/ makes the build restore them.
 set(_mthap_dropin "${CMAKE_BINARY_DIR}/mods/apclient")
 add_custom_command(
     OUTPUT "${_mthap_dropin}/${_mthap_mod_name}"
@@ -156,9 +140,7 @@ add_custom_command(
     VERBATIM
     COMMENT "Staging mods/apclient/LICENSE")
 
-# mod.pdb ships beside mod.dll so the crash handler's SymFromAddr finds it and resolves frames
-# in-process. MSVC-like frontends only: the MinGW cross-check emits DWARF and no PDB, so
-# TARGET_PDB_FILE would not resolve there.
+# mod.pdb ships beside mod.dll so the crash handler's SymFromAddr resolves frames. MSVC-like frontends only; the MinGW build emits DWARF.
 set(_mthap_pdb "")
 if(WIN32 AND MSVC)
     add_custom_command(

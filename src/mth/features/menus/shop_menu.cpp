@@ -1,6 +1,5 @@
-// ShopMenu instance accessors, the item-name palette swap, and the two shop detours whose bodies are
-// identical on both builds: the SetCursor text post-hook and the Shop::Get flatten. The purchase detour
-// stays in pal/{linux,windows}/game_detours_*.cpp, where the buy-confirm frame differs per build.
+// ShopMenu accessors, the item-name palette swap, and the two shop detours identical on both builds (SetCursor text post-hook, Shop::Get flatten). The purchase
+// detour lives in pal/{linux,windows}/game_detours_*.cpp because the buy-confirm frame differs per build.
 
 #include "mth/features/menus/shop_menu.hpp"
 
@@ -21,17 +20,13 @@ namespace mth
 namespace
 {
 
-// ShopItem / ShopItemDef instance offsets. Verified on the Windows depot build: ShopItem+0xf8 (active
-// def*), +0xec (stock count), ShopItemDef+0x48 (cached GetCollectionIndex == loc_idx) all match Linux.
-
 ShopFlattenFn g_shop_flatten_cb = nullptr;
 [[clang::no_destroy]] pal::ScopedHook g_shop_flatten_hook;
-// Shop::Get takes a 64-bit name hash. Use a fixed-width type: `unsigned long` is 32-bit under Windows
-// LLP64 and would truncate the hash, so the forwarded lookup finds no shop and returns null.
+// Shop::Get takes a 64-bit name hash; `unsigned long` is 32-bit under Windows LLP64 and would truncate it, so the lookup would return null.
 void *(*g_orig_shop_get)(std::uint64_t name_hash) = nullptr; // Shop::Get(uint64_t) -> ShopDef*
 
-// Shop::Get(nameHash) is the accessor InteractComponent::OpenShop consults before building a shop's
-// box list; OR the never-stack bit onto the returned ShopDef so stacked slots flatten (one box/level).
+// InteractComponent::OpenShop consults Shop::Get(nameHash) before building a shop's box list, so ORing the never-stack bit onto the returned ShopDef flattens
+// stacked slots (one box per level).
 void *repl_shop_get(std::uint64_t name_hash)
 {
     void *def = g_orig_shop_get != nullptr ? g_orig_shop_get(name_hash) : nullptr;
@@ -43,14 +38,13 @@ void *repl_shop_get(std::uint64_t name_hash)
     return def;
 }
 
-// ShopMenu::SetCursor post-hook: rewrites the selected box's name+description text from scouted AP data.
-// Standalone on Windows (not inlined), so this is a direct post-hook exactly like Linux.
+// ShopMenu::SetCursor post-hook: rewrites the selected box's name and description from scouted AP data. SetCursor is standalone on Windows too, so this is a
+// plain post-hook on both builds.
 ShopTextFn g_shop_text_cb = nullptr;
 [[clang::no_destroy]] pal::ScopedHook g_shop_text_hook;
 void (*g_orig_set_cursor)(void *, int, bool) = nullptr;
 
-// ShopMenu instance fields (box list + selection); distinct from the InitState frame offsets above.
-// Confirmed identical to Linux by decompiling SetCursor on the r148851 PE.
+// ShopMenu instance fields (box list and selection), identical to Linux per a SetCursor decompile of the r148851 PE.
 constexpr std::ptrdiff_t kShopNameWidgetOff = 0x148;
 constexpr std::ptrdiff_t kShopDescWidgetOff = 0x150;
 constexpr std::ptrdiff_t kShopBoxArrayOff = 0x1c8;
@@ -60,19 +54,15 @@ constexpr std::ptrdiff_t kShopModeOff = 0x23c;
 constexpr std::ptrdiff_t kShopBoxItemTypeOff = 0xcc; // ShopItem -> itemType (box's item kind)
 constexpr int kShopSkipItemType = 0x65;
 
-// ShopMenu runs in one of two modes, selected by the int at +0x23c: the ctor zeroes it, then stores 1 for
-// the shop named `Color` (the Atelier's "Custom Fitting" appearance menu). A mode-1 SetupBoxes takes the
-// palette-widget branch and returns without ever filling the box array. Gate on != 0 rather than the
-// game's own == 1 so that a mode added by a later build is excluded by default.
+// ShopMenu mode at +0x23c: the ctor zeroes it and stores 1 for the shop named `Color` (the Atelier's "Custom Fitting" appearance menu), whose SetupBoxes takes
+// the palette-widget branch and never fills the box array. Only mode 0 counts as stocked, so a mode added by a later build is excluded.
 [[nodiscard]] bool shop_menu_is_stocked(const void *shop_menu) noexcept
 {
     return pal::at<int>(shop_menu, kShopModeOff) == 0;
 }
 
-// Resolve the box array plus a count that is safe to walk, or false when this menu has no walkable rows.
-// OpenShop allocates +0x1c8 and sets a real row count in +0x1d0 for every menu including a mode-1 one,
-// but SetupBoxes returns before filling that array, leaving a live, correctly sized buffer full of
-// uninitialized heap. A null check and a range check both pass on it; only the mode gate catches it.
+// Box array plus a walkable count, or false when the menu has no walkable rows. OpenShop allocates +0x1c8 and sets a real count at +0x1d0 even for a mode-1
+// menu, whose SetupBoxes leaves the buffer full of uninitialized heap. Null and range checks pass on it, so only the mode check catches it.
 [[nodiscard]] bool shop_box_list(void *shop_menu, void ***out_boxes, int *out_count) noexcept
 {
     if (!pal::pointer_looks_valid(shop_menu) || !shop_menu_is_stocked(shop_menu))
@@ -94,16 +84,15 @@ void repl_set_cursor(void *self, int index, bool b)
         g_shop_text_cb(self);
 }
 
-// One clone serves every widget and every shop. Update resolves a second entry of this same clone
-// (component+0x17c) besides the one written here, but RenderInternal consumes it only when the flag
-// at component+0x1ac is set, and the ctor zeroes it.
+// One clone serves every widget and shop. Update also resolves a second entry of the clone (component+0x17c), but RenderInternal uses it only when the flag at
+// component+0x1ac is set, and the ctor zeroes that flag.
 void *g_clone = nullptr;
 bool g_warned_range = false;
 bool g_warned_refcount = false;
 bool g_warned_plausibility = false;
 
-// Cloned once and never released. ReleasePalette only decrements and never frees, so releasing
-// reclaims nothing and lets the game's release path destroy the clone under a live widget.
+// Cloned once and never released: ReleasePalette only decrements, so releasing reclaims nothing and lets the game's release path destroy the clone under a live
+// widget.
 void *ensure_clone(void *source)
 {
     if (g_clone != nullptr)
@@ -188,9 +177,8 @@ void shop_enumerate_locs(void *shop_menu, void (*sink)(int loc, void *ctx), void
     }
 }
 
-// Deliberately not mode-gated: SetupBoxes builds a live text widget for the appearance menu too, so these
-// return a real widget there. Safe only because on_shop_set_cursor resolves a location first and bails
-// when there is none; keep that order, or the appearance menu's title gets overwritten with an AP name.
+// Not mode-gated: SetupBoxes builds a live text widget for the appearance menu too. on_shop_set_cursor resolves a location first and bails without one; keep
+// that order or the appearance menu's title gets an AP name.
 void *shop_name_widget(void *shop_menu)
 {
     return shop_menu != nullptr ? pal::at<void *>(shop_menu, kShopNameWidgetOff) : nullptr;
@@ -258,9 +246,8 @@ bool shop_apply_name_palette(void *name_widget, std::uint32_t rgba)
     {
         std::int32_t *out_rc = &pal::at<std::int32_t>(output, layout::kPaletteRefCountOff);
         const std::uint32_t out_width = mod::palette_get_width(output);
-        // pointer_looks_valid above only proves output is a canonical address, not a
-        // ycPaletteTexture. Implausible bounds mean the field moved between builds and the writes
-        // below would land in an unrelated object.
+        // pointer_looks_valid only proves output is canonical, not a ycPaletteTexture. Implausible bounds mean the field moved between builds and the writes
+        // below would hit an unrelated object.
         if (*out_rc <= 0 || *out_rc >= 0x10000 || out_width == 0 || out_width > 255)
         {
             if (!g_warned_plausibility)
@@ -280,8 +267,8 @@ bool shop_apply_name_palette(void *name_widget, std::uint32_t rgba)
         }
         else if (!g_warned_refcount)
         {
-            // The owning ShopMenu holds its own reference, so this should be unreachable. Leaking a
-            // reference is survivable; destroying a palette the game still points at is not.
+            // Unreachable while the owning ShopMenu holds its own reference. Leaking a reference is survivable; destroying a palette the game still points at
+            // is not.
             g_warned_refcount = true;
             pal::logf(pal::LogLevel::Warn, "shop: name palette refcount would reach zero; leaving it held");
         }

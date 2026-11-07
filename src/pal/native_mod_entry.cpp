@@ -17,9 +17,8 @@ namespace
 {
 
 #ifdef _WIN32
-// Raw CreateThread rather than std::thread: the MSVC STL thread wrapper is noexcept, so an exception
-// escaping apclient_main would reach terminate and __fastfail, skipping the crash handler's filter
-// (no log line, no minidump). A plain thread proc lets it reach RtlUserThreadStart's filter.
+// Raw CreateThread: the MSVC STL thread wrapper is noexcept, so an exception escaping apclient_main would __fastfail past the crash handler's filter
+// (no log, no minidump). A plain thread proc reaches RtlUserThreadStart's filter.
 DWORD WINAPI apclient_thread_proc(LPVOID)
 {
     SetThreadDescription(GetCurrentThread(), L"mthap-main");

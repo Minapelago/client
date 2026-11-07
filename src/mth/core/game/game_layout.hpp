@@ -32,12 +32,11 @@ inline constexpr std::ptrdiff_t kStatusPanelBase = 0x128;
 inline constexpr std::ptrdiff_t kStatusPanelStride = 0x40;
 
 // Byte offset of stat's level-label ycTextComponent* within StatusMenu, or -1 for a row that is not
-// one of the three real stats. Pure so it is unit-testable.
+// one of the three real stats. Pure.
 [[nodiscard]] constexpr std::ptrdiff_t status_lvl_widget_offset(int stat) noexcept
 {
     return (stat >= 0 && stat < 3) ? kStatusPanelBase + kStatusPanelStride * stat : -1;
 }
-// Setup builds the three panels in one loop; the level label is the first pointer in each block.
 static_assert(status_lvl_widget_offset(0) == 0x128 && status_lvl_widget_offset(1) == 0x168 && status_lvl_widget_offset(2) == 0x1a8);
 static_assert(status_lvl_widget_offset(-1) < 0 && status_lvl_widget_offset(3) < 0);
 
@@ -52,10 +51,9 @@ inline constexpr std::ptrdiff_t kLevelUpDisplayDescOff = 0x120; // ycTextCompone
 // Component/entity idiom: ycEntity* at component+0x10, ycWorld* at entity+0x50.
 inline constexpr std::ptrdiff_t kComponentEntityOff = 0x10;
 inline constexpr std::ptrdiff_t kEntityWorldOff = 0x50;
-// ycWorld -> AreaManager*. Null through the ending sequence and in the window between area teardown and
-// AreaManagerNewArea. The title and profile-select worlds also bind no area, but they carry no live player,
-// so a player-rooted walk never reaches them. Player::InitDeath is the one engine site that dereferences
-// this without a null check, so a death requested while it is null faults on the tick the state machine flushes.
+// ycWorld -> AreaManager*. Null through the ending sequence and between area teardown and AreaManagerNewArea; the title and profile-select
+// worlds bind none either but carry no live player. Player::InitDeath dereferences it without a null check, so a death requested while it is
+// null faults on the tick the state machine flushes.
 inline constexpr std::ptrdiff_t kWorldAreaManagerOff = 0x1758;
 
 // Pickup entity (verified by the startup self-check in the Pickup::Init hook).
@@ -80,16 +78,13 @@ inline constexpr std::ptrdiff_t kKeyBlockEntityRefOff = 0xa8; // start of the +0
 inline constexpr std::ptrdiff_t kSaveBlockUnlockOff = 0x200;  // u64 lock-unlocked bitfield in SaveSlot
 inline constexpr std::ptrdiff_t kSaveKearBitsOff = 0x1f0;     // u64 kear-collected bitfield in SaveSlot
 inline constexpr std::ptrdiff_t kSaveKearSpentOff = 0x1f8;    // int spent-counter (see kPlayerKearSpentOff for the mirror)
-// The Player DOES mirror the kear counters: Player+0x11a8 (u64 bits) / Player+0x11b0 (int spent), synced
-// by Player::RestoreSave/WriteSave. Gameplay (KeyBlock/Chest gate, HUD) reads usable = popcount(Player+0x11a8)
-// - SaveSlot+0x1f8; the spend gate then SNAPS SaveSlot+0x1f8 = Player+0x11b0+1, so any edit to the key count
-// must move BOTH SaveSlot+0x1f8 and Player+0x11b0 together. (Player+0x119c/+0x11a0 are the money
-// current/cap fields; Player+0x1190 is the vial capacity bitmask.)
+// Player mirrors the kear counters: Player+0x11a8 (u64 bits) / Player+0x11b0 (int spent), synced by Player::RestoreSave/WriteSave. Gameplay
+// (KeyBlock/Chest gate, HUD) reads usable = popcount(Player+0x11a8) - SaveSlot+0x1f8, and the spend gate snaps SaveSlot+0x1f8 = Player+0x11b0+1,
+// so a key-count edit must move both. (Player+0x119c/+0x11a0 are money current/cap; Player+0x1190 is the vial capacity bitmask.)
 inline constexpr std::ptrdiff_t kPlayerKearSpentOff = 0x11b0; // int spent-counter mirror in Player (runtime source of truth)
 
-// KeyMiser (Kear Institute) trade latch, set by NPCBehavior_KeyMiser on a successful trade. KeyReward's
-// constructor spawns the location-150 reward pickup off this bit on room load, which is the only thing in
-// the game that spawns it (#174). Exactly four readers in the binary, so it carries no other meaning.
+// KeyMiser (Kear Institute) trade latch, set by NPCBehavior_KeyMiser on a successful trade. KeyReward's ctor spawns the location-150 reward
+// pickup from this bit on room load, its only spawner (#174). The binary has four readers and no other use for it.
 inline constexpr std::ptrdiff_t kSaveKeyMiserFlagOff = 0xb08; // u64 flags word in SaveSlot
 inline constexpr unsigned kSaveKeyMiserTradeBit = 62;
 
@@ -97,16 +92,13 @@ inline constexpr unsigned kSaveKeyMiserTradeBit = 62;
 inline constexpr std::ptrdiff_t kSaveGeneratorBitsOff = 0x290; // u64 generator-fixed bitfield (BossComponent::SetGeneratorFixed sets a bit per generator)
 inline constexpr std::ptrdiff_t kSaveGameClearOff = 0xd30;     // u8 game-cleared flag (set by GigaLionelBoss::EndingTransition)
 
-// Chosen starting weapon (the SaveSlot constructor writes -1 = none); Weapons::GetStarterReplacement keys
-// its collection-slot remap on this (see tables::should_clear_starter_swap for what the remap breaks). Weapon
-// OWNERSHIP is elsewhere (+0xc24/+0xc38 bits, name string at +0x138), so clearing this costs the player
-// nothing.
+// Chosen starting weapon (the SaveSlot ctor writes -1 = none); Weapons::GetStarterReplacement keys its collection-slot remap on it (see
+// tables::should_clear_starter_swap). Ownership lives in the +0xc24/+0xc38 bits (name string at +0x138), so clearing this costs nothing.
 inline constexpr std::ptrdiff_t kSaveStarterWeaponTypeOff = 0xc60; // int: starter weapon type, -1 = no swap
 
-// Weapon ownership, one entry per family (Whip, Hammer, Daggers, Buster Bat, Casket). +0xc24 is the owned-tier
-// bitfield Items::IsItemCollected reads back for a kind-1 item, bit (itemType - 2) % 3 per tier; +0xc38 is the
-// active tier, a BIT INDEX into it and not a count (the game revokes with `0xc24[fam] &= ~(1 << (0xc38[fam] &
-// 0x1f))`). Only three tiers exist, so nothing above bit 2 belongs to us.
+// Weapon ownership, one entry per family (Whip, Hammer, Daggers, Buster Bat, Casket). +0xc24 is the owned-tier bitfield Items::IsItemCollected
+// reads for a kind-1 item, bit (itemType - 2) % 3 per tier; +0xc38 is the active tier, a bit index into it (see game_tables.hpp). Three tiers
+// exist, so nothing above bit 2 is ours.
 inline constexpr std::ptrdiff_t kSaveWeaponOwnedBitsOff = 0xc24;  // u32[5]: per-family owned-tier bitfield
 inline constexpr std::ptrdiff_t kSaveWeaponActiveTierOff = 0xc38; // int[5]: per-family active tier (a bit index into the above)
 inline constexpr std::uint32_t kWeaponTierBits = 0x7;             // the three tier bits; any other bit of the field is left alone
@@ -134,19 +126,17 @@ inline constexpr std::ptrdiff_t kPlayerStateOff = 0x254;       // StateMachine c
 // HubFountain::Bulb (Ossex fountain lamp pre-light).
 inline constexpr std::ptrdiff_t kBulbIndexOff = 0x10; // HubFountain::Bulb+0x10: u32 lamp index (0..6)
 
-// TitleScreen menu. Verified identical on Linux r148821 and Windows r148905, so no PAL split.
-// The three options are fixed sub-objects in one block, not an array of entries; per-option state
-// is visibility only, so a disabled option has no game-side representation to reuse.
+// TitleScreen menu. Identical on Linux r148821 and Windows r148905, so no PAL split. The three options are fixed sub-objects in one block whose
+// only per-option state is visibility, so a disabled option has nothing game-side to reuse.
 inline constexpr std::ptrdiff_t kTitleOptionBlockOff = 0x120;   // TitleScreen -> option block ptr
 inline constexpr std::ptrdiff_t kTitleSelectedIndexOff = 0x160; // int, wrapped 0..2 unconditionally
 inline constexpr std::ptrdiff_t kTitleOptionStride = 0x8a0;
 inline constexpr int kTitleOptionStartGame = 0;
 inline constexpr int kTitleOptionCount = 3;
 
-// ProfileSelectMenu. Verified identical on Linux r148821 and Windows r148905 (Ghidra decompiles the
-// Windows one against this+0x38, so add 0x38 to the offsets it reports). Its launch state is the
-// only code in the game that sets the launched flag the intro cinematic polls, so a launch that
-// bypasses this menu leaves the title screen up and the cutscene parked.
+// ProfileSelectMenu. Identical on Linux r148821 and Windows r148905 (Ghidra decompiles the Windows one against this+0x38; add 0x38 to its
+// offsets). Its launch state is the only code that sets the launched flag the intro cinematic polls, so a launch that bypasses this menu
+// leaves the title screen up and the cutscene parked.
 inline constexpr std::ptrdiff_t kProfileMenuStateOff = 0x5c;     // int: current state
 inline constexpr std::ptrdiff_t kProfileMenuNextStateOff = 0x64; // int: requested state
 inline constexpr std::ptrdiff_t kProfileMenuStateReqOff = 0x68;  // u8: transition-pending flag
@@ -165,28 +155,22 @@ inline constexpr int kProfileMenuStateMax = 10;
 inline constexpr std::ptrdiff_t kSaveSlotArrayOff = 0x680;
 inline constexpr std::ptrdiff_t kSaveSlotStride = 0x11c8;
 
-// TicketMachine (the station's train-pass donation machine) and the InteractComponent it owns.
-// InteractComponent::IsInteractable early-returns false on the disable byte, which is what suppresses
-// both the on-screen prompt and the interaction itself. It is the game's own on/off switch (the same
-// one NPCBehavior_Brainless flips), and nothing in the machine ever writes it - unlike the prompt byte
-// at +0x231, which TicketMachine::UpdateState rewrites every tick from IsItemCollected(149).
+// TicketMachine (the station's train-pass donation machine) and the InteractComponent it owns. InteractComponent::IsInteractable returns false
+// on the disable byte, suppressing both prompt and interaction. It is the game's own switch (NPCBehavior_Brainless flips it) and the machine
+// never writes it; the prompt byte at +0x231 is rewritten every tick by TicketMachine::UpdateState from IsItemCollected(149).
 inline constexpr std::ptrdiff_t kTicketMachineInteractOff = 0x1b0; // TicketMachine -> InteractComponent*
 inline constexpr std::ptrdiff_t kInteractDisabledOff = 0x23a;      // u8: nonzero = never interactable
 
-// CheckpointChest and the WeaponsChestMenu it builds when opened. The starter-mode byte is what turns the
-// one shared menu class into the intro's grant-a-starting-weapon chest rather than the ordinary
-// weapon-change chest; only NPCBehavior_IntroWeaponSelect ever sets it, and the chest copies it into the
-// menu at build time. All three verified identical on Linux and Windows (Ghidra decompiles the Windows chest
-// against this+0x170 and the menu against this+0x38, so add those to the offsets it reports). The menu hop
-// is validated by RTTI at use, since it is null except while the chest is open.
+// CheckpointChest and the WeaponsChestMenu it builds when opened. The starter-mode byte makes the shared menu the intro's starting-weapon
+// chest; only NPCBehavior_IntroWeaponSelect sets it, and the chest copies it into the menu at build time. All three are identical on Linux and
+// Windows (Ghidra decompiles the Windows chest against this+0x170 and the menu against this+0x38; add those to its offsets). The menu hop is
+// RTTI-validated at use, since it is null while the chest is closed.
 inline constexpr std::ptrdiff_t kCheckpointChestMenuOff = 0x1e0;     // CheckpointChest -> WeaponsChestMenu*, null while closed
 inline constexpr std::ptrdiff_t kCheckpointChestStarterOff = 0x1ec;  // u8: nonzero = intro starter chest
 inline constexpr std::ptrdiff_t kWeaponsChestMenuStarterOff = 0x279; // u8: the menu's copy of the above
 
-// NPCEntity holds its InteractComponent at the same offset as TicketMachine (shared base). Linux-derived
-// only: NPCBehavior_SewerCat is multiply inherited (four vptrs), so MSVC need not place +0x50 where
-// Itanium does. Both hops are validated at use, so a Windows mismatch degrades to the gate's sibling
-// fallback instead of writing somewhere wrong.
+// NPCEntity holds its InteractComponent at the same offset as TicketMachine (shared base). Linux-derived: NPCBehavior_SewerCat is multiply
+// inherited (four vptrs), so MSVC may place +0x50 elsewhere. Both hops are validated at use; a Windows mismatch falls back to the gate's sibling.
 inline constexpr std::ptrdiff_t kSewerCatEntityOff = 0x50;     // NPCBehavior_SewerCat -> NPCEntity*
 inline constexpr std::ptrdiff_t kNpcEntityInteractOff = 0x1b0; // NPCEntity -> InteractComponent*
 
@@ -197,16 +181,14 @@ inline constexpr std::ptrdiff_t kShopItemStockOff = 0xec; // ShopItem stock coun
 inline constexpr std::ptrdiff_t kShopDefLocOff = 0x48;    // ShopItemDef cached GetCollectionIndex == loc_idx
 inline constexpr std::ptrdiff_t kShopDefNextOff = 0x28;   // ShopItemDef -> next variant (level chain), null-terminated
 
-// ycTextComponent text coloring. SetColor only stores a color; the render object resolves it as
-// outputPalette.colors[ GetIndex(lookupPalette, storedColor) ], and GetIndex answers 0 for a color
-// the palette does not contain. The render object is a base subobject at +0x40, so these
-// component-relative offsets are its own plus 0x40. Same offsets on both platforms.
+// ycTextComponent text coloring. SetColor only stores a color; the render object (a base subobject at +0x40, so these offsets are its own plus
+// 0x40) resolves outputPalette.colors[GetIndex(lookupPalette, storedColor)], and GetIndex returns 0 for a color the palette lacks. Same on both
+// platforms.
 inline constexpr std::ptrdiff_t kTextOutputPaletteOff = 0x128;  // ycTextComponent -> ycPaletteTexture* the final RGBA is read from
 inline constexpr std::ptrdiff_t kTextLookupPaletteOff = 0x130;  // ycTextComponent -> ycPaletteTexture* GetIndex runs against
 inline constexpr std::ptrdiff_t kTextPaletteVersionOff = 0x1c0; // cached output-palette version; a stale value forces a re-resolve
 
-// ycPaletteTexture. Refcount is manipulated by hand because the engine's own SetPalette is inlined
-// on Linux and would have to be carved on Windows.
+// ycPaletteTexture. Refcount is managed by hand because the engine's SetPalette is inlined on Linux and would have to be carved on Windows.
 inline constexpr std::ptrdiff_t kPaletteRefCountOff = 0x34;
 inline constexpr std::ptrdiff_t kPaletteVersionOff = 0x38;
 

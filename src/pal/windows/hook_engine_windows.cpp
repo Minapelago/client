@@ -50,9 +50,7 @@ bool install_hook(void *target, void *replacement, void **trampoline)
         logf(LogLevel::Error, "MinHookEngine: CreateHook failed at %p (%s)", target, MH_StatusToString(s_create));
         return false;
     }
-    // Publish before enabling. EnableHook makes the replacement callable from other threads
-    // immediately, and every replacement calls through its trampoline; publishing afterwards
-    // leaves a window where the detour is live and the trampoline is still null.
+    // Publish before enabling: EnableHook makes the replacement callable from other threads at once, and every replacement calls through its trampoline.
     if (trampoline)
         *trampoline = original;
     const auto s_enable = MH_EnableHook(target);

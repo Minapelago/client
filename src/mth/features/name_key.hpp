@@ -7,8 +7,7 @@
 namespace mth
 {
 
-// Name-hash reads shared by the live-object collection-slot resolves (KeyBlock, KeyBlockChain, locked
-// Chest). Each mirrors the walk the game's own gate does; feed the result to
+// Name-hash reads for the live-object collection-slot resolves (KeyBlock, KeyBlockChain, locked Chest), mirroring the game's own walk. Feed the result to
 // tables::collection_slot_for_name_key.
 
 // A spawn point's name hash: the direct u64, else the shared descriptor it points at. 0 = none.

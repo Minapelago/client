@@ -2,14 +2,13 @@ name: release
 
 # Two release-please lanes share this workflow.
 #
-#   beta lane   (.github/prerelease-*.json) keeps "chore: release vX.Y.Z-beta.N" open whenever master
-#               has releasable commits. Merging it tags and publishes a pre-release.
-#   stable lane (.github/release-*.json) runs right after a beta tag and opens "chore: release
-#               vX.Y.Z". Merging the stable PR graduates: the beta lane recognises it by the shared
-#               pull-request-title-pattern and tags the stable version on the next run.
+#   beta lane   (.github/prerelease-*.json) keeps "chore: release vX.Y.Z-beta.N" open whenever master has releasable commits. Merging it tags and
+#               publishes a pre-release.
+#   stable lane (.github/release-*.json) runs right after a beta tag and opens "chore: release vX.Y.Z". Merging it graduates the release: the beta
+#               lane recognises it by the shared pull-request-title-pattern and tags the stable version on the next run.
 #
-# So the only manual step in either lane is merging a PR. The stable lane's extra-files write the
-# graduated version back into the beta manifest, which restarts the beta counter from the new base.
+# The only manual step in either lane is merging a PR. The stable lane's extra-files write the graduated version back into the beta manifest,
+# which restarts the beta counter from the new base.
 #
 # Nothing is tagged or published unless the ci gate (format check, tests, both builds) is green.
 
@@ -20,7 +19,7 @@ on:
 permissions:
   contents: read
 
-# Two pushes close together would otherwise race to create the same release PR.
+# Two pushes close together would race to create the same release PR.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -41,8 +40,7 @@ jobs:
       released: ${{ steps.rp.outputs.release_created }}
       tag: ${{ steps.rp.outputs.tag_name }}
     steps:
-      # Both lanes run as a GitHub App. PRs authored by github-actions[bot] leave their CI runs parked
-      # awaiting a manual approval click, which the app identity is exempt from.
+      # Both lanes run as a GitHub App: CI runs on PRs authored by github-actions[bot] wait for a manual approval click, and the app identity is exempt.
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -64,8 +62,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # PR only. The beta lane owns tagging and adopts this PR once it is merged, so letting this run
-      # cut releases too would tag the same version twice.
+      # PR only. The beta lane owns tagging and adopts this PR once merged; cutting releases here too would tag the same version twice.
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -97,8 +94,8 @@ jobs:
         with:
           path: dist
           pattern: release-*
-      # Each artifact extracts to dist/<name>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform
-      # so the release asset unpacks to an apclient/ drop-in folder.
+      # Each artifact extracts to dist/<name>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform so the release asset unpacks to
+      # an apclient/ drop-in folder.
       - name: Package drop-in zips
         env:
           TAG: ${{ needs.beta.outputs.tag }}
@@ -114,9 +111,8 @@ jobs:
           gh release upload "$TAG" \
             "mth-apclient-${TAG}-linux.zip" \
             "mth-apclient-${TAG}-windows.zip" --clobber
-          # Set both flags explicitly from the tag. The beta lane is what tags a graduated stable
-          # release too, and it runs with prerelease:true, so without this a stable release would ship
-          # flagged as a pre-release and never become "latest".
+          # Set both flags from the tag: the beta lane also tags graduated stable releases with prerelease:true, which would flag a stable release
+          # as a pre-release and keep it from becoming "latest".
           if [[ "$TAG" == *-* ]]; then
             gh release edit "$TAG" --prerelease=true --latest=false
           else
@@ -132,20 +128,17 @@ jobs:
           TAG: ${{ needs.beta.outputs.tag }}
         run: |
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          # The release body is release-please's changelog section for this version, so Nexus gets the
-          # same notes as the GitHub release rather than a second hand-written copy.
+          # The release body is release-please's changelog section, so Nexus gets the same notes as the GitHub release.
           {
             echo "notes<<NEXUS_NOTES_EOF"
             gh release view "$TAG" --json body -q .body
             echo "NEXUS_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # Both Nexus steps are skipped for the beta lane, which tags and publishes here too. A dash in
-      # the tag is what separates v1.2.0-beta.3 from v1.2.0.
+      # Both Nexus steps are skipped for the beta lane, which also tags and publishes here. A dash in the tag separates v1.2.0-beta.3 from v1.2.0.
       #
-      # file_id is the mod-file id from the Files tab's API info panel, NOT the small file_id in the
-      # download URL. That one is a game-scoped version id and would point at another mod's file.
-      # Nexus renamed update groups to mod files in June 2026 and the site still labels it a group id.
+      # file_id is the mod-file id from the Files tab's API info panel. The small file_id in the download URL is a game-scoped version id and points
+      # at another mod's file. Nexus renamed update groups to mod files in June 2026 and the site still labels it a group id.
       - name: Crosspost the Linux drop-in to Nexus Mods
         if: ${{ !contains(needs.beta.outputs.tag, '-') }}
         uses: Nexus-Mods/upload-action@v1.0.0-beta.10
@@ -167,8 +160,7 @@ jobs:
           display_name: APClient Windows
           version: ${{ steps.ver.outputs.version }}
           archive_existing_version: true
-          # The page version and the changelog belong to the mod, not to either archive, so only the
-          # last upload sets them.
+          # The page version and the changelog belong to the mod, not an archive, so only the last upload sets them.
           update_mod_version: true
           mod_id: ${{ vars.NEXUS_MOD_ID }}
           changelog: ${{ steps.ver.outputs.notes }}

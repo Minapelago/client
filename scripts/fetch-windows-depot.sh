@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
-# Fetch a Windows depot for Mina the Hollower so signature work can target the live shipping build
-# instead of an outdated reference PE. Re-run after a game update.
+# Fetch a Windows depot for Mina the Hollower so signature work targets the live shipping build. Re-run after a game update.
 #
 #   scripts/fetch-windows-depot.sh <steam-username> [outdir] [branch] [betapassword]
 #
-# branch defaults to experimental-modding (the branch the native modloader ships on). Pass "public"
-# for the stable build. The first run logs in interactively (Steam Guard 2FA prompt); steamcmd caches
-# credentials after a successful login, so later runs are non-interactive. Only the ~20 MB Windows
-# binaries depot is pulled (not the ~850 MB shared content), so it is fast.
+# branch defaults to experimental-modding (where the native modloader ships); pass "public" for the stable build. The first run logs in
+# interactively (Steam Guard 2FA) and steamcmd then caches credentials. Only the ~20 MB Windows binaries depot is pulled.
 #
 # App/depot IDs (from `steamcmd +app_info_print 1875580`):
 #   app 1875580; depot 1875582 = oslist "windows" (MinaTheHollower.exe, handler.exe, steam_api64.dll).
 #
-# A non-public branch has its own per-depot manifest, and download_depot takes no branch name -- so for
-# such branches we first app_info_print to resolve depot 1875582's manifest gid on that branch, then
-# download_depot that exact manifest. (public downloads the current manifest directly, as before.)
+# A non-public branch has its own per-depot manifest and download_depot takes no branch name, so for those we resolve depot 1875582's manifest gid
+# on that branch with app_info_print and download that manifest.
 set -euo pipefail
 
 APP=1875580       # Mina the Hollower
@@ -25,16 +21,13 @@ OUTDIR=${2:-$HOME/minathehollower/windows-current}
 BRANCH=${3:-experimental-modding}
 BETAPW=${4:-}
 
-# @sSteamCmdForcePlatformType windows MUST precede +login so the Windows depot variant is selected on Linux.
-# stdin is closed (</dev/null): this script is non-interactive, and without a TTY an uncached +login would
-# otherwise hang forever on steamcmd's password prompt (which our pipes redirect off-screen anyway). Closing
-# stdin makes an uncached login fail fast so assert_login_ok can report it. Cache creds via RELOGIN_HINT.
+# @sSteamCmdForcePlatformType windows must precede +login to select the Windows depot on Linux.
+# stdin is closed (</dev/null): without a TTY an uncached +login would hang on steamcmd's password prompt. Closing it makes the login fail fast so
+# assert_login_ok can report it. Cache creds via RELOGIN_HINT.
 run_steamcmd() { "$STEAMCMD" +@sSteamCmdForcePlatformType windows +login "$STEAM_USER" "$@" +quit </dev/null; }
 
-# steamcmd caches a login token after one interactive login; a Steam client self-update or unclean shutdown
-# can wipe that cache. A non-interactive +login then falls back to an unanswerable password prompt and fails,
-# with the error buried in the piped log. Scan the log and surface a clear, actionable message instead of
-# dying silently under `set -e`; the interactive re-login re-caches the token so later runs are automatic.
+# steamcmd caches a login token after one interactive login; a Steam client self-update or unclean shutdown can wipe it, and a non-interactive
+# +login then fails with the error buried in the piped log. Scan the log and print an actionable message; the interactive re-login re-caches the token.
 RELOGIN_HINT="$STEAMCMD +@sSteamCmdForcePlatformType windows +login $STEAM_USER +quit"
 assert_login_ok()
 {
@@ -57,7 +50,7 @@ if [ "$BRANCH" != "public" ]; then
     run_steamcmd "${UPDATE_ARGS[@]}" +app_info_update 1 +app_info_print "$APP" >/tmp/steamcmd_appinfo.log 2>&1 || true
     assert_login_ok /tmp/steamcmd_appinfo.log
 
-    # NB: the log path is an argv (not stdin) -- `python3 -` already consumes stdin for the heredoc.
+    # The log path is an argv: `python3 -` already consumes stdin for the heredoc.
     MANIFEST=$(python3 - "$WIN_DEPOT" "$BRANCH" /tmp/steamcmd_appinfo.log <<'PY'
 import re, sys
 depot, branch, logpath = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -91,15 +84,12 @@ echo ">> steamcmd: downloading app $APP windows depot $WIN_DEPOT${MANIFEST:+ man
 run_steamcmd +download_depot "$APP" "$WIN_DEPOT" $MANIFEST 2>&1 | tee /tmp/steamcmd_fetch.log || true
 assert_login_ok /tmp/steamcmd_fetch.log
 
-# download_depot stages under <steam home>/steamapps/content/app_<APP>/depot_<DEPOT>/ and prints the
-# path -- but in windows-platform mode steamcmd prints it with backslashes and quotes, so normalize.
-# steamcmd prints: Depot download complete : "<path-with-backslashes>" (manifest <gid>). Extract just the
-# quoted path (dropping the trailing " (manifest ...)"), then normalize backslashes to forward slashes.
+# download_depot stages under <steam home>/steamapps/content/app_<APP>/depot_<DEPOT>/ and prints the path. In windows-platform mode it prints
+# `Depot download complete : "<path-with-backslashes>" (manifest <gid>)`, so extract the quoted path and normalize backslashes.
 SRC=$(sed -n 's/^Depot download complete : "\([^"]*\)".*/\1/p' /tmp/steamcmd_fetch.log | tr -d '\r' | tr '\\' '/' | tail -1)
 if [ -z "${SRC:-}" ] || [ ! -d "$SRC" ]; then
-    # -print -quit stops at the first match; a `| head` would leave find writing into a closed pipe (SIGPIPE),
-    # which under pipefail + `set -e` silently kills the script. `|| true` keeps a genuine no-match from doing
-    # the same, so the guard below reports it with a message instead.
+    # -print -quit stops at the first match; `| head` would leave find writing into a closed pipe (SIGPIPE), which kills the script under
+    # pipefail + `set -e`. `|| true` lets the guard below report a no-match.
     SRC=$(find "$HOME/.local/share/Steam/steamcmd" "$HOME/.steam" "$HOME/Steam" \
         -type d -path "*content/app_${APP}/depot_${WIN_DEPOT}" -print -quit 2>/dev/null || true)
 fi
@@ -115,7 +105,7 @@ for f in handler.exe steam_api64.dll; do
     [ -n "${g:-}" ] && cp -f "$g" "$OUTDIR/$f" || true
 done
 
-# Build id = TimeDateStamp:SizeOfImage (hex) -- the same value the mod logs as build_id=.
+# Build id = TimeDateStamp:SizeOfImage (hex), the value the mod logs as build_id=.
 BID=$(python3 - "$OUTDIR/MinaTheHollower.exe" <<'PY'
 import sys, pefile
 pe = pefile.PE(sys.argv[1], fast_load=True)

@@ -33,15 +33,15 @@ TEST_CASE("burrow boundary: swimming onto land without Burrow surfaces the playe
     REQUIRE(settle(gate, false, /*burrow_blocked=*/true, /*swim_blocked=*/false) == BoundaryAction::Emerge);
 }
 
-// Owning the ability the player crosses into is the ordinary case, and it must stay silent - including on the
-// crossing AFTER it, which is only correct if the gate tracked the mode change.
+// Owning the ability the player crosses into is the ordinary case and stays silent, including on the crossing after it, which holds only if the gate
+// tracked the mode change.
 TEST_CASE("burrow boundary: a granted crossing is silent and updates the tracked mode", "[ability][burrow]")
 {
     BurrowBoundaryGate gate;
     gate.arm(false);
 
-    REQUIRE(settle(gate, true, false, /*swim_blocked=*/false) == BoundaryAction::None); // has Swim: now swimming
-    // Back onto land, this time without Burrow: the gate must know it is currently a SWIM to catch this.
+    REQUIRE(settle(gate, true, false, /*swim_blocked=*/false) == BoundaryAction::None);
+    // Back onto land, this time without Burrow: the gate must know it is currently a swim to catch this.
     REQUIRE(settle(gate, false, /*burrow_blocked=*/true, false) == BoundaryAction::Emerge);
 }
 
@@ -87,8 +87,8 @@ TEST_CASE("burrow boundary: a single spurious deep reading does not act", "[abil
     BurrowBoundaryGate gate;
     gate.arm(false);
 
-    REQUIRE(gate.observe(true, false, /*swim_blocked=*/true) == BoundaryAction::None);  // one-frame blip
-    REQUIRE(gate.observe(false, false, /*swim_blocked=*/true) == BoundaryAction::None); // back on land
+    REQUIRE(gate.observe(true, false, /*swim_blocked=*/true) == BoundaryAction::None);
+    REQUIRE(gate.observe(false, false, /*swim_blocked=*/true) == BoundaryAction::None);
     REQUIRE(gate.observe(false, false, /*swim_blocked=*/true) == BoundaryAction::None);
 }
 

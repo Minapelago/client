@@ -15,11 +15,9 @@
 namespace mth
 {
 
-// Runs the game on a mod-owned save without the player picking a file. The launch is the game's own:
-// the mod stages its save into a vanilla slot and drives the profile-select menu into its launch
-// state (see mth::layout::kProfileMenuLaunchState). Vanilla save writes are off from the moment AP
-// connects, so saveData.yc and the Steam Cloud copy behind it are never touched; persistence is our
-// own, flushed on the game's save cadence.
+// Runs the game on a mod-owned save without the player picking a file: the mod stages its save into a vanilla slot and drives the profile-select menu into its
+// launch state (mth::layout::kProfileMenuLaunchState). Vanilla save writes stop when AP connects, so saveData.yc and its Steam Cloud copy stay untouched; our
+// own persistence flushes on the game's save cadence.
 class SaveTakeover
 {
   public:
@@ -32,20 +30,18 @@ class SaveTakeover
     SaveTakeover(const SaveTakeover &) = delete;
     SaveTakeover &operator=(const SaveTakeover &) = delete;
 
-    // Claims the launch. The vanilla StartGame must then run: the substate it requests is what builds
-    // the profile-select menu this drives. False means the launch must be blocked, not passed through.
+    // Claims the launch. The vanilla StartGame must then run, since its substate builds the profile-select menu this drives. false means block the launch.
     bool begin();
 
     void tick();
     void on_game_save_requested();
 
-    // Finds the live profile-select menu in the menu world's scene graph and drives it. Called once per
-    // World::Update end; world may be null. The menu is never cached: the intro cinematic owns its
-    // lifetime, so it is re-found each pass.
+    // Finds and drives the live profile-select menu in the menu world's scene graph, once per World::Update end (world may be null). Re-found each pass because
+    // the intro cinematic owns its lifetime.
     void on_world_update_end(void *world);
 
-    // True from claim until settled. The dev console's save-write toggle must refuse while this
-    // holds, or it leaks the mod-owned session into the player's vanilla saveData.yc.
+    // True from claim until settled. The dev console's save-write toggle refuses while this holds, or the mod-owned session would leak into the player's
+    // vanilla saveData.yc.
     [[nodiscard]] bool takeover_active() const
     {
         return !takeover_settled(step_) || step_ == TakeoverStep::Running;

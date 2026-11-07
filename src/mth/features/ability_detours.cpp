@@ -26,9 +26,8 @@ using mth::Ability;
 // Player-object offsets used by the detours (Linux build 828346d4; the Windows Player struct matches).
 constexpr std::ptrdiff_t kPlayerWaterListenerOff = 0x2c0; // WaterListener* (swim-vs-land discriminator)
 
-// Pending bounce target (3 floats, FLT_MAX when none) and the bone-bounce variant marker. Player::OnBounce
-// consumes both; its own early-out clears them, and the block path has to do the same or the target stays
-// armed and fires late (#168).
+// Pending bounce target (3 floats, FLT_MAX when none) and the bone-bounce variant marker. Player::OnBounce consumes both and its early-out clears them; the
+// block path must too, or the target stays armed and fires late (#168).
 constexpr std::ptrdiff_t kPlayerBounceTargetOff = 0x252c;
 constexpr std::ptrdiff_t kPlayerBounceMarkerOff = 0x24c0;
 // PhysicsContactPair -> colliding-entity component kind chain (shared by both CollideWith detours).
@@ -44,19 +43,16 @@ constexpr unsigned kTrainRideDoneEvent = 9;
 constexpr std::ptrdiff_t kTrainMenuObjOff = 0xc8;  // owner + 0xc8 -> selection obj
 constexpr std::ptrdiff_t kTrainSelCodeOff = 0x21c; // obj + 0x21c -> int selected ticket itemType
 constexpr int kTrainExitCode = 100;
-// SaveSlot generic Train Pass (item 94) owned byte. Set by Items::OnPickupDone on collect; gates boarding
-// (train presence) under train_rando.
+// SaveSlot generic Train Pass (item 94) owned byte, set by Items::OnPickupDone on collect; gates boarding under train_rando.
 constexpr std::ptrdiff_t kSaveTrainPassOwnedOff = 0x1c0;
-// SaveSlot train-present byte.
 constexpr std::ptrdiff_t kSaveTrainPresentOff = 0x1c1;
 // CTP boss (Thorne 2) defeated bit: byte +0x281 mask 0x02 of the SaveSlot+0x280 boss bitfield. The Coltrane
 // line ride is gated on it (#108).
 constexpr std::ptrdiff_t kSaveCtpBossByteOff = 0x281;
 constexpr std::uint8_t kCtpBossGateMask = 0x02;
 
-// train_rando destination gate, published from mth each tick. When active, repl_train_npc cancels any
-// ticket line whose bit isn't in the granted mask (the +0x1e0 menu clamp can't hide lines 95/99); when
-// inactive it falls back to the console Train-ability block.
+// train_rando destination gate, published each tick. When active, repl_train_npc cancels any ticket line whose bit is not granted (the +0x1e0 menu clamp cannot
+// hide lines 95/99); otherwise the console Train-ability block applies.
 std::uint32_t g_train_granted_mask = 0;
 bool g_train_rando_gate = false;
 
@@ -106,8 +102,7 @@ bool ability_blocked(Ability a)
     return g_ability_block && g_ability_block(a);
 }
 
-// Reads the swim-vs-land discriminator off a player. Shared by the commit classifier and the per-tick
-// boundary poll so both see exactly the same signal.
+// Swim-vs-land discriminator, shared by the commit classifier and the per-tick boundary poll so both read the same signal.
 bool player_in_deep_water(void *player)
 {
     if (player == nullptr)
@@ -128,8 +123,7 @@ unsigned long repl_burrow_ground(void *self)
             return 0;
     }
     const unsigned long r = g_orig_burrow_ground ? g_orig_burrow_ground(self) : 0;
-    // A commit we let through: the boundary watcher now knows which mode the player is in, so it can catch
-    // the game flipping between them mid-burrow without reading the mode field (#163).
+    // A commit we let through tells the boundary watcher the mode, so it can catch a mid-burrow flip without reading the mode field (#163).
     if (self != nullptr && g_burrow_commit)
         g_burrow_commit(deep);
     return r;
@@ -179,10 +173,9 @@ void repl_bounce_launch(void *self, void *player)
         g_orig_bounce_launch(self, player);
 }
 
-// Player::OnBounce is the only consumer of the pending target and the only writer of the launch velocity,
-// so it catches every bounce surface, including the Bone Beach bushes, which are Breakables reached by a
-// dispatch inlined into Player::Update / SlideOutOfWall that neither detour above sees (#168). The listener
-// sweep calls it unconditionally every tick, so the blocked path must stay allocation- and log-free.
+// Player::OnBounce is the only consumer of the pending target and the only writer of the launch velocity, so it catches every bounce surface, including the
+// Bone Beach bushes (Breakables reached by a dispatch inlined into Player::Update / SlideOutOfWall that neither detour above sees, #168). The listener sweep
+// calls it every tick, so the blocked path stays allocation- and log-free.
 void repl_on_bounce(void *player)
 {
     if (player != nullptr && ability_blocked(Ability::BouncePuff))
@@ -196,14 +189,12 @@ void repl_on_bounce(void *player)
         g_orig_on_bounce(player);
 }
 
-// Shared by both SpringBellows::CollideWith bodies (see sym::spring_bellows_collide_listener) on a build
-// that has two (pal::layout::kHasSpringListenerBody); the other build only has the exported one. The tag
-// records which one physics actually dispatched to; it cannot see a build that turns the thunk into a
-// real adjustor jmp, only one that drops the thunk symbol entirely.
+// Shared by both SpringBellows::CollideWith bodies (see sym::spring_bellows_collide_listener) on a build that has two (pal::layout::kHasSpringListenerBody);
+// the other build only has the exported one. The tag records which body physics dispatched to. It cannot detect a thunk turned into a real adjustor jmp, only a
+// dropped thunk symbol.
 //
-// Latched, not per-call: the listener sweep re-dispatches CollideWith every tick that contact persists,
-// and blocking the launch is what makes the player stay in contact, so an unlatched log would fflush at
-// frame rate for as long as Mina stands on the spring.
+// Latched because the listener sweep re-dispatches CollideWith every tick of contact, and a blocked launch keeps Mina in contact, so an unlatched log would
+// fflush at frame rate.
 bool spring_blocked(void *contact_pair, const char *body, bool &logged)
 {
     if (!collider_is_player(contact_pair) || !ability_blocked(Ability::BounceSpring))
@@ -234,10 +225,9 @@ void repl_spring_listener(void *self, void *contact_pair)
         g_orig_spring_listener(self, contact_pair);
 }
 
-// Blocked: just refuse the grab. This used to also set Player+0x12f0, mislabelled a "low roof pose" flag:
-// it actually arms the burrow-landing shockwave and delays the hop-out. The game probes for carryables on
-// ledge jumps and landings too, so every probe armed a spurious shockwave. Holding Mina under an overhead
-// carryable is repl_burrow_jump's emerge-suppress, not a flag poke.
+// Blocked: refuse the grab and nothing else. Player+0x12f0 is not a "low roof pose" flag: it arms the burrow-landing shockwave and delays the hop-out, and the
+// game probes carryables on ledge jumps and landings, so setting it here arms spurious shockwaves. Holding Mina under an overhead carryable is
+// repl_burrow_jump's emerge-suppress.
 unsigned long repl_pickup(void *self, bool a, bool b, bool c)
 {
     if (self != nullptr && ability_blocked(Ability::Carry))
@@ -245,12 +235,10 @@ unsigned long repl_pickup(void *self, bool a, bool b, bool c)
     return g_orig_pickup ? g_orig_pickup(self, a, b, c) : 0;
 }
 
-// #56: no native "duck under a carryable" exists (the burrow-emerge roof/snap handles only low map
-// ceilings), so with carry disabled we detect a carryable in grab range and suppress the emerge, leaving
-// Mina burrowed beneath it. carryable_overhead is a read-only replica of the game's own grab query.
-// Offsets from Player::PickUpAnyNearbyCarryableObject (0xd515b0, build 8de7a6b5). The two query calls go
-// through the native API (mod::physics_get_aabb / mod::closest_carryable), so no AABB struct is needed
-// here: the box is six floats, center.xyz then half-extent.xyz.
+// #56: the game has no "duck under a carryable" (the burrow-emerge roof/snap handles only low map ceilings), so with carry disabled a carryable in grab range
+// suppresses the emerge and leaves Mina burrowed beneath it. carryable_overhead replicates the game's grab query read-only, with offsets from
+// Player::PickUpAnyNearbyCarryableObject (0xd515b0, build 8de7a6b5). The queries go through mod::physics_get_aabb / mod::closest_carryable; the box is six
+// floats, center.xyz then half-extent.xyz.
 bool carryable_overhead(void *self)
 {
     if (self == nullptr)
@@ -312,9 +300,8 @@ void repl_train_npc(void *self, unsigned event, void *info)
         }
     }
 
-    // #108: the Coltrane line ride is gated on the CTP boss (Thorne 2), softlocking a player who leaves CTP
-    // first. Once the pass is owned, set the boss bit only across the original call so the ride completes,
-    // restoring it after so the save is never marked (the boss still arms and fights).
+    // #108: the Coltrane line ride is gated on the CTP boss (Thorne 2), softlocking a player who leaves CTP first. With the pass owned, the boss bit is set
+    // only across the original call so the ride completes and the save is never marked; the boss still arms and fights.
     void *slot = nullptr;
     std::uint8_t saved_boss = 0;
     bool bypass = false;
@@ -335,10 +322,9 @@ void repl_train_npc(void *self, unsigned event, void *info)
         pal::at<std::uint8_t>(slot, kSaveCtpBossByteOff) = saved_boss;
 }
 
-// One-time .text patch of ShopMenu::SetupBoxes' always-shown train-line test, which makes Coltrane Peak
-// (99) selectable regardless of ticket and defeats the +0x1e0 clamp. pal::layout::kSetupBoxes* holds each
-// build's anchor and the byte to rewrite; afterwards 99 gates on +0x1e0 (driven by enforce_train_destinations)
-// while 94 (board) and 95 (Ossex/HUB) stay always-shown. #98.
+// One-time .text patch of ShopMenu::SetupBoxes' always-shown train-line test, which makes Coltrane Peak (99) selectable without a ticket and defeats the +0x1e0
+// clamp. pal::layout::kSetupBoxes* holds each build's anchor and byte; afterwards 99 follows +0x1e0 while 94 (board) and 95 (Ossex/HUB) stay always-shown
+// (#98).
 void patch_train_destination_menu()
 {
     namespace layout = pal::layout;
@@ -544,7 +530,7 @@ bool force_burrow_emerge(void *player)
 {
     if (player == nullptr || g_orig_burrow_jump == nullptr)
         return false;
-    g_orig_burrow_jump(player); // the original, not the detour: this emerge is forced, not player-initiated
+    g_orig_burrow_jump(player); // the original, skipping the detour: this emerge is forced
     return true;
 }
 
@@ -563,8 +549,7 @@ void enforce_train_boarding()
     void *slot = pal::active_save_slot();
     if (slot == nullptr)
         return;
-    // Require the generic Train Pass (#98): while +0x1c0 (pass owned) is 0, keep the train hidden so it
-    // cannot be boarded. Once the pass is received (OnPickupDone sets +0x1c0) leave the story-set presence.
+    // Train Pass required (#98): while +0x1c0 (pass owned, set by OnPickupDone) is 0, keep the train hidden; once owned, leave the story-set presence.
     if (pal::at<std::uint8_t>(slot, kSaveTrainPassOwnedOff) == 0)
         pal::at<char>(slot, kSaveTrainPresentOff) = 0;
 }

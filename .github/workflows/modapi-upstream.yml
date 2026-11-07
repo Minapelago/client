@@ -1,8 +1,7 @@
 name: modapi-upstream
 
-# MinaModAPI.h defines the struct layout the game hands MinaMod_Init, so the pin in
-# cmake/MinaModApi.cmake cannot be allowed to go quietly stale. This compares it against
-# upstream main and opens an issue when they diverge. It never edits the pin itself.
+# MinaModAPI.h defines the struct layout the game hands MinaMod_Init, so the pin in cmake/MinaModApi.cmake must not go stale. This compares it
+# against upstream main and opens an issue when they diverge; it never edits the pin.
 
 on:
   schedule:
@@ -46,8 +45,7 @@ jobs:
             echo "Pin $pinned is behind upstream $upstream."
           fi
 
-      # One issue per upstream commit: the title carries the sha, so a rerun while the same
-      # commit is still untracked finds the open issue and stays quiet.
+      # One issue per upstream commit: the title carries the sha, so a rerun on the same untracked commit finds the open issue and stays quiet.
       - name: Open an issue when the pin is behind
         if: steps.compare.outputs.drift == 'true'
         env:

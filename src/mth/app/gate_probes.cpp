@@ -15,14 +15,8 @@ namespace mth
 namespace
 {
 
-// Symbols both platforms hook; pal::required_platform_symbols() supplies the rest, since the two
-// compilers inline different functions. Derived from what the code actually resolves, NOT from
-// game_symbols.hpp wholesale: that header declares both platforms' variants side by side, so
-// requiring all of it would refuse everywhere. process_sdl_event is absent on purpose - without it
-// the overlay drops to render-only, which is degraded rather than fatal. queue_destroy,
-// set_item_collected, text_set_color, physics_get_aabb, carry_get_closest, player_update_stats and the
-// KeyBlock / KeyBlockChain / Chest update entries are absent because the mod no longer resolves them at
-// all: the native API carries them.
+// Symbols both platforms hook; pal::required_platform_symbols() adds the rest, since the compilers inline different functions. Taken from what the code
+// resolves, because game_symbols.hpp lists both platforms' variants. process_sdl_event is optional: without it the overlay is render-only.
 constexpr const char *kRequiredCommonSymbols[] = {
     sym::activate_save_slot,
     sym::bounce_plant_collide,
@@ -54,8 +48,7 @@ constexpr const char *kRequiredCommonSymbols[] = {
     sym::train_authority_on_npc_event,
 };
 
-// Informational only: refusing on an unfamiliar build would brick the mod on every game patch,
-// including ones where nothing load-bearing moved.
+// Informational: refusing unfamiliar builds would brick the mod on every game patch.
 constexpr unsigned int kValidatedRevisionMin = 148662;
 constexpr unsigned int kValidatedRevisionMax = 149150;
 
@@ -87,7 +80,7 @@ GateInputs run_static_gate_probes(unsigned int game_revision)
 
     pal::logf(pal::LogLevel::Info, "gate: running startup validation (revision=r%u)", game_revision);
 
-    // First: the native hooks carrying item grants and the collection redirect go through it.
+    // Checked first, since item grants and the collection redirect go through the native hooks.
     in.mod_api_present = mod::api_available();
     pal::logf(in.mod_api_present ? pal::LogLevel::Info : pal::LogLevel::Error, "gate: mod_api_present=%d", in.mod_api_present ? 1 : 0);
 
@@ -95,8 +88,7 @@ GateInputs run_static_gate_probes(unsigned int game_revision)
     const int missing = count_unresolved(kRequiredCommonSymbols, "common") + count_unresolved(pal::required_platform_symbols(), "platform");
     in.symbols_resolved = missing == 0;
 
-    // resolve() is read-only and idempotent; the dummy-item patch runs later in the feature
-    // installers, so both rows still hold the game's own data here.
+    // resolve() is read-only; the dummy-item patch runs later in the feature installers, so both rows still hold game data here.
     tables::resolve();
     const bool donor_ok = tables::item_row_shape_ok(layout::kDummyAssetDonor);
     const bool dummy_ok = tables::item_row_shape_ok(layout::kApDummyItemType);
@@ -104,8 +96,7 @@ GateInputs run_static_gate_probes(unsigned int game_revision)
     pal::logf(in.item_table_shape_ok ? pal::LogLevel::Info : pal::LogLevel::Error, "gate: item_table_shape_ok=%d (donor[%d]=%d dummy[%d]=%d)",
               in.item_table_shape_ok ? 1 : 0, layout::kDummyAssetDonor, donor_ok ? 1 : 0, layout::kApDummyItemType, dummy_ok ? 1 : 0);
 
-    // Beyond drift: the lock seeding path shifts a u64 by the bit index, so an out-of-range value
-    // is UB and sets an unrelated lock's bit in the player's save.
+    // Lock seeding shifts a u64 by the bit index, so an out-of-range value is UB and sets an unrelated lock's bit in the save.
     constexpr int kCollectionSampleCount = 32;
     in.layout_probes_ok = tables::collection_resolved() && tables::collection_shape_ok(kCollectionSampleCount);
     pal::logf(in.layout_probes_ok ? pal::LogLevel::Info : pal::LogLevel::Error, "gate: layout_probes_ok=%d (first %d collection rows)",

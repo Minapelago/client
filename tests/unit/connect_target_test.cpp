@@ -50,8 +50,7 @@ TEST_CASE("plan_connection: loopback is never encrypted, so a local server costs
 
 TEST_CASE("plan_connection: replanning its own URI changes nothing", "[mth][net][tls]")
 {
-    // Catches a scheme being written into the URI again: that would leave the second pass with a
-    // pinned target where the first had a fallback.
+    // Catches a scheme written into the URI, which would leave the second pass with a pinned target where the first had a fallback.
     for (const auto host : kHosts)
     {
         for (const std::string &in : {std::string(host), "ws://" + std::string(host), "wss://" + std::string(host)})

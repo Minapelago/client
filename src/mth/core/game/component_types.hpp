@@ -16,8 +16,7 @@ namespace mth::rtti
     return hookhash::hash64(type_name);
 }
 
-// An entity is itself a component in the child list, and holds the next level of the scene graph, so
-// this is what a traversal recurses on.
+// An entity is a component in the child list that holds the next scene-graph level; traversals recurse on it.
 inline constexpr std::uint64_t kYcEntity = type_id("ycEntity");
 // The Ossex Station train-pass donation machine and the interact component it owns.
 inline constexpr std::uint64_t kTicketMachine = type_id("TicketMachine");
@@ -25,8 +24,7 @@ inline constexpr std::uint64_t kInteractComponent = type_id("InteractComponent")
 inline constexpr std::uint64_t kProfileSelectMenu = type_id("ProfileSelectMenu");
 // The sewer-cat fetch vendor ("Panino"). The game itself tests this id in NPCEntity's ctor.
 inline constexpr std::uint64_t kNpcBehaviorSewerCat = type_id("NPCBehavior_SewerCat");
-// The chest the intro weapon choice is offered from, and the menu it builds. NPCBehavior_IntroWeaponSelect
-// tests the chest id itself, which is what pins it to this class.
+// The chest the intro weapon choice is offered from, and the menu it builds. NPCBehavior_IntroWeaponSelect tests the chest id itself.
 inline constexpr std::uint64_t kCheckpointChest = type_id("CheckpointChest");
 inline constexpr std::uint64_t kWeaponsChestMenu = type_id("WeaponsChestMenu");
 // The pause screen, built by PauseMenu::UpdateState; owns the three stat panels.

@@ -7,9 +7,8 @@
 namespace mth::hookhash
 {
 
-// Jenkins lookup3 hashlittle2 with the loader's seeds (pc=0x0d, pb=0x25), returning pc | (pb << 32).
-// RunHooks dispatches on this, precomputed and inlined at each site as a movabs immediate. It
-// derives from the hook name rather than surrounding code, so it anchors the enclosing function.
+// Jenkins lookup3 hashlittle2 with the loader's seeds (pc=0x0d, pb=0x25), returning pc | (pb << 32). RunHooks dispatches on this, inlined at each
+// site as a movabs immediate; it derives from the hook name, so it anchors the enclosing function.
 
 constexpr std::uint32_t rot(std::uint32_t x, int k) noexcept
 {

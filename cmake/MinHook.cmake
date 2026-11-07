@@ -1,8 +1,7 @@
 # MinHook.cmake - fetch MinHook from upstream and expose as `minhook::minhook`.
 #
-# MinHook is our hook backend on Windows (MinGW cross-compile friendly).
-# Upstream: https://github.com/TsudaKageyu/minhook - has its own CMakeLists.txt
-# so FetchContent_MakeAvailable gives us a usable static library directly.
+# MinHook is the hook backend on Windows (MinGW cross-compile friendly). Upstream: https://github.com/TsudaKageyu/minhook. Its own CMakeLists.txt
+# makes FetchContent_MakeAvailable produce a static library directly.
 
 set(MINHOOK_VERSION "v1.3.4")
 
@@ -15,8 +14,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(minhook)
 
-# Upstream's target is just `minhook`; re-expose with a namespaced alias so
-# consumer code can use minhook::minhook consistently.
+# Upstream's target is `minhook`; the namespaced alias keeps consumers on minhook::minhook.
 add_library(minhook::minhook ALIAS minhook)
 
 message(STATUS "MinHook: ${MINHOOK_VERSION} -> target 'minhook'")

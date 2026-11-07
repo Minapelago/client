@@ -65,9 +65,8 @@ TEST_CASE("parse_command: every dispatchable kind has a verb, mapped case-insens
         REQUIRE(parse_command(std::string(row.verb) + " 1 2 3").kind == row.kind);
     }
 
-    // Driven off the enum rather than kVerbs, so a kind missing or misspelled in dev_commands.cpp's
-    // kVerbKinds fails here instead of silently parsing as Unknown. Switches is the last enumerator; a
-    // kind added after it has to move this bound.
+    // Driven off the enum so a kind missing or misspelled in kVerbKinds fails here instead of parsing as Unknown. Switches is the last enumerator;
+    // a kind added after it has to move this bound.
     for (int i = static_cast<int>(CommandKind::Help); i <= static_cast<int>(CommandKind::Switches); ++i)
     {
         const auto kind = static_cast<CommandKind>(i);

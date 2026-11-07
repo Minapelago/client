@@ -25,10 +25,7 @@ class ILog
 
 void log_init(std::string_view stem = "mthap");
 
-// printf-style format checking. Clang only supports the printf archetype (it
-// ignores gnu_printf on every target with -Wignored-attributes); GCC needs
-// gnu_printf for C99 specifiers (%zu etc.). Clang's printf archetype already
-// accepts those, so the split is purely clang vs gcc.
+// printf format checking. Clang only knows the printf archetype (it ignores gnu_printf) and that accepts %zu; GCC needs gnu_printf for C99 specifiers.
 #if defined(__clang__)
 #define MTHAP_PRINTF_FORMAT(fmt, va) __attribute__((format(printf, fmt, va)))
 #elif defined(__GNUC__)
@@ -42,15 +39,14 @@ void vlogf(LogLevel, const char *fmt, std::va_list ap);
 
 std::filesystem::path log_dir();
 
-// Underlying file descriptor of the active file log, or -1 if unavailable. For
-// the crash handler to emit a backtrace using only async-signal-safe writes (no
-// logf/malloc). Real fd on Linux; -1 on Windows (its handler uses logf + minidump).
+// File descriptor of the active log, or -1. The Linux crash handler writes its backtrace through it with async-signal-safe calls only (no logf or
+// malloc); Windows returns -1 since its handler uses logf and a minidump.
 int log_fd();
 
 ILog &default_log();
 void set_default_log(ILog *);
 
-// Observer runs under the log mutex; must not call logf/vlogf (deadlock).
+// The observer runs under the log mutex and must not call logf/vlogf (deadlock).
 using LogObserver = std::function<void(LogLevel, std::string_view)>;
 void set_log_observer(LogObserver);
 

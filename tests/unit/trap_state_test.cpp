@@ -39,7 +39,7 @@ TEST_CASE("TrapState: advancing past the duration expires it once", "[trap]")
     s.arm(204, 30.0f);
     REQUIRE(s.advance(30.0f) == std::vector<int>{204});
     REQUIRE(s.empty());
-    REQUIRE(s.advance(30.0f).empty()); // already gone, never reported twice
+    REQUIRE(s.advance(30.0f).empty());
 }
 
 TEST_CASE("TrapState: an overshooting delta still expires exactly once", "[trap]")
@@ -92,7 +92,7 @@ TEST_CASE("TrapState: a non-positive delta ages nothing", "[trap]")
     s.arm(204, 30.0f);
     REQUIRE(s.advance(0.0f).empty());
     REQUIRE(s.advance(-5.0f).empty());
-    REQUIRE(s.advance(30.0f) == std::vector<int>{204}); // full duration was preserved
+    REQUIRE(s.advance(30.0f) == std::vector<int>{204});
 }
 
 TEST_CASE("TrapState: a non-positive duration is ignored", "[trap]")

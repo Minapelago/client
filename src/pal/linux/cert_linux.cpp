@@ -38,12 +38,9 @@ std::optional<fs::path> ca_bundle_path()
         "/etc/ssl/ca-bundle.pem",
         "/etc/pki/tls/cacert.pem",
     };
-    // Steam runs the game inside a pressure-vessel container that ships its own trust store, and
-    // that store can be years behind the one the player's browser and shell agree on (the sniper
-    // runtime has no SSL.com 2022 roots). Its own --import-ca-certs is opt-in and bails out on a
-    // host whose /etc/ssl/certs has no hashed symlinks, so it cannot be relied on. The host
-    // filesystem is mounted at /run/host, so read its store first and treat the container's as the
-    // fallback. Outside a container the prefixed paths simply do not exist.
+    // Steam's pressure-vessel container ships its own trust store, which can lag the host's by years (the sniper runtime lacks the SSL.com 2022 roots),
+    // and its opt-in --import-ca-certs fails on hosts without hashed symlinks in /etc/ssl/certs. The host filesystem is at /run/host, so read its store
+    // first; outside a container the prefixed paths do not exist.
     static const char *const kHostPrefixes[] = {"/run/host", ""};
     std::error_code ec;
     for (const char *prefix : kHostPrefixes)

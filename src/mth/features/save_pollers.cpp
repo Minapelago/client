@@ -78,9 +78,8 @@ void BossTracker::on_save_loaded()
 
 void BossTracker::poll()
 {
-    // PlayerGetBossesDefeated reads *(g_saveManager+0x18)+0x280 with no null guard, so it faults
-    // wherever no slot is bound. No gameplay happens without a slot, so dropping the baseline here
-    // loses no kill: it just re-primes on the next bind.
+    // PlayerGetBossesDefeated reads *(g_saveManager+0x18)+0x280 unguarded and faults with no slot bound. No gameplay happens without a slot, so dropping the
+    // baseline loses no kill.
     const void *slot = pal::active_save_slot();
     if (slot == nullptr)
     {
@@ -94,8 +93,7 @@ void BossTracker::poll()
         prime(slot, "slot bound", mask);
         return;
     }
-    // The title screen binds its own slot before the run's, so a baseline taken against one slot must
-    // never be diffed against another - that reported a fresh save's pre-set bits as kills.
+    // The title screen binds its own slot before the run's, so a baseline is never diffed across slots; a fresh save's pre-set bits would read as kills.
     if (slot != prev_slot_)
     {
         prime(slot, "slot changed", mask);
@@ -103,8 +101,7 @@ void BossTracker::poll()
     }
     if (mask == prev_mask_)
         return;
-    // Normal play only ORs bits in. Losing one means the slot's contents were replaced under the same
-    // pointer (takeover write, NG+ clear), so re-baseline rather than diff across it.
+    // Normal play only ORs bits in, so lost bits mean the contents were replaced under the same pointer (takeover write, NG+ clear): re-baseline.
     if ((prev_mask_ & ~mask) != 0)
     {
         prime(slot, "mask lost bits; save changed", mask);
@@ -112,8 +109,7 @@ void BossTracker::poll()
     }
 
     const std::uint64_t risen = mask & ~prev_mask_;
-    // No tick legitimately kills three bosses. A rise that wide is save data arriving under an
-    // already-primed slot, not gameplay.
+    // No tick kills three bosses, so a rise that wide is save data arriving under a primed slot.
     if (std::popcount(risen) >= 3)
     {
         prime(slot, "wide rise; save data loaded", mask);
@@ -141,7 +137,7 @@ void latch_kear_completion(const ApState &state)
 {
     if (!state.authenticated())
         return;
-    // A seed that does not carry the completion location must never get a stray latch.
+    // No latch for a seed without the completion location.
     if (!state.is_valid_location(ap_loc_id(kKearCompletionLocIdx)))
         return;
     void *slot = pal::active_save_slot();

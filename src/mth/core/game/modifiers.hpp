@@ -31,17 +31,12 @@ enum class CheatClass
 // Continuous == safe to force on a save and toggle live. Returns false for invalid indices.
 [[nodiscard]] bool is_safe(int idx);
 
-// The AP lockdown's deny list: modifiers a randomized run cannot survive. Everything outside it
-// stays the player's to pick, difficulty and cosmetic sets included.
+// The AP lockdown's deny list: modifiers a randomized run cannot survive. Everything else, difficulty and cosmetic sets included, is the player's
+// choice.
 [[nodiscard]] bool is_ap_denied(int idx);
 
-// Sets or clears one bit of the 254-entry modifier ("cheat") bitmask, stored as four 64-bit words
-// covering indices 0..63, 64..127, 128..191 and 192..255. Both builds use this layout for the
-// runtime mask at CheatManager+0x20.
-//
-// Total over int: an idx outside 0..255, the full range the four-word array can address, does
-// nothing. A caller enforcing the narrower real cheat count (0..253) still has to clear that bound
-// itself.
+// Sets or clears one bit of the 254-entry modifier ("cheat") bitmask: four 64-bit words covering indices 0..255, the runtime mask at
+// CheatManager+0x20 on both builds. An idx outside 0..255 does nothing; callers enforcing the real count (0..253) check that themselves.
 inline void cheat_mask_set(std::uint64_t *mask, int idx, bool on)
 {
     if (idx < 0 || idx >= 256)
@@ -53,10 +48,8 @@ inline void cheat_mask_set(std::uint64_t *mask, int idx, bool on)
         mask[idx >> 6] &= ~bit;
 }
 
-// One trap: the modifier it forces on, an operator-facing label derived from that modifier's
-// kCheat_* enum name (kCheat_Mirror becomes "Mirror"), and how long it lasts in gameplay seconds.
-// The label is for our own logs and status output, not the game's menu text: the randomizer names
-// the item for the player, so the mod does not need to carry a second copy of that name.
+// One trap: the modifier it forces on, a log label derived from its kCheat_* enum name (kCheat_Mirror becomes "Mirror"), and its duration in
+// gameplay seconds.
 struct TrapDef
 {
     int modifier_index;
@@ -64,23 +57,14 @@ struct TrapDef
     float seconds;
 };
 
-// Every trap runs this long for now. Each row carries its own duration so tuning one trap later is
-// a table edit, and so a slot_data duration can multiply a per-trap baseline.
+// Default trap duration. Rows carry their own duration so one trap can be tuned, or a slot_data duration can scale a per-trap baseline.
 inline constexpr float kDefaultTrapSeconds = 30.0f;
 
-// Each row's modifier_index is also the AP item id offset for that trap (kTrapItemBase + index), and
-// the randomizer hands those same ids out, so removing a row or renumbering one retires or repoints
-// an id a seed may already carry. Adding a row is safe; changing an existing one is not.
-//
-// The curated trap set. Curation is deliberate: being a good trap is narrower than either
-// is_safe or !is_ap_denied, because a modifier also has to be read every frame (so the effect lands
-// without a room change) and has to be worth the interruption. The unit test pins the two
-// predicates so the curation cannot drift into something that breaks seed logic.
-//
-// Deliberately excluded: the prank set (179 to 182), Large Apple (206), Customize Flowers (213) and
-// No Wind (175) are read at room load, so a trap would not show until the player walks through a
-// door. The color and weather set (185 to 188, 199, 212) reads a value field in the save slot rather
-// than a mask bit, which would put save writes back into the path.
+// The curated trap set. Each row's modifier_index is also the AP item id offset (kTrapItemBase + index) and seeds carry those ids, so add rows but
+// never remove or renumber one. A trap must pass is_safe and !is_ap_denied (the unit test pins both), be read every frame so it lands without a
+// room change, and be worth the interruption.
+// Excluded: the prank set (179 to 182), Large Apple (206), Customize Flowers (213) and No Wind (175) are read at room load, so nothing shows until
+// a door; the color and weather set (185 to 188, 199, 212) reads a save-slot value field, which would put save writes back into the path.
 [[nodiscard]] std::span<const TrapDef> traps();
 
 // Null when that modifier is not a trap.

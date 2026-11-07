@@ -13,9 +13,8 @@ namespace mth
 class ApState;
 
 // twin: mth/core/rules/ability_gate.hpp (pure gate decision).
-// Drives the PAL ability-gate seam from AP state. The block lambda installed in the ctor runs on the
-// game thread (invoked by the detours); enforce_/gate_ are written only from the game-thread per-tick
-// path, so plain members suffice (one-frame staleness acceptable).
+// Drives the PAL ability-gate seam from AP state. The ctor's block lambda runs on the game thread from the detours, and enforce_/gate_ are written only on the
+// game-thread tick, so plain members suffice.
 class AbilityHooks
 {
   public:
@@ -26,21 +25,16 @@ class AbilityHooks
 
     void set_randomized(Ability a, bool on);
     void set_enforce(bool on); // authed && active save slot is the AP slot
-    // Per-destination train gating (train_rando). Builds the granted-line mask from the received ticket
-    // itemTypes; when active, enforce_train_tick clamps the SaveSlot unlocked-lines bitfield to it instead
-    // of running the whole-train ability gate, so a station visit no longer auto-unlocks its destination (#98).
+    // Per-destination train gating (train_rando, #98): builds the granted-line mask from received ticket itemTypes, and enforce_train_tick clamps the SaveSlot
+    // unlocked-lines bitfield to it so a station visit does not unlock its destination.
     void set_train_gate(bool rando_active, const ApState &state);
-    // The station's donation machine sells the same train unlock the AP Train Pass is (#162), so under
-    // train_rando it cannot be left alone. When the apworld carries it as a location it stays usable and
-    // becomes a cheap check: progress_seed pre-pays the compiled-in goal down to the configured cost, and
-    // the existing OnPickupDone suppression withholds the pass and sends the check. It is then made
-    // non-interactible - once when the seed does not carry it at all, and after the check otherwise, since
-    // a suppressed grant leaves IsItemCollected(149) false and the machine would re-dispense forever.
+    // The station donation machine sells the same unlock as the AP Train Pass (#162). If the apworld carries it as a location it becomes a cheap check:
+    // progress_seed pre-pays the goal down to the configured cost, and the OnPickupDone suppression withholds the pass and sends the check. It is made
+    // non-interactible when the seed lacks it, or after the check, since a suppressed grant leaves IsItemCollected(149) false and it would re-dispense forever.
     void set_ticket_machine(bool is_ap_location, bool checked, std::uint32_t progress_seed);
     void enforce_train_tick(); // game-thread; clamps train destinations (rando) or the train-present byte
-    // Burrow and Swim are separate items, but the game flips between them mid-burrow through a path the
-    // SetBurrowGround gate never sees (#163). Poll the boundary each tick and undo a crossing into the mode
-    // the player does not own: drown in deep water without Swim, surface on land without Burrow.
+    // Burrow and Swim are separate items, but the game switches modes mid-burrow on a path the SetBurrowGround gate never sees (#163). Polls the boundary each
+    // tick and undoes a crossing into an unowned mode: drown in deep water without Swim, surface on land without Burrow.
     void enforce_burrow_tick(void *player);
     void on_world_destroy(); // drop the burrow arm: a room load ends a burrow without an emerge commit
 
@@ -49,11 +43,11 @@ class AbilityHooks
     AbilityGate gate_;
     BurrowBoundaryGate burrow_;
     TicketMachineGate ticket_machine_;
-    void *last_player_{nullptr}; // burrow arm is per-player; a changed/null pointer disarms (stale-arm safety)
+    void *last_player_{nullptr}; // burrow arm is per-player; a changed/null pointer disarms
     bool enforce_{false};
     bool train_rando_active_{false};
     std::uint32_t train_mask_{0};
-    bool ticket_machine_suppress_{false}; // else it is a live check, and the seed sets its price
+    bool ticket_machine_suppress_{false}; // false: a live check priced by the seed
     bool warned_seed_withheld_{false};
     std::uint32_t ticket_machine_seed_{0};
 };

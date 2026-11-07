@@ -78,7 +78,7 @@ bool is_capacity_upgrade_location(int loc_idx)
     return item_type >= 0x44 && item_type <= 0x48; // Magic/Health/Spark/Vial/Trinket upgrade pieces
 }
 
-// Name-scan accessors bound at kCollectionScanCap (0x168), intentionally NOT kLocationCount (361): mirrors SetSaveUnlocked's scan.
+// Name-scan accessors are bound at kCollectionScanCap (0x168), not kLocationCount (361), mirroring SetSaveUnlocked's scan.
 std::uint64_t collection_name_key(int idx)
 {
     if (idx < 0 || idx >= layout::kCollectionScanCap || g_s_r_item_collection == 0)
@@ -152,9 +152,8 @@ bool item_row_shape_ok(int item_type)
     if (kind < 0 || kind > 64) // storage kinds are small ints; a drifted read is usually a pointer half
         return false;
 
-    // Each asset field must be a readable, NUL-terminated string of printable characters. An
-    // EMPTY string is valid and common: it is how a row says "no palette" (s_rItems[1] ships that
-    // way), so requiring a printable first byte would reject intact data.
+    // Each asset field must be a readable, NUL-terminated printable string. Empty is valid and common: it is how a row says "no palette" (s_rItems[1] ships
+    // that way).
     constexpr std::size_t kMaxAssetNameLen = 128;
     for (const std::ptrdiff_t off : {layout::kItemAtlasOff, layout::kItemAnimOff, layout::kItemPaletteOff})
     {

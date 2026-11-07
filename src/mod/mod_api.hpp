@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-struct MinaModAPI; // forward decl; MinaModAPI.h is included only in mod_api.cpp
+struct MinaModAPI; // MinaModAPI.h is included only in mod_api.cpp
 
 namespace mod
 {
@@ -13,12 +13,10 @@ namespace mod
 // Store the live MinaModAPI* (from MinaMod_Init) or a fake (in tests). nullptr clears it. Returns the pointer it replaced.
 MinaModAPI *set_api(MinaModAPI *api);
 
-// Is the game's mod API usable at all? False means InstallHook is unreachable, so every named
-// mod hook (grants, the collection redirect) is inert.
+// False when the game's mod API is unusable, which leaves every named mod hook inert.
 [[nodiscard]] bool api_available();
 
-// False when the game's API struct version differs from the one this mod was built against, which
-// means field offsets may not line up. Informational: the gate reports it, it does not refuse.
+// False when the game's API struct version differs from the one this mod was built against, so field offsets may not line up. The gate only reports it.
 [[nodiscard]] bool api_version_matches();
 [[nodiscard]] std::uint32_t expected_api_version();
 
@@ -28,74 +26,54 @@ std::uint32_t game_revision();
 // Current game-state enum value via MinaModAPI::GetCurrentGameState; -1 if unavailable.
 int current_game_state();
 
-// Items::IsItemCollected override via the native "IsItemCollected" mod hook. Capacity-upgrade locations
-// (itemTypes 0x44..0x48) read the same SaveSlot bitfield apply_upgrades repurposes as a capacity counter,
-// so a vanilla collected-bit query for one reports "an upgrade was received" - making boss rose-reward
-// spawns (gated on !IsItemCollected(rewardLoc)) wrongly skip (issue #8). query(loc_idx, ownership_query)
-// returns -1 to pass through to the game, or 0/1 to force the result. ownership_query is IsItemCollected's
-// param5 (b5): true when the caller asks "do I persistently own this item" (the weapon-swap chest), false
-// for location-collected queries (chest-open, pickup self-kill, boss reward-rose) - the mth-side query
-// needs it to avoid hiding a received weapon from the swap chest. Fires on both platforms and from every
-// inlined copy of IsItemCollected (e.g. the MSVC-inlined Pickup-ctor self-kill on Windows), which the old
-// symbol/sig detour could not.
+// Items::IsItemCollected override via the "IsItemCollected" hook, which also fires from inlined copies. Capacity-upgrade locations (itemTypes 0x44..0x48)
+// share the SaveSlot bitfield apply_upgrades uses as a counter, so a vanilla query reports them collected and boss rose-reward spawns skip (#8).
+// query returns -1 to pass through or 0/1 to force the result. ownership_query is param5, true when the weapon-swap chest asks whether an item is owned
+// and false for location queries; the mth side needs it to keep a received weapon visible to that chest.
 using ItemCollectedFn = int (*)(int loc_idx, bool ownership_query);
 bool install_item_collected_hook(ItemCollectedFn query);
 void remove_item_collected_hook();
 
-// World::Update pre-tick via the native "WorldUpdate" mod hook. Fires at the top of World::Update - the
-// pre-update spawn window where grants/lock-seeds must happen to avoid update-queue hangs - so it replaces
-// the old sig-detour's pre-hook (the old post-hook was an unused no-op). on_pre runs on the game thread.
-// false if the modding API is unavailable.
+// "WorldUpdate" hook at the top of World::Update, the spawn window where grants and lock seeds must run to avoid update-queue hangs. on_pre runs on the
+// game thread; install returns false without the modding API.
 using WorldUpdatePreFn = void (*)();
 bool install_world_update_hook(WorldUpdatePreFn on_pre);
 void remove_world_update_hook();
 
-// World::Update post-tick via the native "WorldUpdateEnd" mod hook, after the other systems have run.
-// Forwards the ctx's World*, which is the only way to reach a menu world's scene graph: PlayerGetWorld()
-// dereferences the live-Player global and is null wherever no player exists. on_end runs on the game
-// thread; world may be null. false if the modding API is unavailable.
+// "WorldUpdateEnd" hook after the other systems have run. The ctx's World* is the only route to a menu world's scene graph, since PlayerGetWorld() is null
+// without a player. on_end runs on the game thread and world may be null; install returns false without the modding API.
 using WorldUpdateEndFn = void (*)(void *world);
 bool install_world_update_end_hook(WorldUpdateEndFn on_end);
 void remove_world_update_end_hook();
 
-// World teardown via the native "WorldDestroy" mod hook. Fires when a World is destroyed (exit-to-menu,
-// save reload, shutdown), so cached per-world game pointers (e.g. the live Player*) can be dropped before
-// the game frees them. A stale one is a use-after-free the next time a tick writes through it. on_destroy
-// runs on the game thread. false if the modding API is unavailable.
+// "WorldDestroy" hook (exit to menu, save reload, shutdown): drop cached per-world pointers such as the live Player* here before the game frees them.
+// on_destroy runs on the game thread; install returns false without the modding API.
 using WorldDestroyFn = void (*)();
 bool install_world_destroy_hook(WorldDestroyFn on_destroy);
 void remove_world_destroy_hook();
 
-// Vial (health-flask) capacity and held count via the native MinaModAPI Player accessors. These are
-// offset-free and self-resolving: the game reads its own current-Player and active-SaveSlot globals, so we
-// pass only an int. Capacity writes are durable (they set the underlying vial bitfield UpdateStats re-reads),
-// which is why vials go through here instead of a raw SaveSlot offset that drifts between builds. All no-op
-// until a player exists. available() is false when the build's API lacks the vial setters.
+// Vial (health-flask) capacity and count through the native Player accessors, which find the live player and slot themselves. Capacity writes set the
+// vial bitfield UpdateStats re-reads, so they stick. No-op until a player exists; available() is false when the build lacks the vial setters.
 bool vial_api_available();
 int player_max_vials();
 int player_vials();
 void set_player_max_vials(int n);
 void set_player_vials(int n);
 
-// Current bone (money) count via the native MinaModAPI Player accessors. Offset-free and self-resolving
-// like the vial accessors above; the wallet cap (#112) clamps this each frame instead of writing the
-// build-drifting Player cap field. No-op until a player exists; available() is false when the build's API
-// lacks the bone setters.
+// Bone (money) count through the native Player accessors; the wallet cap (#112) clamps it each frame. No-op until a player exists; available() is false
+// when the build lacks the bone setters.
 bool bones_api_available();
 int player_bones();
 void set_player_bones(int n);
 
-// Boss-defeated bitfield via the native accessor, replacing a raw SaveSlot offset. The game reads
-// its own active slot, so callers must already know a slot is bound. 0 when unavailable.
+// Boss-defeated bitfield of the game's active slot, so a slot must already be bound. 0 when unavailable.
 [[nodiscard]] bool bosses_api_available();
 [[nodiscard]] std::uint64_t player_bosses_defeated();
 
-// Raw player world position via the native accessor. Prefer this over the trackable: that one is
-// the camera target and carries shake, a lerp, and a fixed nose offset. Returns false when the API
-// is unavailable; the game yields {0,0,0} when no player is live.
+// Raw player position; the trackable is the camera target, with shake, a lerp and a nose offset. False without the API; {0,0,0} with no live player.
 [[nodiscard]] bool player_position(float out[3]);
 
-// ---- Save slots. All no-op / return a failure sentinel when the modding API is absent. ----
+// ---- Save slots. All no-op or return a failure sentinel without the modding API. ----
 
 // True when every entry the save takeover depends on is present.
 bool save_api_available();
@@ -107,26 +85,21 @@ void player_restore_from_save();
 void set_save_write_enabled(bool on);
 bool save_write_enabled();
 
-// ---- Named hooks that replaced sig/symbol detours. These fire on both platforms and from every
-// inlined copy of the target, which a detour on one address cannot.
+// ---- Named hooks. They fire on both platforms and from every inlined copy of the target.
 //
-// InstallHook accepts any name and returns a valid handle whether or not the build dispatches it, so
-// a successful install proves nothing; only unfired_hooks() does.
+// InstallHook returns a valid handle for any name, so only unfired_hooks() shows whether a build dispatches one.
 
-// Items::OnPickup. Armor upgrades (0x4f/0x50) apply their effect here rather than in OnPickupDone,
-// so they need suppressing at this level (issue #71). Return true to stop the original running.
+// Items::OnPickup. Armor upgrades (0x4f/0x50) apply their effect here, before OnPickupDone, so they are suppressed here (#71). True skips the original.
 using ItemsOnPickupFn = bool (*)(int slot, int item_type, void *player);
 bool install_items_on_pickup_hook(ItemsOnPickupFn on_pickup);
 void remove_items_on_pickup_hook();
 
-// Items::OnPickupDone: suppresses the vanilla grant for an AP location. Suppression only; inbound
-// grants still need the function's address to call it, which a hook does not provide.
+// Items::OnPickupDone: suppresses the vanilla grant for an AP location. Inbound grants still need the function's address, which a hook cannot provide.
 using ItemsOnPickupDoneFn = bool (*)(int slot, int item_type, void *player);
 bool install_items_on_pickup_done_hook(ItemsOnPickupDoneFn on_done);
 void remove_items_on_pickup_done_hook();
 
-// Pickup::OnPickup. The ctx carries the real Pickup*, so unlike the detour this needs no
-// per-platform subobject fixup (MSVC passed the PickupListener base).
+// Pickup::OnPickup with the real Pickup*; a detour on MSVC receives the PickupListener base.
 using PickupOnPickupFn = void (*)(void *pickup);
 bool install_pickup_on_pickup_hook(PickupOnPickupFn on_pickup);
 void remove_pickup_on_pickup_hook();
@@ -136,47 +109,35 @@ using ShopItemRefreshFn = void (*)(void *shop_item);
 bool install_shop_item_refresh_hook(ShopItemRefreshFn on_refresh);
 void remove_shop_item_refresh_hook();
 
-// Chest ctor tail, carrying the real Chest*. The only notification that a chest exists, so the
-// kear-lock clear rides a registry of these rather than a per-frame detour.
+// Chest ctor tail with the real Chest*. It is the only notice that a chest exists, so the kear-lock clear keeps a registry of these.
 using ChestConstructFn = void (*)(void *chest);
 bool install_chest_construct_hook(ChestConstructFn on_construct);
 void remove_chest_construct_hook();
 
-// The engine's own frame delta, delivered from the top of Game::FixedUpdate. The mod also detours
-// that function for its post-original tick, and the two coexist: the hook cannot run the tick
-// (it fires before the original) and the detour cannot see the delta (the function takes void).
-// A true return only means InstallHook accepted the name. Firing is the only evidence it dispatches,
-// so a caller that needs certainty must observe its own callback.
+// Engine frame delta from the top of Game::FixedUpdate. The mod also detours that function for its post-original tick, since the hook fires before the
+// original and the detour cannot see the delta (the function takes void). True only means InstallHook took the name; watch the callback for dispatch.
 using FixedUpdateDeltaFn = void (*)(float elapsed);
 bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb);
 
-// Zeroes the engine's keyboard and controller state while set_input_suppressed(true) holds, via the
-// native "ycKeyboardUpdate" / "ycControllerUpdate" hooks. Both fire after the frame's raw input has been
-// gathered but before it is committed to the state every consumer reads, so a write here is what the
-// menus and gameplay see. Mouse is skipped as a scope call: no menu confirm arrives by mouse, and
-// zeroing its held array would need YC_TOUCH_COUNT, which upstream does not publish. Installing proves
-// nothing on its own (see the note on the named hooks above); input_suppress_hooks_fired() is the
-// evidence.
+// Zeroes keyboard and controller state while set_input_suppressed(true) holds, via the "ycKeyboardUpdate" and "ycControllerUpdate" hooks. Both fire
+// between gathering raw input and committing it, so menus and gameplay see the zeroed state. Mouse is left alone: no menu confirm uses it, and zeroing
+// it needs YC_TOUCH_COUNT, which upstream does not publish. input_suppress_hooks_fired() shows dispatch.
 bool install_input_suppress_hooks();
 void remove_input_suppress_hooks();
 
-// The hooks dispatch from ycGameThread::ThreadMain, not the caller's tick, so the flag is atomic. This
-// is the engine's own input thread, unrelated to the overlay's ProcessSDLEvent hook.
+// Atomic because the hooks dispatch from ycGameThread::ThreadMain, the engine's input thread (unrelated to the overlay's ProcessSDLEvent hook).
 void set_input_suppressed(bool suppressed);
 
-// Whether both input hooks have actually dispatched on this build. They run every input frame, so a
-// false here past startup means the build does not know the names and nothing is being swallowed.
+// Whether both input hooks have dispatched. They run every input frame, so false past startup means the build does not know the names.
 bool input_suppress_hooks_fired();
 
-// Drops every named hook above. The callbacks live in this module, so one left armed past teardown
-// faults on unload.
+// Drops every named hook above; one left armed past teardown faults on unload, since the callbacks live in this module.
 void remove_all_hooks();
 
 // Installed hook names that have never fired.
 std::vector<const char *> unfired_hooks();
 
-// Entity teardown, reaching the guarded ycWorld::QueueDestroy. Idempotent: a repeat call falls out at
-// the entity's already-queued flag, so the per-frame lock-removal caller is safe.
+// Entity teardown through the guarded ycWorld::QueueDestroy. Idempotent: a repeat call stops at the entity's already-queued flag.
 bool queue_destroy_available();
 bool queue_destroy_entity(void *world, void *entity, bool depth_first);
 
@@ -184,16 +145,12 @@ bool queue_destroy_entity(void *world, void *entity, bool depth_first);
 bool set_item_collected_available();
 bool set_item_collected(int index, bool collected, void *collection, void *slot);
 
-// rgba is packed as mth::banner_color packs it (r in the low byte), matching MM_Color's own byte
-// order, so the channels map across without a swizzle.
+// rgba is packed like mth::banner_color (r in the low byte), the same byte order as MM_Color.
 bool text_color_available();
 bool set_text_color(void *text_component, std::uint32_t rgba);
 
-// ycPaletteTexture. Text is palette-mapped (see mth::layout kText*PaletteOff), so an arbitrary
-// color renders as entry 0; getting one to render means cloning a widget's palette and writing the
-// color into it. The group -1 detach is not optional: without it the clone still resolves through
-// the shared group chain rather than its own colors.
-// rgba is packed as mth::banner_color packs it, matching MM_Color's byte order.
+// ycPaletteTexture. Text is palette-mapped (see mth::layout kText*PaletteOff), so an arbitrary color renders as entry 0 unless written into a cloned
+// palette. Detach the clone with group -1 or it keeps resolving through the shared group chain. rgba is packed like mth::banner_color.
 bool palette_api_available();
 void *clone_palette(void *source);
 void palette_set_group(void *palette, std::int32_t group);
@@ -201,31 +158,25 @@ void palette_write_index(void *palette, std::int32_t index, std::uint32_t rgba);
 std::int32_t palette_get_index(void *palette, std::uint32_t rgba);
 std::uint32_t palette_get_width(void *palette);
 
-// Text-widget contents. The widget pointer the menus hand us IS the ycTextComponent, so these take it
-// as-is; the old direct calls had to walk to the nested ycTextRenderObject first. text_of() returns
-// null when the string is unreadable, which callers must treat as "no original to restore".
+// Text-widget contents; the widget pointer the menus hand over is the ycTextComponent. text_of() returns null when the string is unreadable, which means
+// "no original to restore".
 bool set_text(void *text_component, const char *utf8);
 const char *text_of(void *text_component);
 
-// Swim-vs-land discriminator off a player's WaterListener. ignore_enabled skips the listener's own
-// enable flag. available() is false when the build's API lacks the getter, which callers need to tell
-// apart from a genuine "not in deep water".
+// Swim-vs-land check off a player's WaterListener; ignore_enabled skips the listener's enable flag. available() is false when the build lacks the getter,
+// which callers must tell apart from "not in deep water".
 bool water_api_available();
 bool water_is_in_deep_water(void *water_listener, bool ignore_enabled);
 
-// Read-only halves of the game's own carryable-grab query. The box crosses as six floats, center.xyz
-// then half-extent.xyz, matching the game's AABB so the header stays free of game types. Called
-// directly these took their arguments in a different order per platform; the API normalizes that.
-// physics_get_aabb leaves out_aabb untouched on failure. closest_carryable cannot distinguish
-// "nothing in range" from an entry-less build, which suits its one caller and no other.
+// Read-only halves of the game's carryable-grab query. The box is six floats, center.xyz then half-extent.xyz, matching the game's AABB; the API evens out
+// the per-platform argument order. physics_get_aabb leaves out_aabb untouched on failure. closest_carryable returns null both for "nothing in range" and
+// for a build without the entry.
 bool physics_get_aabb(void *physics_component, float out_aabb[6], bool local, unsigned shape_flags);
 void *closest_carryable(void *carry_manager, const float box[6], int collision_layer, float max_dist, int *out_overlap_count,
                         std::uint64_t collide_mask_ignore);
 
-// Recomputes the live maxima (HP, magic, spark, vials, trinkets) from the save's owned-bit fields. Takes
-// no target: the game acts on its own live player, the same one player_component() reports. Callers that
-// write those bit fields must check available() BEFORE writing, since the fields alone do nothing until
-// this runs.
+// Recomputes the live player's maxima (HP, magic, spark, vials, trinkets) from the save's owned-bit fields. Check available() before writing those fields,
+// since they do nothing until this runs.
 bool player_stats_api_available();
 bool player_update_stats();
 
@@ -233,98 +184,72 @@ bool player_update_stats();
 // name, which leaves the caller on its own resolver. May return data rather than code.
 void *sym_addr(const char *name);
 
-// Live room index off the game's own RoomManager global, the same field the room detour read.
-// Negative means no room is bound (also returned when the entry is unavailable).
+// Live room index off the game's RoomManager global. Negative when no room is bound or the entry is unavailable.
 int room_index();
 
 // Menu-world scene root. Null when unavailable or world is null.
 bool world_menu_root_api_available();
 void *world_menu_root_entity(void *world);
 
-// Rebuild the runtime cheat mirror from the active slot's mask. The native entry resolves
-// g_cheatManager itself, so a live modifier write no longer needs a captured CheatManager* or a
-// trampoline into ActivateSaveCheats. False when the entry is absent on this build.
+// Rebuilds the runtime cheat mirror from the active slot's mask; the native entry resolves g_cheatManager itself. False when the entry is absent.
 bool cheat_manager_activate_save_cheats();
 
-// Set/clear one modifier bit on the ACTIVE save slot, which the native entry resolves itself. It
-// inlines the write rather than calling CheatManager::SetCheatApplied, so it does not re-enter the
-// mod's lockdown detour on that function. Refused outside 0..0xfd: >= 0xfe diverts into
-// ApplyBackerCheats (an unrelated write set) and a negative index silently no-ops game-side. The
-// entry does NOT null-check the slot, so the caller must know one is bound. False when unavailable.
+// Sets or clears one modifier bit on the active save slot. The entry inlines the write, so it skips the mod's CheatManager::SetCheatApplied lockdown
+// detour. Refused outside 0..0xfd: >= 0xfe diverts into ApplyBackerCheats and a negative index no-ops game-side. The entry does not null-check the slot,
+// so one must be bound. False when unavailable.
 bool cheat_manager_set_cheat_applied(int cheat, bool active);
 
-// Whether the currently active save has that modifier enabled in its own mask. False also means
-// "unknown", because the entry is absent on older builds, and unknown is the safe direction: a trap
-// that arms over a modifier the player had chosen is a worse outcome than one that fails to skip.
+// Whether the active save has that modifier set in its own mask. Also false on older builds without the entry, so a trap then arms without that check.
 bool cheat_manager_is_cheat_applied(int cheat);
 
-// Kill the player via the native MinaModAPI PlayerDie (deathlink apply). Offset-free and cross-platform,
-// replacing the old Player::TriggerDeath sig detour. Returns false (no-op) if the modding API or PlayerDie
-// is unavailable.
+// Kills the player via the native PlayerDie (deathlink apply). False when the modding API or PlayerDie is unavailable.
 bool player_die();
 
-// The game's own live-Player pointer. It is set when the Player is built and nulled inside Player::~Player,
-// so it is the only signal that survives a player teardown the mod is not otherwise told about: a Player*
-// captured in the ctor detour stays non-null past the free and faults the next time a write path walks it
-// (#157). Returns null whenever there is no live player, which every caller must treat as "skip this tick".
+// The game's live-Player pointer, set when the Player is built and nulled in Player::~Player. A Player* captured in the ctor detour outlives the free and
+// faults on the next write (#157). Null when there is no live player; callers skip the tick then.
 bool player_component_available();
 void *player_component();
 
-// Native Player health, used by deathlink to re-arm the broadcast only on a true respawn (health > 0) --
-// the death-guard byte pulses during the death sequence, health does not. available() is false when the
-// build's API lacks the getter; player_health() returns 0 then.
+// Player health. Deathlink re-arms its broadcast only on a respawn (health > 0), since the death-guard byte pulses during the death sequence. available()
+// is false when the build lacks the getter; player_health() then returns 0.
 bool health_api_available();
 float player_health();
 
-// Native current Spark (the sub-weapon meter); deathlink broadcasts only a sparkless demise. available() is
-// false when the build's API lacks the getter, and player_spark() returns 0 then.
+// Current Spark (the sub-weapon meter); deathlink broadcasts only a sparkless death. Without the getter, available() is false and player_spark() is 0.
 bool spark_api_available();
 int player_spark();
 
-// The world the live player is in; null when there is no player yet. The game resolves it from its own
-// live-Player global, so this needs no cached pointer and can never go stale.
+// The live player's world, resolved from the game's live-Player global; null when there is no player yet.
 void *player_world();
 
-// One of the world's per-type entity lists, named by the game's own type name ("KeyBlock",
-// "KeyBlockChain", ...); the entries are the components themselves, the same pointer a member-function
-// detour would receive as `this`. Returns the TOTAL count even when the buffer is too small, so a
-// null/0 call sizes the buffer; 0 when the build's API lacks the entry. There is no "Chest" list.
+// One of the world's per-type entity lists by game type name ("KeyBlock", "KeyBlockChain", ...); entries are the components, as a member detour's `this`.
+// Returns the total count even when the buffer is too small, so a null/0 call sizes it; 0 when the build lacks the entry. There is no "Chest" list.
 std::size_t world_entity_list(void *world, const char *list, void **out, std::size_t cap);
 
-// The world's scene-graph root, and the walk down it - the only way to reach a component type
-// world_entity_list does not name (its table has no "TicketMachine" entry). entity_children returns the
-// entity's DIRECT children only, and an entity is itself one of those children, so reaching an arbitrary
-// component means recursing on the ones that component_isa reports as ycEntity. It returns the TOTAL count
-// even when the buffer is too small, so a null/0 call sizes the buffer. component_isa runs the game's own
-// virtual Isa, so it is inheritance-aware; ids are the hashlittle2 of the type name (mth::rtti). A full
-// traversal is not free - do not run one per frame. false/null/0 when the build's API lacks the entries.
+// Scene-graph root and walk, for component types world_entity_list does not name (e.g. "TicketMachine"). entity_children returns direct children only, an
+// entity among them, so recurse on the ones component_isa reports as ycEntity; it returns the total count like world_entity_list. component_isa runs the
+// game's virtual Isa; ids are the hashlittle2 of the type name (mth::rtti). Too slow to walk every frame. false/null/0 when the build lacks the entries.
 bool entity_walk_api_available();
 void *world_game_root_entity(void *world);
 std::size_t entity_children(void *entity, void **out, std::size_t cap);
 bool component_isa(void *component, std::uint64_t type_id);
 
-// Weak references to a live component or entity: the game clears them when the target dies, so a mod-side
-// registry can outlive a room without holding a raw pointer that a teardown turns into a use-after-free.
-// create() returns null when the API is unavailable, get() returns null once the target is gone, and every
-// non-null handle must be destroyed.
+// Weak references the game clears when the target dies, so a registry can outlive a room without dangling. create() returns null when the API is
+// unavailable, get() returns null once the target is gone, and every non-null handle must be destroyed.
 bool weak_ptr_api_available();
 void *weak_ptr_create(void *component_or_entity);
 void *weak_ptr_get(void *weak);
 void weak_ptr_destroy(void *weak);
 
-// True while the live world is paused, which is any menu that pauses gameplay. World::Update then runs only
-// the pause queue, so nothing the game has already queued can progress. false when there is no live world or
-// the build's API lacks the accessors.
+// True while a menu pauses the live world; World::Update then runs only the pause queue. False with no live world or when the build lacks the accessors.
 bool world_is_paused();
 
-// Seconds the current room has been running: a time-scaled accumulator driven from the world's update queues,
-// so it stalls whenever those stop. Catches the game-level pause, which world_is_paused() cannot see.
-// available() is false when the build's API lacks the getter.
+// Seconds the current room has run, a time-scaled accumulator that stalls when the world's update queues stop, so it sees the game-level pause that
+// world_is_paused() misses. available() is false when the build lacks the getter.
 bool room_time_api_available();
 float room_time();
 
-// modHookCtx for "IsItemCollected"; the layout MUST mirror the game's struct exactly. The game calls
-// RunHooks("IsItemCollected", &ctx) at the top of Items::IsItemCollected.
+// modHookCtx that Items::IsItemCollected passes to RunHooks("IsItemCollected"); the layout must match the game's struct exactly.
 struct IsItemCollectedCtx
 {
     void *collection;             // ItemCollection*
@@ -332,7 +257,7 @@ struct IsItemCollectedCtx
     std::int32_t index;           // location index
     bool include_pawn_shop;       // param4
     bool include_early_collected; // param5: the "ownership query" flag (weapon-swap chest reads true)
-    bool mod_handled;             // out: true => game returns mod_ret_val instead of its own logic
+    bool mod_handled;             // out: true makes the game return mod_ret_val
     bool mod_ret_val;             // out
 };
 

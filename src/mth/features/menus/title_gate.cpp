@@ -24,23 +24,18 @@ std::function<bool()> g_title_gate_fn; // true when AP is connected, i.e. when "
 [[clang::no_destroy]] pal::ScopedHook g_title_gate_hook;
 void (*g_orig_title_update)(void *) = nullptr;
 
-// Desired "Start Game" label, re-applied every UpdateState so the localization refresh cannot
-// leave a stale string behind. Empty means "restore the cached original" (never an English literal).
+// Desired "Start Game" label, re-applied every UpdateState because the localization refresh re-sets it. Empty restores the cached original.
 std::string g_title_start_text;
 std::mutex g_title_start_text_mutex;
 
-// First sight of the option holds the localized "Start Game"; cache it so restoring the label
-// after a reconnect does not force English.
+// The localized "Start Game" from first sight, so restoring it after a reconnect keeps the player's language.
 std::string g_title_start_original;
 bool g_title_start_original_warned = false;
-// Last label WE wrote via SetText while disconnected; lets the restore path (below) tell "undo our
-// own substitution" apart from "the game changed the string for a real reason" (e.g. language change).
+// Last label we wrote while disconnected, so the restore path undoes only our own substitution and leaves a real change (e.g. language) alone.
 std::string g_title_start_last_substituted;
 
-// Re-applies the desired Start Game text (or the cached original once connected), but only when the
-// option's current text does not already match, so this cannot fight a live language change: a
-// language switch while connected replaces the widget text with a new localized string that equals
-// neither our cache nor our own substitution, and is therefore left alone.
+// Re-applies the desired Start Game text (or the cached original once connected) only when the current text differs. A language switch while connected yields a
+// string matching neither our cache nor our substitution, so it is left alone.
 void apply_title_start_text(void *base)
 {
     if (base == nullptr)
@@ -83,8 +78,8 @@ void apply_title_start_text(void *base)
     }
 }
 
-// Latches on an implausible selected index, which is what a wrong secondary-base adjust would read:
-// a bad read can still look plausible on a later call, so one failure disables the gate for good.
+// Latches on an implausible selected index (what a wrong secondary-base adjust reads). A bad read can look plausible later, so one failure disables the gate
+// for good.
 bool g_title_base_disabled = false;
 
 void repl_title_update_state(void *self)
@@ -106,7 +101,7 @@ void repl_title_update_state(void *self)
         g_orig_title_update(self);
 
     if (!base_ok || g_title_base_disabled)
-        return; // guard tripped, this call or a prior one: never write cursor/text through an unverified base
+        return; // guard tripped now or earlier: no writes through an unverified base
 
     if (g_title_gate_fn && !g_title_gate_fn())
     {
@@ -138,18 +133,16 @@ bool install_title_gate_hook(std::function<bool()> connected)
     return true;
 }
 
-// Sets the "Start Game" option's label. Applied from the UpdateState detour rather than once at
-// init, because the game's localization refresh unconditionally re-sets all three option strings.
-// An empty/null text restores the original (cached on first sight, never an English literal).
+// Sets the "Start Game" label. Applied from the UpdateState detour because the localization refresh re-sets all three option strings. Empty or null restores
+// the cached original.
 void set_title_start_option_text(const char *text)
 {
     std::lock_guard<std::mutex> lk(g_title_start_text_mutex);
     g_title_start_text = (text != nullptr) ? text : "";
 }
 
-// TitleScreen::StartGame(): backstop to the cursor gate above. UpdateState performs the cursor write
-// AND the confirm dispatch in the same call, so correcting the cursor after the original returns is
-// too late once StartGame has already run; suppress it outright while disconnected instead.
+// TitleScreen::StartGame(): backstop to the cursor gate. UpdateState writes the cursor and dispatches the confirm in one call, so a cursor fix after the
+// original returns is too late; StartGame is suppressed outright instead.
 std::function<bool()> g_start_game_suppress_fn;
 [[clang::no_destroy]] pal::ScopedHook g_start_game_hook;
 void (*g_orig_title_start_game)(void *) = nullptr;
@@ -157,7 +150,7 @@ void (*g_orig_title_start_game)(void *) = nullptr;
 void repl_title_start_game(void *self)
 {
     if (g_start_game_suppress_fn && g_start_game_suppress_fn())
-        return; // disconnected: the option is not selectable, so the vanilla path must not run
+        return; // disconnected, or a launch SaveTakeover did not claim
     if (g_orig_title_start_game)
         g_orig_title_start_game(self);
 }
@@ -195,8 +188,8 @@ void install_title_gate(std::function<bool()> connected, std::function<bool()> c
     {
         if (!connected())
             return true;
-        // Claimed launches must let the vanilla StartGame run; the substate it requests is what builds
-        // the profile-select menu. An unclaimed one blocks rather than reaching a vanilla save.
+        // A claimed launch must let the vanilla StartGame run, since its substate builds the profile-select menu. An unclaimed one is blocked so it cannot
+        // reach a vanilla save.
         return !(claim_start && claim_start());
     };
     auto gate = [connected = std::move(connected)]()

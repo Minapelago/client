@@ -66,8 +66,7 @@ TEST_CASE("have_all_kears ignores unrelated items", "[kear]")
     REQUIRE_FALSE(mth::have_all_kears(mth::KearMode::ApItems, items({2306, mth::ap_item_id(9), 2500})));
 }
 
-// Mirrored from the apworld pools (worlds/mina_the_hollower/data/items/kears.py). A change there must
-// fail here rather than silently making the check unobtainable or firing it early.
+// Mirrored from the apworld pools (worlds/mina_the_hollower/data/items/kears.py); a change there must fail here.
 TEST_CASE("kear set sizes match the apworld pools", "[kear]")
 {
     REQUIRE(mth::kSingleKearCount == 39);
@@ -82,7 +81,7 @@ TEST_CASE("kear sets derived from kAreaLocks match the apworld ids", "[kear]")
                                                     2152, 2157, 2222, 2224, 2225, 2227, 2244, 2246, 2247, 2260, 2262, 2277, 2278,
                                                     2283, 2284, 2285, 2304, 2307, 2318, 2320, 2321, 2336, 2337, 2338, 2358, 2359};
     const std::set<std::int64_t> single(std::begin(mth::kSingleKearItemIds), std::end(mth::kSingleKearItemIds));
-    REQUIRE(single.size() == mth::kSingleKearItemIds.size()); // no duplicates
+    REQUIRE(single.size() == mth::kSingleKearItemIds.size());
     REQUIRE(single == single_expected);
 
     std::set<std::int64_t> area;

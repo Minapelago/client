@@ -19,8 +19,7 @@ namespace mth
 namespace
 {
 
-// Written from the named FixedUpdate hook at the top of the frame and read by tick() after the
-// original has run. Same thread today, and an atomic costs nothing for the guarantee.
+// Written by the named FixedUpdate hook at the top of the frame, read by tick() after the original runs. Same thread today; the atomic is free.
 std::atomic<float> g_frame_delta{0.0f};
 std::atomic<bool> g_frame_delta_seen{false};
 
@@ -30,19 +29,15 @@ void on_fixed_update_delta(float elapsed)
     g_frame_delta_seen.store(true, std::memory_order_relaxed);
 }
 
-// Only reached when the named hook never fires. FixedUpdate runs at 60 or 120 Hz with nothing to
-// tell them apart, so assume the faster rate: a trap that overstays beats one cut in half.
+// Used only when the named hook never fires. FixedUpdate runs at 60 or 120 Hz with nothing to tell them apart, so assume the faster rate: a trap that overstays
+// beats one cut in half.
 constexpr float kFallbackDelta = 1.0f / static_cast<float>(kMaxFixedUpdateHz);
 
-// The runtime cheat mirror (CheatManager) behind the modifier traps. It is reached through the mod
-// API's g_cheatManager symbol rather than a save-manager offset, so nothing here is per-platform; the
-// save-mask half of modifier control is in modifier_hooks.cpp, which reads the g_saveManager slot offsets
-// from pal::layout.
+// The runtime cheat mirror (CheatManager) behind the traps, reached through the mod API's g_cheatManager symbol, so nothing here is per-platform. The save-mask
+// half lives in modifier_hooks.cpp.
 
-// CheatManager layout (distinct from the SaveSlot mask in modifier_hooks.cpp). +0x01 is an "activated" bool that
-// every read site checks before consulting the mask, and +0x20 holds a u64[4] covering indices
-// 0..63, 64..127, 128..191, 192..255. CheatManager::ActivateSaveCheats writes that byte to 1 at the
-// top of its body and is its only writer, so a set byte means the game has activated a save slot.
+// CheatManager layout (not the SaveSlot mask). +0x01 is an "activated" bool every read site checks before the mask; +0x20 holds a u64[4] covering indices
+// 0..255. ActivateSaveCheats is the byte's only writer, setting it to 1 at the top of its body, so a set byte means a save slot has been activated.
 constexpr std::size_t kCheatMgrActivatedOff = 0x01;
 constexpr std::size_t kCheatMgrMaskOff = 0x20;
 
@@ -50,19 +45,15 @@ void *g_cheat_mgr_sym = nullptr;
 bool g_cheat_mgr_outcome_logged = false; // one-shot: the manager resolved and validated
 bool g_cheat_mgr_miss_logged = false;    // one-shot: symbol not (yet) resolved
 
-// A validated CheatManager, resolved once so a caller needing both the activated byte and the mask
-// does not walk +0x20 twice. A null base means there is no usable manager.
+// A validated CheatManager, resolved once so a caller needing both the activated byte and the mask walks +0x20 once. A null base means no usable manager.
 struct CheatManagerView
 {
     std::uint8_t *base = nullptr;
     std::uint64_t *mask = nullptr;
 };
 
-// A candidate CheatManager* is trusted only if it looks like a real, naturally aligned pointer, its
-// "activated" byte reads as an actual bool, and the mask pointer it carries at +0x20 is itself a
-// valid, aligned pointer.
-// pal::pointer_looks_valid is a range test, not a mapping check (pal/pal_mem.hpp), so alignment and
-// the layout's own field values catch a candidate that merely landed in the valid range.
+// A candidate CheatManager* is trusted only if it is aligned, its activated byte reads as a bool, and its +0x20 mask pointer is valid and aligned.
+// pal::pointer_looks_valid is a range test, not a mapping check, so alignment and field values catch a candidate that merely lands in range.
 std::uint64_t *cheat_mask_at(void *candidate)
 {
     const auto addr = reinterpret_cast<std::uintptr_t>(candidate);
@@ -78,11 +69,8 @@ std::uint64_t *cheat_mask_at(void *candidate)
     return mask;
 }
 
-// Resolves g_cheatManager through the game's own GetSymAddr. Only a successful resolve is cached:
-// a miss is retried on every call, because a caller asking this from its own constructor can race
-// the App constructor body publishing the game's text range (mod::sym_addr fails closed until
-// then), and caching that transient miss would make traps look permanently unavailable for the rest
-// of the session. The "not yet available" log is still one-shot, so a slow race does not spam it.
+// Resolves g_cheatManager through the game's GetSymAddr, caching only a hit. A miss retries every call: a caller in its own constructor can race App publishing
+// the game's text range (mod::sym_addr fails closed until then). The miss log is one-shot.
 void ensure_cheat_mgr_symbol()
 {
     if (g_cheat_mgr_sym != nullptr)
@@ -100,10 +88,8 @@ void ensure_cheat_mgr_symbol()
     }
 }
 
-// GetSymAddr hands back the CheatManager itself, already dereferenced: the symbol table's entry for
-// g_cheatManager loads the global rather than taking its address. The validation below still earns
-// its place, since cheat_mask_at is all that stands between a resolve gone wrong and a write into
-// arbitrary game memory. The outcome logs once, since a human reads that line in-game.
+// GetSymAddr's entry for g_cheatManager loads the global, so it returns the CheatManager itself. cheat_mask_at still validates it, since it is all that stands
+// between a bad resolve and a write into arbitrary game memory. The outcome logs once.
 CheatManagerView cheat_manager()
 {
     ensure_cheat_mgr_symbol();
@@ -120,32 +106,26 @@ CheatManagerView cheat_manager()
     return {reinterpret_cast<std::uint8_t *>(g_cheat_mgr_sym), mask};
 }
 
-// True once g_cheatManager resolves through the game's own GetSymAddr. It is not in the Linux
-// symbol table, so resolve_game_symbol cannot find it. A miss is not cached: resolution can depend
-// on the game's text range being published, which may postdate the first ask, so only a successful
-// resolve sticks and a false here is worth asking again rather than treated as final.
+// True once g_cheatManager resolves through GetSymAddr (it is not in the Linux symbol table, so resolve_game_symbol cannot find it). A false is not final:
+// resolution can wait on the game's text range being published.
 bool runtime_modifiers_available()
 {
     ensure_cheat_mgr_symbol();
     return g_cheat_mgr_sym != nullptr;
 }
 
-// True once the cheat manager resolves and its activated byte is set. The game sets that byte only
-// in ActivateSaveCheats, so it doubles as "a save slot has been activated". The native cheat entries
-// resolve the live save slot themselves and do not null-check it, so a caller has to clear this
-// before reaching one. Session state, where runtime_modifiers_available above is a property of the
-// build.
+// True once the cheat manager resolves and its activated byte is set, i.e. a save slot has been activated (only ActivateSaveCheats sets it). The native cheat
+// entries resolve the live save slot without a null check, so callers must pass this first. Session state, where runtime_modifiers_available is a build
+// property.
 bool runtime_modifier_ready()
 {
     const CheatManagerView mgr = cheat_manager();
     return mgr.base != nullptr && mgr.base[kCheatMgrActivatedOff] != 0;
 }
 
-// Set/clear a modifier bit in the runtime cheat mask at CheatManager+0x20 and nowhere else. The
-// save mask is never touched, so nothing persists across a crash and the save's achievement byte is
-// never burned. Gameplay re-reads that mask every frame, so the effect lands without a room change.
-// Game-thread only. False means "not right now" (no cheat manager bound, or the activated byte is
-// still clear), which the caller should retry rather than treat as a permanent failure.
+// Sets or clears a modifier bit in the runtime cheat mask at CheatManager+0x20 only, so nothing persists across a crash and the save's achievement byte is
+// never burned. Gameplay re-reads the mask every frame, so the effect lands without a room change. Game thread only. false means "not right now" (no manager,
+// or the activated byte is still clear); retry.
 bool set_runtime_modifier(int idx, bool on)
 {
     if (idx < 0 || idx >= 254)
@@ -153,9 +133,7 @@ bool set_runtime_modifier(int idx, bool on)
     const CheatManagerView mgr = cheat_manager();
     if (mgr.base == nullptr)
         return false;
-    // Every read site checks this byte before the mask, so a bit written while it is clear does
-    // nothing at all. Only the game's own ActivateSaveCheats sets it, so a clear byte means no save
-    // is active yet, and the write is worth attempting again only after the next activation.
+    // Every read site checks this byte before the mask, so a bit written while it is clear does nothing; retry after the next activation.
     if (mgr.base[kCheatMgrActivatedOff] == 0)
         return false;
     cheat_mask_set(mgr.mask, idx, on);
@@ -190,42 +168,34 @@ TrapArm TrapHooks::arm(int modifier_index, float seconds_override)
     }
     if (!is_gameplay_game_state(mod::current_game_state()))
     {
-        // runtime_modifier_ready() below is a one-way latch (the game never clears it once a save has
-        // been activated), so it cannot tell the title screen from an active run. The gamestate range
-        // can, and room_tracker already keys the same distinction on it.
+        // runtime_modifier_ready() is a one-way latch that cannot tell the title screen from a run; the gamestate range can (room_tracker uses it too).
         if (notready_warned_.insert(modifier_index).second)
             pal::logf(pal::LogLevel::Warn, "traps: \"%s\" (idx=%d) deferred until the player is in a room; retrying", def->label, modifier_index);
         return TrapArm::NotReady;
     }
     if (!runtime_modifier_ready())
     {
-        // The native read below resolves the live save slot itself and does not null-check it, so
-        // asking before a save is activated would fault. The connection binds at the title screen,
-        // so a trap really can arrive with no save loaded.
+        // The native read below resolves the live save slot without a null check and would fault before a save is active. The connection binds at the title
+        // screen, so a trap can arrive with no save loaded.
         if (notready_warned_.insert(modifier_index).second)
             pal::logf(pal::LogLevel::Warn, "traps: \"%s\" (idx=%d) deferred until a save is active; retrying", def->label, modifier_index);
         return TrapArm::NotReady;
     }
     if (mod::cheat_manager_is_cheat_applied(modifier_index))
     {
-        // Arming over a modifier the player chose would be invisible for the duration and would then
-        // "expire" by taking their setting away, with ActivateSaveCheats fighting to restore it.
+        // Arming over a modifier the player chose would be invisible, then "expire" by removing their setting while ActivateSaveCheats fights to restore it.
         pal::logf(pal::LogLevel::Info, "traps: \"%s\" (idx=%d) already on by the player's own choice; consumed without arming", def->label, modifier_index);
         return TrapArm::Skipped;
     }
     if (!set_runtime_modifier(modifier_index, true))
     {
-        // Logged once per stall rather than every retry tick: the granter calls arm() again next
-        // tick regardless, so a warning here would repeat until the write finally goes through.
-        // Traps can stall on distinct indices at once, so this is a set rather than one scalar;
-        // insert() only warns the first time a given index joins the stalled set.
+        // Warned once per stall per index, since the granter calls arm() again every tick until the write lands.
         if (notready_warned_.insert(modifier_index).second)
             pal::logf(pal::LogLevel::Warn, "traps: \"%s\" (idx=%d) write refused this frame; retrying", def->label, modifier_index);
         return TrapArm::NotReady;
     }
     notready_warned_.erase(modifier_index); // the write went through, so a future stall on this index warns again
-    // A prior lift for this same index may still be sitting in the retry list; a fresh arm wins over
-    // it; otherwise the next tick's retry would turn this brand-new trap straight back off.
+    // A fresh arm cancels a pending lift for the same index, or the next retry would turn this new trap straight off.
     std::erase(pending_off_, modifier_index);
     const float seconds = seconds_override > 0.0f ? seconds_override : def->seconds;
     state_.arm(modifier_index, seconds);
@@ -241,20 +211,15 @@ void TrapHooks::queue_arm(int modifier_index, float seconds_override)
 
 void TrapHooks::tick()
 {
-    // Drained unconditionally: arm() itself refuses outside gameplay, so a queued console trap just
-    // comes back NotReady rather than piling up here.
+    // Drained unconditionally: arm() refuses outside gameplay, so a queued console trap comes back NotReady.
     drain_pending_arm();
-    // Retried before the gameplay check below: a lift the game refused earlier has to keep trying to
-    // land even while the player is at a menu, or the modifier stays forced on indefinitely.
+    // Retried before the gameplay check so a refused lift keeps trying at a menu, or the modifier stays forced on.
     retry_pending_off();
     if (!is_gameplay_game_state(mod::current_game_state()))
     {
-        // Leaving gameplay ends every running trap outright rather than freezing its countdown: the
-        // room clock that ages it has stalled here too, so a suspend-and-resume would just leave the
-        // bit stuck on with nothing left to lift it. Guarded on non-empty so an idle menu does not
-        // call clear() every frame: clear() also resets notready_warned_, and doing that every tick
-        // would defeat its dedup and make arm()'s "deferred until the player is in a room" warning
-        // (logged right after this by grants_->tick()) spam once a frame instead of once per stall.
+        // Leaving gameplay ends every running trap, since the room clock that ages it stalls here too and a frozen trap could be stranded on. Guarded on
+        // non-empty because clear() resets notready_warned_, and doing that every idle-menu frame would make arm()'s "deferred until the player is in a room"
+        // warning repeat each frame.
         if (!state_.empty())
             clear();
         publish_active();
@@ -303,15 +268,14 @@ void TrapHooks::advance_frame()
     }
     if (dt <= 0.0f)
         return;
-    // ActivateSaveCheats rebuilds the runtime mask from the save, so a load, a profile select, or
-    // the player opening the options menu would otherwise cancel a trap that is still running.
+    // ActivateSaveCheats rebuilds the runtime mask from the save, so a load, profile select or the options menu would cancel a running trap; re-assert them.
     for (const ActiveTrap &t : state_.traps())
         set_runtime_modifier(t.index, true);
 }
 
 void TrapHooks::clear()
 {
-    notready_warned_.clear(); // a stall carried into the next seed would otherwise never warn again
+    notready_warned_.clear(); // a stall carried into the next seed would never warn again
     for (int idx : state_.clear())
     {
         if (set_runtime_modifier(idx, false))
@@ -322,9 +286,7 @@ void TrapHooks::clear()
     }
 }
 
-// Retries every lift the game refused earlier. Run once at the top of every tick rather than
-// looped or blocked on here: set_runtime_modifier's false means "not right now", and the next
-// tick is the next chance to ask again.
+// Retries every lift the game refused earlier, once per tick: false from set_runtime_modifier means "not right now".
 void TrapHooks::retry_pending_off()
 {
     if (pending_off_.empty() || !runtime_modifier_ready())
@@ -335,9 +297,7 @@ void TrapHooks::retry_pending_off()
                       const TrapDef *def = trap_for_modifier(idx);
                       if (mod::cheat_manager_is_cheat_applied(idx))
                       {
-                          // The save carries that bit now, so between the failed lift and this retry
-                          // the player turned the modifier on themselves; clearing it would take
-                          // their own setting away.
+                          // The save carries the bit, so the player turned the modifier on since the failed lift; clearing it would take their setting away.
                           pal::logf(pal::LogLevel::Info, "traps: \"%s\" (idx=%d) is the player's own choice now; lift retry dropped",
                                     def != nullptr ? def->label : "?", idx);
                           return true;
@@ -349,13 +309,10 @@ void TrapHooks::retry_pending_off()
                   });
 }
 
-// Whether the world's gameplay queues ran this frame. A trap must not burn its duration while the
-// player sits in a menu, and must not lose time to a room transition.
+// Whether the world's gameplay queues ran this frame, so a trap burns no time in a menu or a room transition.
 bool TrapHooks::gameplay_advanced()
 {
-    // Only whether the clock moved matters, not by how much, so sampling it while no trap is running
-    // would buy nothing; the first tick after arming compares against a stale reading and can lose
-    // that one frame.
+    // Sampled only while a trap runs, since only movement matters; the first tick after arming compares against a stale reading and can lose that frame.
     return room_clock_.sample() == RoomClock::Tick::Advanced;
 }
 

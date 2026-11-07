@@ -5,9 +5,8 @@
 namespace mth
 {
 
-// What arming a trap did. The granter needs Armed and Skipped to consume the receipt, NotReady to
-// retry it next tick without blocking later receipts, and Unavailable to consume it with a warning
-// rather than spin forever.
+// What arming a trap did. Armed and Skipped consume the receipt, NotReady retries it next tick without blocking later receipts, and Unavailable
+// consumes it with a warning.
 enum class TrapArm
 {
     Armed,       // the modifier bit is set and the countdown is running
@@ -29,13 +28,10 @@ struct ActiveTrap
 class TrapState
 {
   public:
-    // Starts a trap, or extends one already running. A re-arm never shortens a live trap, because a
-    // second copy of a trap the player is already suffering should not cut the first one short.
-    // Ignores a non-positive duration.
+    // Starts a trap, or extends one already running; a re-arm never shortens a live trap. Ignores a non-positive duration.
     void arm(int index, float seconds);
 
-    // Ages every trap by dt gameplay seconds and returns the indices that ran out, in arming order.
-    // A non-positive dt ages nothing, which is how a paused or loading frame is spent.
+    // Ages every trap by dt gameplay seconds and returns the expired indices in arming order. A non-positive dt (paused or loading frame) ages nothing.
     std::vector<int> advance(float dt);
 
     // The running traps in arming order, with the seconds each has left.

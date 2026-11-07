@@ -20,7 +20,7 @@
 
 namespace
 {
-constexpr const char *kGameName = "Mina The Hollower"; // placeholder until apworld is named
+constexpr const char *kGameName = "Mina The Hollower"; // client/world contract; must match the apworld's game name
 constexpr int kItemHandling = 0b111;                   // remote + own-world + starting inventory
 constexpr std::chrono::seconds kConnectTimeout{30};
 } // namespace
@@ -101,8 +101,7 @@ void ApLink::scout_locations(const std::vector<std::int64_t> &location_ids)
             std::list<int64_t> ids(location_ids.begin(), location_ids.end());
             try
             {
-                // create_as_hint=2: hint the scouted shop contents for free (no hint-point cost); the
-                // server dedups so re-scouting an in-flight location does not create duplicate hints.
+                // create_as_hint=2: free hints for the scouted shop contents; the server dedups re-scouted locations.
                 client_->LocationScouts(ids, 2);
             }
             catch (const std::exception &e)
@@ -132,8 +131,7 @@ void ApLink::set_goal()
 
 void ApLink::enable_deathlink(bool on)
 {
-    // Console override is opt-out only: 'off' is a sticky client-side force-off; 'on' clears the force-off and
-    // defers back to slot_data, so it cannot enable deathlink beyond what the seed permits.
+    // Opt-out only: 'off' is a sticky force-off and 'on' defers back to slot_data, so the console cannot enable deathlink beyond the seed.
     force_off_.store(!on);
     const bool effective = slot_deathlink_.load() && !force_off_.load();
     deathlink_.store(effective);
@@ -163,18 +161,15 @@ void ApLink::send_death(const std::string &detail)
         {
             if (!client_ || !deathlink_.load())
                 return;
-            // Sub-second, per the spec's float timestamp: receivers dedupe on exact equality against the last
-            // deathlink they saw, so whole seconds would collapse two players dying in the same second into one.
+            // Sub-second: receivers dedupe on exact equality with the last deathlink, so whole seconds would merge two deaths in the same second.
             const double now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
-            // slot_name_ is only known on the net thread, so the sentence is composed here rather than by
-            // the caller: receivers show the cause verbatim and it has to name us.
+            // Composed here because receivers show the cause verbatim, it must name us, and slot_name_ is only known on the net thread.
             const std::string cause = mth::net::deathlink_cause(slot_name_, detail);
             nlohmann::json data = nlohmann::json::parse(mth::net::make_deathlink_payload(slot_name_, cause, now));
             std::list<std::string> tags{"DeathLink"};
             try
             {
-                // Bounce returns false while the link is still coming up. Below it the socket write result is
-                // lost: wswrap returns the asio error and apclientpp discards it, returning true either way.
+                // Bounce returns false while the link is still coming up. Past that the write result is lost: apclientpp drops wswrap's asio error.
                 if (!client_->Bounce(data, {}, {}, tags))
                 {
                     pal::logf(pal::LogLevel::Warn, "deathlink: bounce refused (link not ready); death not sent");
@@ -238,10 +233,8 @@ void ApLink::run()
             catch (const std::exception &e)
             {
                 pal::logf(pal::LogLevel::Error, "ApLink: poll failed: %s", e.what());
-                // Nothing else reports a throw that lands before the handshake (slot_data with a
-                // wrong-typed key is the one that reaches here), so the login window would wait on a
-                // connection already gone. An armed deadline is what says the attempt never finished;
-                // a socket drop in this same poll has already cleared it and pushed its own event.
+                // Nothing else reports a throw before the handshake (e.g. slot_data with a wrong-typed key), so refuse while the deadline is armed. A
+                // socket drop in this poll has already cleared it and pushed its own event.
                 if (connected_.exchange(false))
                     push_event(mth::ApDisconnected{});
                 else if (connect_deadline_)
@@ -275,9 +268,7 @@ void ApLink::do_connect(const std::string &server, const std::string &slot, cons
 
     const mth::ConnectTarget target = mth::plan_connection(server);
     const auto ca = pal::ca_bundle_path();
-    // Which store we read is not the one a shell on the same machine reads, whenever the game is
-    // launched through a runtime that remaps SSL_CERT_FILE or mounts its own /etc/ssl. A verify
-    // failure against a chain the user can validate by hand is that gap, so name the file.
+    // A runtime that remaps SSL_CERT_FILE or mounts its own /etc/ssl gives the game a different store than a shell sees, so name the file.
     pal::logf(pal::LogLevel::Info, "ApLink: CA bundle %s", ca ? ca->string().c_str() : "not found");
     const mth::CertChoice choice = mth::choose_cert(target.tls, ca ? ca->string() : std::string{});
     if (choice.refuse)
@@ -309,7 +300,7 @@ void ApLink::do_disconnect()
     connect_deadline_.reset();
     if (!client_)
         return;
-    // socket_disconnected handler already emits on server drops; guard avoids duplicate.
+    // The socket_disconnected handler already emits on server drops; the guard avoids a duplicate.
     const bool was_connected = connected_.exchange(false);
     client_.reset();
     if (was_connected)
@@ -318,8 +309,8 @@ void ApLink::do_disconnect()
 
 void ApLink::setup_handlers(const std::string &slot, const std::string &password, mth::TlsMode tls)
 {
-    // apclientpp flips the scheme on every socket error when it was handed a schemeless URI, so the event that says
-    // the attempt failed is also the only notice of what the next one will use. Nothing exposes the live URI.
+    // With a schemeless URI apclientpp flips the scheme on every socket error and never exposes the live URI, so the error event is the only notice of the
+    // next attempt's scheme.
     const bool alternates = tls == mth::TlsMode::Preferred;
     encrypted_attempt_ = tls != mth::TlsMode::Off;
     client_->set_socket_error_handler(
@@ -364,11 +355,9 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
             client_->ConnectUpdate(false, kItemHandling, true, tags);
             client_->StatusUpdate(APClient::ClientStatus::PLAYING);
 
-            // First point the server's identity is known. A changed (seed, slot) ends the previous session:
-            // the marker must precede this connection's ApConnected so the game thread clears in stream
-            // order, and the cursor re-arms because the new session's indices restart at 0. Same seed+slot
-            // (explicit reconnect or apclientpp's own socket retry) keeps the cursor, which dedups the full
-            // item list the server re-delivers on every connect.
+            // First point the server's identity is known. A changed (seed, slot) ends the previous session: the marker precedes this ApConnected so the
+            // game thread clears in stream order, and the cursor re-arms since indices restart at 0. The same seed and slot keeps the cursor, which dedups
+            // the item list the server re-sends on every connect.
             const std::string seed = client_->get_seed();
             const int player_slot = client_->get_player_number();
             if (seed != session_seed_ || player_slot != session_slot_)
@@ -388,9 +377,7 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                                         .missing_locations = std::vector<std::int64_t>(missing.begin(), missing.end()),
                                         .config = std::move(config)});
 
-            // Publish last. The game thread's resend gate keys on is_connected(), so flipping it
-            // before ApConnected is drained lets a tick flush the previous seed's checked set to
-            // this server.
+            // Publish last: the resend gate keys on is_connected(), so flipping it before ApConnected is drained would flush the previous seed's checks here.
             connected_.store(true);
         });
 
@@ -414,13 +401,12 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
             }
         });
 
-    // Server-reported checked locations (Connected full set + RoomUpdate deltas): Collect, same-slot coop,
-    // connect-time self-heal. Reconciled locally (no re-send); see App::reconcile_server_checked.
+    // Server-reported checked locations (Connected full set and RoomUpdate deltas) for Collect, same-slot coop and self-heal. Reconciled locally without
+    // re-sending; see App::reconcile_server_checked.
     client_->set_location_checked_handler([this](const std::list<std::int64_t> &locations)
                                           { push_event(mth::ApLocationsChecked{std::vector<std::int64_t>(locations.begin(), locations.end())}); });
 
-    // LocationScouts replies: resolve item/player names here (apclientpp resolution is net-thread-only),
-    // then ship plain-data ScoutInfo over the event queue for App's scout map.
+    // LocationScouts replies. Names resolve here (apclientpp resolution is net-thread-only), then plain ScoutInfo goes over the event queue.
     client_->set_location_info_handler(
         [this](const std::list<APClient::NetworkItem> &items)
         {
@@ -450,10 +436,8 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                 return;
             std::string payload = cmd.contains("data") ? cmd["data"].dump() : std::string{};
             auto dl = mth::net::parse_deathlink_payload(payload);
-            // The server relays a tagged Bounce to every same-team client holding that tag, sender included, so
-            // our own death comes back to us; the echo is the only evidence it reached the room. `source` is
-            // optional in the parse, so guard on a non-empty slot name, or a sourceless bounce from someone else
-            // gets swallowed as our echo.
+            // The server relays a tagged Bounce to every holder of the tag, sender included, so the echo is the only proof our death reached the room.
+            // `source` is optional in the parse, so require a non-empty slot name or a sourceless bounce from someone else reads as our echo.
             if (dl && !slot_name_.empty() && dl->source == slot_name_)
             {
                 pal::logf(pal::LogLevel::Info, "deathlink: own bounce echoed back by server (relayed to the room)");
@@ -465,13 +449,12 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
             push_event(mth::ApDeathReceived{.source = std::move(source), .cause = std::move(cause)});
         });
 
-    // Relevant PrintJSON -> banner. Resolve names/colors here (apclientpp resolution is net-thread-only),
-    // then ship the segments over the event queue.
+    // Relevant PrintJSON -> banner. Names and colors resolve here (apclientpp resolution is net-thread-only), then the segments go over the event queue.
     client_->set_print_json_handler(
         [this](const APClient::PrintJSONArgs &args)
         {
             const auto opt = [](const int *p) { return p ? std::optional<int>(*p) : std::nullopt; };
-            // args.item->player is the finder: relevant when we sent the check (item destined for another slot).
+            // args.item->player is the finder, which matters when we sent the check to another slot.
             const std::optional<int> item_player = args.item ? std::optional<int>(args.item->player) : std::nullopt;
             if (!mth::broadcast_relevant(args.type, client_->get_team_number(), client_->get_player_number(), opt(args.team), opt(args.slot),
                                          opt(args.receiving), item_player))

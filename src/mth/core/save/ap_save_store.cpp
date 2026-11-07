@@ -13,8 +13,7 @@ namespace
 constexpr std::string_view kHeader = "[YCD Version: 1]";
 constexpr std::string_view kBodyTag = "SaveSlot";
 
-// FNV-1a 64-bit: fixed algorithm (not std::hash) so the filename is stable across platforms,
-// library versions, and rebuilds.
+// FNV-1a 64-bit, a fixed algorithm (std::hash isn't), so the filename is stable across platforms, library versions and rebuilds.
 std::uint64_t fnv1a64(std::string_view data, std::uint64_t hash)
 {
     constexpr std::uint64_t kPrime = 1099511628211ULL;

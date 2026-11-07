@@ -23,16 +23,13 @@ target_link_libraries(mthap_unit_tests PRIVATE
     mthap_core
     mthap::minamodapi
 )
-# PAL pieces the tests exercise without Frida or the module: the file-log backend (ILog seam,
-# set_default_log, logf) and the cert store.
+# PAL pieces the tests exercise without Frida or the module: the file-log backend (ILog seam, set_default_log, logf) and the cert store.
 target_sources(mthap_unit_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/pal/log.cpp"
     "${CMAKE_SOURCE_DIR}/src/pal/linux/cert_linux.cpp"
-    # DeathHooks lives in the mthap module (not linked by tests); compile it in directly so its
-    # sparkless-demise gating can be unit-tested against mthap_core (mod:: and the gate).
+    # DeathHooks lives in the mthap module, which tests do not link; compile it in to unit-test its sparkless-demise gating against mthap_core.
     "${CMAKE_SOURCE_DIR}/src/mth/features/death_hooks.cpp"
-    # Same trick for the deathlink payload codec: it lives in the module, which the tests do not link,
-    # but it only needs nlohmann (already exposed by mthap_core).
+    # The deathlink payload codec also lives in the module and needs only nlohmann (via mthap_core).
     "${CMAKE_SOURCE_DIR}/src/mth/net/deathlink.cpp")
 
 catch_discover_tests(mthap_unit_tests)

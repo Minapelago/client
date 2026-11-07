@@ -10,8 +10,7 @@
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
 
-// mod::IsItemCollectedCtx mirrors the game's hook context by hand so the public header stays free of
-// game headers. Upstream now ships the real struct, so the mirror is checked here instead of by eye.
+// mod::IsItemCollectedCtx mirrors the game's hook context so the public header stays free of game headers; this checks it against upstream's struct.
 static_assert(sizeof(mod::IsItemCollectedCtx) == sizeof(::IsItemCollectedCtx));
 static_assert(offsetof(mod::IsItemCollectedCtx, collection) == offsetof(::IsItemCollectedCtx, collection));
 static_assert(offsetof(mod::IsItemCollectedCtx, save_slot) == offsetof(::IsItemCollectedCtx, saveSlot));
@@ -21,8 +20,7 @@ static_assert(offsetof(mod::IsItemCollectedCtx, include_early_collected) == offs
 static_assert(offsetof(mod::IsItemCollectedCtx, mod_handled) == offsetof(::IsItemCollectedCtx, modHandled));
 static_assert(offsetof(mod::IsItemCollectedCtx, mod_ret_val) == offsetof(::IsItemCollectedCtx, modRetVal));
 
-// The six floats the AABB wrappers memcpy are center.xyz then half-extent.xyz, which only holds if
-// MM_AABB is exactly that and nothing else.
+// The AABB wrappers memcpy MM_AABB as six floats, center.xyz then half-extent.xyz.
 static_assert(sizeof(MM_AABB) == 6 * sizeof(float));
 static_assert(offsetof(MM_AABB, center) == 0);
 static_assert(offsetof(MM_AABB, extents) == 3 * sizeof(float));
@@ -34,8 +32,7 @@ constexpr int kSaveSlotCount = 10;
 
 MinaModAPI *g_mod_api = nullptr;
 
-// An entry read past the end of a shorter struct is not null, it is whatever static follows the
-// API table, so a null check alone does not prove the pointer is callable.
+// An entry read past the end of a shorter struct holds whatever static follows the API table, so a non-null pointer may still be garbage.
 template <class Fn> bool usable(Fn fn)
 {
     return fn != nullptr && pal::in_game_text(reinterpret_cast<const void *>(fn));
@@ -44,40 +41,33 @@ template <class Fn> bool usable(Fn fn)
 // Newest game build known to predate the 2026-08-05 appended API entries.
 constexpr std::uint32_t kNewestRevisionWithoutAppendedApi = 148905;
 
-// Test this before reading any appended field. On an older build those fields sit past the end of the
-// game's shorter struct, and what follows the struct is more relocated function pointers, so an
-// address test alone would accept garbage; the read itself is what has to be avoided. Upstream
-// appended the fields without bumping MinaModAPI_Version, leaving the revision as the only oracle.
+// Test before reading any appended field. On older builds those fields lie past the struct over more relocated function pointers, which pass an address
+// test, so the read itself must be avoided. Upstream did not bump MinaModAPI_Version for them, so the revision is the only signal.
 bool appended_api_possible()
 {
     return g_mod_api != nullptr && usable(g_mod_api->GetGameRevision) && g_mod_api->GetGameRevision() > kNewestRevisionWithoutAppendedApi;
 }
 
-// For an appended entry, once appended_api_possible() has cleared the read. Stricter than usable():
-// a field that may not exist cannot be checked without a range, so this does not fail open.
+// For an appended entry after appended_api_possible(). Unlike usable(), it fails closed when no text range is published.
 template <class Fn> bool usable_appended(Fn fn)
 {
     return fn != nullptr && pal::text_range_published() && pal::in_game_text(reinterpret_cast<const void *>(fn));
 }
 
-// True when the API table is set and its entry is callable. Written over pointers to members so the
-// call sites name the entry once.
+// True when the API table is set and the entry is callable; the pointer to member lets call sites name the entry once.
 template <class Fn> bool has(Fn MinaModAPI::*entry)
 {
     return g_mod_api != nullptr && usable(g_mod_api->*entry);
 }
 
-// Same for an appended entry: the revision gate comes first, because the entry itself must not be read
-// on a build whose struct ends before it.
+// Same for an appended entry; the revision gate runs first so the field is never read on a build whose struct ends before it.
 template <class Fn> bool has_appended(Fn MinaModAPI::*entry)
 {
     return appended_api_possible() && usable_appended(g_mod_api->*entry);
 }
 
-// Every named hook the mod installs. InstallHook accepts any string and returns a valid handle
-// whether or not the build dispatches that name, and RunHooks ignores a hash it does not know, so
-// neither the handle nor RemoveHook proves a hook exists. Firing is the only evidence, so each
-// trampoline records it and unfired_hooks() reports the rest.
+// Every named hook the mod installs. InstallHook returns a valid handle for any string and RunHooks ignores unknown hashes, so only firing proves a hook
+// exists; each trampoline records it for unfired_hooks().
 enum HookId
 {
     kHookIsItemCollected,
@@ -125,8 +115,7 @@ void remove_named(HookId id)
     g_hook_handles[id] = nullptr;
 }
 
-// Log lines for one hook. A null unavailable skips the up-front API check, so a missing API shows up as
-// the failed line; a null ok logs nothing on success.
+// Log lines for one hook. A null unavailable skips the up-front API check, so a missing API logs the failed line; a null ok logs nothing on success.
 struct InstallLogs
 {
     const char *unavailable;
@@ -186,8 +175,7 @@ void world_update_trampoline(void * /*pctx*/)
         g_world_update_cb();
 }
 
-// WorldUpdateEnd shares WorldUpdateCtx with WorldUpdate. Unlike the pre-hook this one forwards the
-// World*: it is the only supply of one in a menu world, where PlayerGetWorld() is null for want of a player.
+// WorldUpdateEnd shares WorldUpdateCtx with WorldUpdate and forwards the World*, the only one in a menu world, where PlayerGetWorld() is null.
 struct WorldUpdateCtx
 {
     void *world;
@@ -262,9 +250,8 @@ void shop_item_refresh_trampoline(void *pctx)
 
 std::atomic<bool> g_input_suppressed{false};
 
-// keysDown is sized [(YC_KEY_COUNT+31)/32] and upstream publishes no YC_KEY_COUNT. The engine's own
-// pack and unpack loops run indices 0..136 inclusive and top out at bit-word 4, so the count is five.
-// YC_KEY_META, the highest key MinaModEnums.h defines, is 136, which agrees.
+// keysDown is sized [(YC_KEY_COUNT+31)/32] and upstream publishes no YC_KEY_COUNT. The engine's pack and unpack loops cover keys 0..136 (YC_KEY_META, the
+// highest in MinaModEnums.h), which ends in bit-word 4.
 constexpr std::size_t kKeyWordCount = 5;
 
 void keyboard_update_trampoline(void *pctx)
@@ -306,8 +293,7 @@ void chest_construct_trampoline(void *pctx)
         g_chest_construct_cb(static_cast<void *>(c->chest));
 }
 
-// Mirrors MinaModHooks.h. The named hook fires at the top of Game::FixedUpdate and is the only
-// supply of the engine's own frame delta; the function itself takes void, so the detour cannot see it.
+// Mirrors MinaModHooks.h. Fires at the top of Game::FixedUpdate with the frame delta, which the detour cannot see since the function takes void.
 struct FixedUpdateCtx
 {
     float elapsed;
@@ -465,10 +451,8 @@ bool player_position(float out[3])
 {
     if (out == nullptr || !has(&MinaModAPI::PlayerGetWorld) || !has(&MinaModAPI::PlayerGetPos3))
         return false;
-    // PlayerGetPos3 only null-checks the outer component pointer, not the entity pointer one
-    // level in; when that second level is unwired it either faults or returns {0,0,0} instead of
-    // failing. PlayerGetWorld walks the same chain but checks both levels, so a null return here
-    // catches exactly the case PlayerGetPos3 would fault or silently mis-answer on.
+    // PlayerGetPos3 checks only the outer component pointer and faults or returns {0,0,0} when the entity level is unwired. PlayerGetWorld walks the
+    // same chain checking both levels, so null here flags that case.
     if (g_mod_api->PlayerGetWorld() == nullptr)
         return false;
     const MM_Vec3 v = g_mod_api->PlayerGetPos3();
@@ -606,7 +590,7 @@ float room_time()
 
 bool save_api_available()
 {
-    // Only what the takeover actually calls: gating on more would fail a launch that would work.
+    // Only what the takeover calls; requiring more would fail a launch that works.
     return has(&MinaModAPI::SetSaveSlotContents) && has(&MinaModAPI::GetActiveSaveSlotContents) && has(&MinaModAPI::Free) &&
            has(&MinaModAPI::SetSaveWriteEnabled) && has(&MinaModAPI::IsSaveWriteEnabled);
 }
@@ -616,7 +600,7 @@ int active_save_slot()
     if (!has(&MinaModAPI::GetActiveSaveSlot))
         return -1;
     const int slot = g_mod_api->GetActiveSaveSlot();
-    // The game's no-slot value is one past the last slot, not a negative sentinel.
+    // The game's no-slot value is one past the last slot.
     return (slot >= 0 && slot < kSaveSlotCount) ? slot : -1;
 }
 
@@ -822,8 +806,7 @@ bool set_text_color(void *text_component, std::uint32_t rgba)
 {
     if (text_component == nullptr || !text_color_available())
         return false;
-    // MM_Color is four uint8 channels in r,g,b,a memory order, i.e. byte-identical to the packed word
-    // on little-endian; the direct call passed that word as the by-value ycColor already.
+    // MM_Color is four uint8 channels in r,g,b,a memory order, byte-identical to the packed word on little-endian.
     g_mod_api->TextComponentSetColor(static_cast<ycComponent *>(text_component), to_mm_color(rgba));
     return true;
 }

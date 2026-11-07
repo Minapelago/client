@@ -34,14 +34,15 @@ std::optional<std::vector<int>> generator_indices(const nlohmann::json &data, co
 }
 } // namespace
 
+// starting_weapon and bone_up_cap are not read: the starting weapon arrives as a precollected item, and the cap items are counted whatever the mode.
 SlotDataConfig parse_slot_data(const nlohmann::json &data)
 {
     SlotDataConfig cfg;
     const bool obj = data.is_object();
 
     cfg.ossex_start = obj && data.value("ossex_start", 0) != 0;
-    // "kear_rando" is a mode, not a flag: 0 = vanilla (Universal Kear items grant real keys),
-    // 1/2 = per-lock / per-area AP items. Absent (older seeds) -> the apworld's own default.
+    // "kear_rando": 0 = vanilla (Universal Kear items grant real keys), 1/2 = per-lock / per-area AP items. Absent (older seeds) gets the apworld's
+    // default.
     cfg.kear_mode = kear_mode_from_slot_data(obj ? data.value("kear_rando", 1) : 1);
     cfg.burrow_rando = obj && data.value("burrow_rando", 0) != 0;
     cfg.swim_rando = obj && data.value("swim_rando", 0) != 0;
@@ -49,8 +50,8 @@ SlotDataConfig parse_slot_data(const nlohmann::json &data)
     cfg.puff_rando = obj && data.value("puff_rando", 0) != 0;
     cfg.spring_rando = obj && data.value("spring_rando", 0) != 0;
     cfg.carry_rando = obj && data.value("carry_rando", 0) != 0;
-    // Default true until the apworld ships a train-rando option: current seeds omit the key but
-    // still shuffle the tickets/Train Pass, so gating must be on. Send train_rando=0 to opt out.
+    // Default true until the apworld ships a train-rando option: current seeds omit the key but shuffle the tickets/Train Pass. Send train_rando=0 to
+    // opt out.
     cfg.train_rando = obj && data.value("train_rando", 1) != 0;
     // What the station's donation machine asks for, when the apworld carries it as a location. The
     // vanilla 10000 is a grind for a check whose reward is elsewhere in the multiworld (#162).
@@ -63,7 +64,7 @@ SlotDataConfig parse_slot_data(const nlohmann::json &data)
     cfg.wallet_cap = obj && data.value("wallet_cap", 0) != 0;
     cfg.mirror_switch_rando = obj && data.value("mirror_switch_rando", 0) != 0;
 
-    // The fail-closed default is silent otherwise, so a seed nobody can finish looks like a working one.
+    // Warn, since the fail-closed default makes an unfinishable seed look like a working one.
     if (cfg.goal_config == kGoalGenerators && !data.contains("goal_generators"))
         pal::logf(pal::LogLevel::Warn, "goal_generators: absent while goal_config selects the generator goal; the goal falls back to %d and cannot be reached",
                   cfg.goal_generators);

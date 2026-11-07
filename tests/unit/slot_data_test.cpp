@@ -107,7 +107,7 @@ TEST_CASE("parse_slot_data: an empty object takes the key-absent defaults", "[sl
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json::object());
 
     REQUIRE(cfg.kear_mode == mth::KearMode::ApItems);
-    REQUIRE(cfg.train_rando); // seeds predating the option still shuffle tickets
+    REQUIRE(cfg.train_rando);
     REQUIRE(cfg.train_pass_cost == mth::kTrainPassCostDefault);
     REQUIRE(cfg.max_stat_level == 99);
     REQUIRE(cfg.goal_generators == 99);
@@ -117,9 +117,7 @@ TEST_CASE("parse_slot_data: an empty object takes the key-absent defaults", "[sl
 
 TEST_CASE("parse_slot_data: a non-object blob still yields a usable config", "[slot_data]")
 {
-    // Every read is guarded on is_object, so an array or scalar reads no keys and never throws. The
-    // apworld always sends an object, so which side of the guard a defaulted flag lands on is not a
-    // contract; surviving the parse is.
+    // Every read is guarded on is_object, so an array or scalar reads no keys and never throws; where a defaulted flag lands is not a contract.
     for (const json &blob : {json::array({1, 2}), json("nope"), json(7), json(true)})
     {
         mth::SlotDataConfig cfg;
@@ -265,15 +263,15 @@ TEST_CASE("parse_slot_data: out-of-range broken_generators are dropped and repor
     LogCapture log;
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"broken_generators", json::array({0, 6, -1})}});
 
-    REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2));            // only index 0 survived
-    REQUIRE(log.sink().count(pal::LogLevel::Warn, "broken_generators") == 2); // one per dropped index
+    REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2));
+    REQUIRE(log.sink().count(pal::LogLevel::Warn, "broken_generators") == 2);
 }
 
 TEST_CASE("parse_slot_data: non-integer broken_generators entries are skipped", "[slot_data]")
 {
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"broken_generators", json::array({0, "1", 2.5, nullptr})}});
 
-    REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2)); // only the integer 0 survived
+    REQUIRE(cfg.broken_generator_mask == (std::uint64_t{1} << 2));
 }
 
 TEST_CASE("parse_slot_data: lit_generators folds indices into a lamp mask", "[slot_data]")
@@ -290,7 +288,7 @@ TEST_CASE("parse_slot_data: out-of-range lit_generators are dropped and reported
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"lit_generators", json::array({1, 6, -2})}});
 
     REQUIRE(cfg.lit_generator_lamp_mask == 0x2);
-    REQUIRE(log.sink().count(pal::LogLevel::Warn, "lit_generators") == 2); // one per dropped index
+    REQUIRE(log.sink().count(pal::LogLevel::Warn, "lit_generators") == 2);
 }
 
 TEST_CASE("parse_slot_data: removed_locations keeps every integer id", "[slot_data]")
@@ -299,7 +297,7 @@ TEST_CASE("parse_slot_data: removed_locations keeps every integer id", "[slot_da
     const mth::SlotDataConfig cfg = mth::parse_slot_data(json{{"removed_locations", json::array({500, 100, 300})}});
 
     REQUIRE(std::set<std::int64_t>(cfg.removed_locations.begin(), cfg.removed_locations.end()) == std::set<std::int64_t>{100, 300, 500});
-    REQUIRE(cfg.removed_locations.size() == 3); // set equality alone would hide a duplicate
+    REQUIRE(cfg.removed_locations.size() == 3);
     REQUIRE(log.sink().saw(pal::LogLevel::Info, "removed_locations"));
 }
 
@@ -323,10 +321,8 @@ TEST_CASE("parse_slot_data: an absent or non-array removed_locations prunes noth
 
 TEST_CASE("parse_slot_data: a key of the wrong JSON type throws", "[slot_data]")
 {
-    // A wrong-typed key throws out of the parse rather than substituting a default and running a seed
-    // on configuration the apworld did not actually specify. The throw escapes into ApLink's poll,
-    // which turns a pre-handshake failure into ApConnectionRefused, so the login window reports it
-    // instead of waiting on a connection that is already gone.
+    // A wrong-typed key throws out of the parse instead of defaulting a seed onto configuration the apworld never specified. The throw escapes into
+    // ApLink's poll, which turns a pre-handshake failure into ApConnectionRefused so the login window reports it.
     REQUIRE_THROWS_AS(mth::parse_slot_data(json{{"ossex_start", "yes"}}), nlohmann::json::type_error);
     REQUIRE_THROWS_AS(mth::parse_slot_data(json{{"goal_generators", "4"}}), nlohmann::json::type_error);
     REQUIRE_THROWS_AS(mth::parse_slot_data(json{{"train_pass_cost", json::array({1})}}), nlohmann::json::type_error);
@@ -357,5 +353,5 @@ TEST_CASE("parse_slot_data: mirror_switch_rando defaults off", "[slot_data]")
     REQUIRE_FALSE(mth::parse_slot_data(json::object()).mirror_switch_rando);
     REQUIRE_FALSE(mth::parse_slot_data(json{{"mirror_switch_rando", 0}}).mirror_switch_rando);
     REQUIRE(mth::parse_slot_data(json{{"mirror_switch_rando", 1}}).mirror_switch_rando);
-    REQUIRE_FALSE(mth::parse_slot_data(json(5)).mirror_switch_rando); // non-object blob reaches no seed
+    REQUIRE_FALSE(mth::parse_slot_data(json(5)).mirror_switch_rando);
 }

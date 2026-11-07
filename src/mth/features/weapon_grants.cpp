@@ -40,7 +40,7 @@ void enforce_weapon_ownership(const std::uint32_t *authorized, bool authed, bool
     if (!layout_ok)
         return; // an implausible read already disabled the clamp for the rest of the process
     if (!authed || !slot_ok || authorized == nullptr)
-        return; // durable and destructive: bound AP save only (slot_ok alone is true while offline)
+        return; // durable write: bound AP save only (slot_ok alone is true while offline)
     void *slot = pal::active_save_slot();
     if (slot == nullptr)
         return;
@@ -51,7 +51,7 @@ void enforce_weapon_ownership(const std::uint32_t *authorized, bool authed, bool
     std::uint32_t owned_any = 0;
     for (int fam = 0; fam < kWeaponFamilyCount; ++fam)
     {
-        // Every family is checked before the first write: the clamp rewrites all 40 bytes of the pair each tick (see weapon_fields_in_domain).
+        // Check every family before the first write, since the clamp rewrites all 40 bytes of the pair each tick (see weapon_fields_in_domain).
         if (!tables::weapon_fields_in_domain(owned[fam], active[fam]))
         {
             layout_ok = false;

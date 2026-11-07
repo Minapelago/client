@@ -19,9 +19,8 @@ inline constexpr int kKearCompletionLocIdx = 150;
 // Vanilla kears are fungible and all carry the one Universal Kear id, so the gate counts receipts.
 inline constexpr int kVanillaKearTotal = 40;
 
-// Per-lock kear items (kear_rando=1): every lock in kAreaLocks except 2306, which is the second
-// engine lock the 2304 item removes, not an item in its own right. Mirrors SingleKears in the
-// apworld's data/items/kears.py.
+// Per-lock kear items (kear_rando=1): every lock in kAreaLocks except 2306, the second engine lock the 2304 item removes. Mirrors SingleKears in
+// the apworld's data/items/kears.py.
 inline constexpr auto kSingleKearItemIds = []
 {
     std::array<std::int64_t, std::size(kAreaLocks) - 1> ids{};
@@ -57,7 +56,7 @@ namespace detail
 
     if (mode == KearMode::ApItems)
     {
-        // Distinct ids held, not receipts: a duplicate must not stand in for a kear that never arrived.
+        // Counts distinct ids held, so a duplicate receipt can't stand in for a missing kear.
         const auto n = std::count_if(std::begin(kSingleKearItemIds), std::end(kSingleKearItemIds),
                                      [&received](std::int64_t id) { return detail::received_has(received, id); });
         return n >= kSingleKearRequired;

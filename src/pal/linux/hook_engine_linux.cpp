@@ -38,9 +38,8 @@ bool install_hook(void *target, void *replacement, void **trampoline)
 {
     GumInterceptor *ic = gum_interceptor_obtain();
     gpointer original = nullptr;
-    // Bracket in a transaction so the replacement is not activated until end_transaction:
-    // replace() yields the trampoline immediately, but a detour that goes live before the
-    // trampoline is published calls through a null pointer from whatever thread hits it first.
+    // The transaction holds the replacement inactive until end_transaction. replace() yields the trampoline at once, and a detour live before the
+    // trampoline is published calls through null.
     gum_interceptor_begin_transaction(ic);
     const auto rc = gum_interceptor_replace(ic, target, replacement, nullptr, &original);
     if (rc != GUM_REPLACE_OK)

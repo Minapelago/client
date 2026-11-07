@@ -10,8 +10,7 @@
 namespace mth
 {
 
-// Set the connection phase and clear the (error-only) detail under its lock. The Error
-// branch sets detail instead, so it stores the phase inline rather than calling this.
+// Sets the phase and clears the error-only detail under its lock. The Error branch sets detail, so it stores the phase inline.
 void ApState::set_phase(ConnectionPhase p)
 {
     phase_.store(p, std::memory_order_relaxed);
@@ -32,8 +31,7 @@ void ApState::reset_session()
     removed_locations_.clear(); // the next seed prunes a different set (or none)
     last_item_index_ = -1;      // the next server's indices restart at 0 and must not read as duplicates
     console_index_ = -1000000;
-    // A no-op on the normal path (the new ApConnected re-authenticates right after). It matters when the
-    // marker arrives without one, e.g. the socket dies mid-handshake: leaving the old session authenticated
+    // Normally ApConnected re-authenticates right after. If the marker arrives alone (socket died mid-handshake), a still-authenticated old session
     // would let ensure_inbound_ready rebuild against a dead seed. status_/phase_ follow the event stream.
     authenticated_ = false;
     pal::logf(pal::LogLevel::Info, "ap_state: session reset (received stream and pending checks dropped)");
@@ -60,8 +58,7 @@ void ApState::apply(const ApEvent &ev)
                 valid_locations_.insert(e.checked_locations.begin(), e.checked_locations.end());
                 valid_locations_.insert(e.missing_locations.begin(), e.missing_locations.end());
 
-                // A pruned id the server still lists is an apworld bug. Suppressing it would strand a check
-                // AP expects and make the seed uncompletable, so the server's view wins and it stays real.
+                // A pruned id the server still lists is an apworld bug; suppressing it would make the seed uncompletable, so the server's view wins.
                 removed_locations_.clear();
                 std::size_t removed_overlap = 0;
                 for (std::int64_t id : e.config.removed_locations)
@@ -144,9 +141,8 @@ void ApState::apply(const ApEvent &ev)
                 set_status(e.text);
                 pal::logf(pal::LogLevel::Debug, "ap_state: status=%s", e.text.c_str());
             }
-            // ApDeathReceived, ApPrintBroadcast, ApScoutInfo and ApSessionEnded leave ApState alone: the
-            // coordinator's callbacks handle them. on_session_end runs before apply() and is what calls
-            // reset_session(), so anything applied here for ApSessionEnded would land after that clear.
+            // ApDeathReceived, ApPrintBroadcast, ApScoutInfo and ApSessionEnded go to coordinator callbacks; on_session_end runs reset_session()
+            // before apply().
         },
         ev);
 }

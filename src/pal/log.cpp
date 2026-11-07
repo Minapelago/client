@@ -34,8 +34,7 @@ void stamp(char (&out)[32], const char *fmt, char sep)
     std::snprintf(out, sizeof(out), "%s%c%03lld", date, sep, static_cast<long long>(millis));
 }
 
-// Only the Linux crash handler reads this, to keep writing after the process is already unwinding.
-// The Windows handler goes through logf plus MiniDumpWriteDump, so it never asks.
+// Only the Linux crash handler reads this, to keep writing while the process unwinds.
 int descriptor_of(std::FILE *fp)
 {
 #if defined(_WIN32)
@@ -53,7 +52,7 @@ class FileLog final : public pal::ILog
     {
         std::error_code ec;
         fs::create_directories(path.parent_path(), ec);
-        // string() rather than c_str(): the latter is wchar_t* on Windows.
+        // string() because c_str() is wchar_t* on Windows.
         fp_ = std::fopen(path.string().c_str(), "a");
     }
 
@@ -83,7 +82,7 @@ class FileLog final : public pal::ILog
             tag = "ERROR";
             break;
         }
-        // Stamped before the lock so a line records when it was written, not when it won the mutex.
+        // Stamped before the lock, so the time is when the line was written.
         char ts[32];
         stamp(ts, "%Y-%m-%d %H:%M:%S", '.');
 

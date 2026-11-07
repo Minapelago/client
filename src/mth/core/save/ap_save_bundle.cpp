@@ -29,8 +29,7 @@ std::optional<std::string> read_file(const std::filesystem::path &path)
     return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{});
 }
 
-// The pre-container .state name interpolated the raw seed, so a seed carrying a separator would
-// have escaped its directory. Refuse to build such a path rather than follow it.
+// The pre-container .state name interpolated the raw seed, so a seed with a separator would escape its directory; refuse to build such a path.
 std::optional<std::string> legacy_state_filename(std::string_view seed, std::string_view slot)
 {
     for (std::string_view part : {seed, slot})
@@ -144,8 +143,7 @@ void ApSaveBundleStore::ensure_loaded(std::string_view seed, std::string_view sl
 
     if (read.verdict == ContainerVerdict::Ours)
     {
-        // Preserved verbatim, valid or not. load() decides what is usable; dropping it here would
-        // delete it on the next write.
+        // Preserved verbatim, valid or not; load() decides what is usable, and dropping it here would delete it on the next write.
         for (const zip::Entry &e : read.entries)
         {
             if (e.name == kEntrySave)
@@ -211,10 +209,8 @@ bool ApSaveBundleStore::write_snapshot()
     std::vector<zip::Blob> blobs;
     blobs.push_back(zip::compress(kEntryManifest, manifest.dump()));
 
-    // Re-emit an unchanged entry from its cached compressed form: a state write must not pay deflate
-    // on the save blob, which is far larger and rewritten far less often. Reuse only on pointer
-    // identity - every mutation publishes a fresh payload, so an unchanged entry is the same object
-    // and a changed one never is, whatever its length.
+    // Re-emit an unchanged entry from its cached compressed form so a state write doesn't pay deflate on the much larger save blob. Every mutation
+    // publishes a fresh payload, so pointer identity matches exactly the unchanged entries.
     const auto emit = [this, &blobs](const char *name, const Payload &value)
     {
         if (!value)
@@ -232,7 +228,7 @@ bool ApSaveBundleStore::write_snapshot()
     emit(kEntrySave, cache_.game_save);
     emit(kEntryState, cache_.ap_state);
 
-    // Dropping a payload we are holding is always a bug, never an intended state.
+    // Dropping a held payload is a bug.
     const std::size_t expected = 1 + (cache_.game_save ? 1u : 0u) + (cache_.ap_state ? 1u : 0u);
     if (blobs.size() != expected)
     {
@@ -255,10 +251,8 @@ bool ApSaveBundleStore::write_snapshot()
             return false;
         }
         out.write(image.data(), static_cast<std::streamsize>(image.size()));
-        // close() explicitly: a container this small lives entirely in the stream buffer, so the
-        // write above only fills memory and the real I/O (and its ENOSPC) happens here. Letting the
-        // destructor do it would report success for a file that never landed, and the rotation below
-        // would then destroy the good copy.
+        // close() explicitly: a container this small sits in the stream buffer, so the real I/O (and its ENOSPC) happens here. The destructor would
+        // report success for a file that never landed, and the rotation below would destroy the good copy.
         out.close();
         if (!out)
         {
@@ -269,8 +263,7 @@ bool ApSaveBundleStore::write_snapshot()
         }
     }
 
-    // Second guard on the same failure: a short write that somehow reported success must not reach
-    // the rotation, because that is the step that consumes the only other copy.
+    // Second guard: a short write that reported success must not reach the rotation, which consumes the only other copy.
     const auto written = std::filesystem::file_size(tmp_path, ec);
     if (ec || written != image.size())
     {
@@ -281,9 +274,8 @@ bool ApSaveBundleStore::write_snapshot()
         return false;
     }
 
-    // Rotate before the replace: a crash in between leaves a good .bak and no container, which the
-    // load path recovers from. Latched only once a rotation actually happens, since the first write
-    // of a brand-new run has nothing to back up.
+    // Rotate before the replace: a crash in between leaves a good .bak and no container, which load recovers from. Latched only when a rotation
+    // happens, since a brand-new run's first write has nothing to back up.
     if (!writer_backed_up_ && std::filesystem::exists(final_path, ec))
     {
         std::filesystem::rename(final_path, bak_path, ec);
@@ -304,8 +296,8 @@ bool ApSaveBundleStore::write_snapshot()
 std::optional<std::string> ApSaveBundleStore::load(std::string_view seed, std::string_view slot) const
 {
     ensure_loaded(seed, slot);
-    // A container is user-writable, and staging a malformed blob into a vanilla slot is worse than
-    // starting a new file. The bytes stay in the cache either way, so declining does not delete them.
+    // A container is user-writable, and staging a malformed blob into a vanilla slot is worse than starting a new file. The bytes stay in the
+    // cache, so declining deletes nothing.
     if (!cache_.game_save)
         return std::nullopt;
     if (!looks_like_save_blob(*cache_.game_save))
@@ -329,9 +321,8 @@ bool ApSaveBundleStore::store(std::string_view seed, std::string_view slot, std:
     }
     cache_.game_save = std::make_shared<const std::string>(blob);
     state_staged_.store(false, std::memory_order_relaxed);
-    // The game saving is the durability point: the mod never runs its destructor, so this is the
-    // moment that has to be on disk. This runs under a native game hook with no catch between here
-    // and the game's C ABI, so a throwing write is reported as a failed one.
+    // The game saving is the durability point, since the mod never runs its destructor. This runs under a native game hook with no catch before the
+    // game's C ABI, so a throwing write reports as failed.
     try
     {
         return write_snapshot();
@@ -368,8 +359,7 @@ bool ApSaveBundleStore::stage_state(std::string_view seed, std::string_view slot
         pal::logf(pal::LogLevel::Error, "save: refusing to overwrite %s, which belongs to a different seed/slot", path_for(seed, slot).string().c_str());
         return false;
     }
-    // Deliberately no write. The container is published by store(), so the AP state that lands is
-    // the one that was true when the game captured its save blob.
+    // No write: store() publishes the container, so the AP state that lands is the one true when the game captured its save blob.
     cache_.ap_state = std::make_shared<const std::string>(text);
     state_staged_.store(true, std::memory_order_relaxed);
     return true;

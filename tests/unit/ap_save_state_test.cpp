@@ -23,7 +23,7 @@ TEST_CASE("state serializes to the line-oriented format", "[ap_save_state]")
     s.mark_granted(7);
     s.set_game_slot(3);
     REQUIRE(s.serialize() == "c 1\nc 2\ng 7\ns 3\n");
-    REQUIRE(s.checked() == std::set<int>{1, 2}); // the set the bridge walks to replay locations
+    REQUIRE(s.checked() == std::set<int>{1, 2});
 }
 
 TEST_CASE("state omits an unset game slot", "[ap_save_state]")

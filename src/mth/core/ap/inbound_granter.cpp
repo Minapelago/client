@@ -11,8 +11,7 @@
 namespace mth
 {
 
-// ~10s of gameplay ticks: long enough to clear a room load or spawn window, short enough to land in
-// the log while the player is still in the session that produced it.
+// ~10s of gameplay ticks: past a room load or spawn window, and soon enough to log while the player is still in that session.
 constexpr int kStuckTickWarn = 600;
 
 InboundGranter::InboundGranter(IItemGranter &granter, ApState &state, ApSaveState &save, std::function<bool()> credit_kear_key,
@@ -33,14 +32,14 @@ InboundGranter::~InboundGranter()
     *alive_ = false;
 }
 
-// The one place a grant is recorded. Reached only once the item has actually been applied, so a
-// queue that dies before its drain window leaves nothing marked and the receipt is retried (#175).
+// Reached only after the item is applied, so a queue that dies before its drain window marks nothing and the receipt retries (#175).
 void InboundGranter::on_applied(int receipt)
 {
     in_flight_.erase(receipt);
     consume(receipt);
 }
 
+// The one place a grant is recorded.
 void InboundGranter::consume(int index)
 {
     save_.mark_granted(index);
@@ -73,9 +72,8 @@ void InboundGranter::tick()
     int n_handled = 0;     // skipped: already recorded or in flight
     int n_ungrantable = 0; // skipped: this path does not grant that category
 
-    // One progressive receipt at the given tier. A tier past the top is consumed so it does not retry
-    // forever. False when the granter is not ready, which ends the pass; the tiers are recomputed from
-    // scratch next tick. A negative family is left out of the log.
+    // One progressive receipt at the given tier; a tier past the top is consumed so it doesn't retry forever. False when the granter isn't ready,
+    // which ends the pass (tiers are recomputed next tick). A negative family is left out of the log.
     auto offer_tier = [&](int index, int game_type, int tier, const char *label, int family = -1)
     {
         if (handled(index))
@@ -102,9 +100,8 @@ void InboundGranter::tick()
 
     for (const auto &it : state_.received_items())
     {
-        // Vanilla kear mode (#130): a Universal Kear must raise the usable-key count. The itemType-grant
-        // path can't do it (an inbound replay uses slot=-1, which aliases every kear onto bit 63), so lower
-        // the spent-counter by one via the injected effect instead, once per receipt, marked like a grant.
+        // Vanilla kear mode (#130): an itemType grant can't raise the usable-key count (an inbound replay uses slot=-1, aliasing every kear onto
+        // bit 63), so the injected effect lowers the spent-counter by one per receipt, marked like a grant.
         if (vanilla_kear && is_vanilla_kear_item(it.item_id))
         {
             if (handled(it.index))
@@ -114,7 +111,7 @@ void InboundGranter::tick()
             }
             if (!credit_kear_key_ || !credit_kear_key_())
                 break; // no live save/player yet; retry next tick (do not mark)
-            // Applies inline rather than through the granter's queue, so it is recorded right away.
+            // Applies inline (no granter queue), so it is recorded right away.
             consume(it.index);
             pal::logf(pal::LogLevel::Info, "inbound_granter: credited vanilla kear key (index=%d)", it.index);
             continue;
@@ -145,8 +142,7 @@ void InboundGranter::tick()
             continue;
         }
 
-        // A trap is a one-shot edge with a lifetime, so unlike every other segment it cannot be
-        // re-derived from the receipt list each tick and has to go through the marked-granted path.
+        // Traps are one-shot edges with a lifetime, so they can't be re-derived from the receipt list each tick; they use the marked-granted path.
         if (is_trap_item(it.item_id))
         {
             if (handled(it.index))
@@ -158,9 +154,8 @@ void InboundGranter::tick()
             const TrapArm result = arm_trap_ ? arm_trap_(modifier_index) : TrapArm::Unavailable;
             if (result == TrapArm::NotReady)
             {
-                // The modifier write was refused this frame; retry next tick (do not mark). Unlike every
-                // other segment's not-ready, this says nothing about the item granter itself and a trap
-                // carries no tier ordering, so later receipts must not be held up behind it.
+                // Modifier write refused this frame; retry next tick unmarked. Traps have no tier order and say nothing about the granter, so later
+                // receipts keep going.
                 trap_stalled = true;
                 continue;
             }
@@ -170,15 +165,13 @@ void InboundGranter::tick()
             else
                 pal::logf(pal::LogLevel::Info, "inbound_granter: trap id=%lld -> modifier %d (index=%d) %s", static_cast<long long>(it.item_id), modifier_index,
                           it.index, result == TrapArm::Armed ? "armed" : "skipped");
-            // Consumed at arm time, not at expiry. Staging is not a commit, so a crash before the next
-            // game save replays the trap, which fires a prank twice; marking at expiry would instead
-            // consume the item on a crash and never deliver it.
+            // Consumed at arm time: a crash before the next game save replays the trap (a double prank), where marking at expiry would lose it.
             consume(it.index);
             continue;
         }
 
-        // Non-vanilla/non-weapon ids are handled elsewhere (stat-caps, kear) or unhandled; capacity
-        // upgrades are vanilla ids but applied by UpgradeState (popcount bits), not itemType grants.
+        // Non-vanilla/non-weapon ids are handled elsewhere (stat-caps, kear) or unhandled; capacity upgrades are vanilla ids applied by UpgradeState
+        // (popcount bits).
         if (!is_vanilla_game_item(it.item_id) || is_capacity_upgrade_item(it.item_id))
         {
             ++n_ungrantable;
@@ -197,9 +190,8 @@ void InboundGranter::tick()
         pal::logf(pal::LogLevel::Info, "inbound_granter: queued grant index=%d id=%lld (type=%d)", it.index, static_cast<long long>(it.item_id), game_type);
     }
 
-    // Census of what this pass declined to grant. Logged only when it moves, because the per-item
-    // skips are silent and a stream that produces far fewer grants than receipts is otherwise
-    // invisible in a log, which is what made #175 untraceable.
+    // Census of what this pass declined to grant, logged when it changes. Per-item skips are silent, so a stream yielding far fewer grants than
+    // receipts is otherwise invisible (#175).
     const int n_in_flight = static_cast<int>(in_flight_.size());
     if (n_handled != last_handled_ || n_ungrantable != last_ungrantable_ || n_in_flight != last_in_flight_)
     {
@@ -210,9 +202,7 @@ void InboundGranter::tick()
         last_in_flight_ = n_in_flight;
     }
 
-    // A queue that is accepted but never drained is this fix's own failure mode: nothing is lost
-    // (the receipts stay unmarked and retry), but nothing lands either, and the census above goes
-    // quiet once it reaches steady state. Say so once per stuck episode.
+    // Warn once per stuck episode when accepted grants never drain: receipts stay unmarked and retry, but nothing lands and the census goes quiet.
     if (in_flight_.empty())
     {
         stuck_ticks_ = 0;
@@ -225,8 +215,7 @@ void InboundGranter::tick()
         stuck_warned_ = true;
     }
 
-    // A trap that cannot arm no longer blocks the receipt list, so its stall would otherwise be
-    // invisible; latch it the same way as the queue above, and clear as soon as one arms.
+    // A trap that can't arm doesn't block the receipt list, so latch its stall like the queue above; clear when one arms.
     if (!trap_stalled)
     {
         trap_notready_ticks_ = 0;

@@ -14,7 +14,7 @@ namespace mth
 class App;
 class BannerQueue;
 
-// Dev console UI. Registers as pal log observer; output pane mirrors the log stream.
+// Dev console UI. Registers as the pal log observer; the output pane mirrors the log stream.
 class DevConsole final
 {
   public:

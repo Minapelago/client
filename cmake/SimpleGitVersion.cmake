@@ -3,10 +3,8 @@
 function(add_git_version_info target)
   find_package(Git QUIET)
 
-  # Re-run configure (regenerating mth_version.h) when HEAD or the checked-out
-  # branch ref moves, so a new commit is reflected on the next build without a
-  # manual reconfigure. A commit rewrites .git/refs/heads/<branch>; a branch
-  # switch rewrites .git/HEAD; packed-refs is the fallback when refs are packed.
+  # Re-run configure (regenerating mth_version.h) when HEAD or the branch ref moves: a commit rewrites .git/refs/heads/<branch>, a switch rewrites
+  # .git/HEAD, and packed-refs is the fallback.
   set(_git_head "${CMAKE_SOURCE_DIR}/.git/HEAD")
   if(EXISTS "${_git_head}")
     set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_git_head}")
@@ -60,9 +58,8 @@ function(add_git_version_info target)
       endif()
 
       if(GIT_DESCRIBE MATCHES "-([0-9]+)-g[a-f0-9]+")
-        # Ahead of the most recent tag by N commits. The next release is at least the next patch, and a
-        # -dev prerelease of it sorts AFTER the tag (including prerelease tags -beta/-rc/...), which a
-        # same-core -dev would not reliably outsort. So bump the patch and drop any prerelease suffix.
+        # Ahead of the latest tag by N commits: bump the patch and drop any prerelease suffix, so the -dev prerelease sorts after the tag (including
+        # -beta/-rc tags).
         set(COMMITS_SINCE_TAG ${CMAKE_MATCH_1})
         math(EXPR VERSION_PATCH "${VERSION_PATCH} + 1")
         set(VERSION_STRING "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}-dev.${COMMITS_SINCE_TAG}")
@@ -70,7 +67,7 @@ function(add_git_version_info target)
           set(VERSION_STRING "${VERSION_STRING}-dirty")
         endif()
       else()
-        # Exactly on the tag (any -dirty / prerelease suffix is already folded into BASE_VERSION).
+        # Exactly on the tag (any -dirty or prerelease suffix is already in BASE_VERSION).
         set(VERSION_STRING "${BASE_VERSION}")
       endif()
     else()
@@ -80,8 +77,7 @@ function(add_git_version_info target)
     set(VERSION_HASH ${GIT_HASH})
   endif()
 
-  # Pack semver into one monotonic integer for the mod manifest (uint32-safe;
-  # minor/patch up to 999). Shared source of truth with mth_version.h.
+  # Pack semver into one monotonic integer for the mod manifest (uint32-safe; minor/patch up to 999). Shared with mth_version.h.
   math(EXPR MTHAP_MOD_VERSION "${VERSION_MAJOR} * 1000000 + ${VERSION_MINOR} * 1000 + ${VERSION_PATCH}")
   set(MTHAP_MOD_VERSION ${MTHAP_MOD_VERSION} PARENT_SCOPE)
 
@@ -89,9 +85,8 @@ function(add_git_version_info target)
   set(VERSION_HEADER "${VERSION_HEADER_DIR}/mth_version.h")
 
   file(MAKE_DIRECTORY ${VERSION_HEADER_DIR})
-  # Staged through a temp + configure_file rather than written in place: .git/HEAD is a configure
-  # dependency, so every commit or branch switch re-runs this, and an unconditional write would bump
-  # the header's mtime and relink the mod even when the version is byte-identical.
+  # Staged through a temp + configure_file: .git/HEAD is a configure dependency, so an unconditional write would bump the header's mtime and relink
+  # the mod on every commit.
   file(WRITE "${VERSION_HEADER}.in"
     "#pragma once
 #include <string_view>

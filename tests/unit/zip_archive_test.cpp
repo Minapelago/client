@@ -96,19 +96,18 @@ TEST_CASE("zip header layout matches the standard", "[zip]")
 
     // Local file header.
     REQUIRE(u32at(image, 0) == 0x04034b50u);
-    REQUIRE(u16at(image, 4) == 20); // version needed
-    // The writer emits sizes and CRC up front, so the data-descriptor bit must be clear or a reader
-    // goes looking for a trailer that is not there. The rest of the flag word is the writer's business.
+    REQUIRE(u16at(image, 4) == 20);
+    // The writer emits sizes and CRC up front, so the data-descriptor bit must be clear or a reader looks for a missing trailer.
     REQUIRE((u16at(image, 6) & 0x08) == 0);
-    REQUIRE(u16at(image, 26) == 8); // name length
-    REQUIRE(u16at(image, 28) == 0); // extra length
+    REQUIRE(u16at(image, 26) == 8);
+    REQUIRE(u16at(image, 28) == 0);
     REQUIRE(image.substr(30, 8) == "ap.state");
 
     // EOCD is the final 22 bytes (no archive comment).
     const std::size_t eocd = image.size() - 22;
     REQUIRE(u32at(image, eocd) == 0x06054b50u);
-    REQUIRE(u16at(image, eocd + 8) == 1);  // records on this disk
-    REQUIRE(u16at(image, eocd + 10) == 1); // total records
+    REQUIRE(u16at(image, eocd + 8) == 1);
+    REQUIRE(u16at(image, eocd + 10) == 1);
     const std::uint32_t cd_size = u32at(image, eocd + 12);
     const std::uint32_t cd_off = u32at(image, eocd + 16);
     REQUIRE(cd_off + cd_size == eocd);
@@ -121,8 +120,8 @@ TEST_CASE("zip rejects malformed images", "[zip]")
 
     REQUIRE_FALSE(mth::zip::read("").has_value());
     REQUIRE_FALSE(mth::zip::read("not a zip at all").has_value());
-    REQUIRE_FALSE(mth::zip::read(good.substr(0, good.size() - 4)).has_value()); // truncated EOCD
-    REQUIRE_FALSE(mth::zip::read(good.substr(0, good.size() / 2)).has_value()); // truncated body
+    REQUIRE_FALSE(mth::zip::read(good.substr(0, good.size() - 4)).has_value());
+    REQUIRE_FALSE(mth::zip::read(good.substr(0, good.size() / 2)).has_value());
 }
 
 TEST_CASE("zip rejects a corrupted payload via CRC", "[zip]")
@@ -149,8 +148,7 @@ TEST_CASE("zip rejects an implausible uncompressed size", "[zip]")
     const std::size_t eocd = image.size() - 22;
     const std::uint32_t cd_off = u32at(image, eocd + 16);
 
-    // Claim 2 GB uncompressed in the central directory. A size the payload cannot possibly hold is a
-    // hostile or corrupt header, so the read fails instead of trusting it.
+    // Claim 2 GB uncompressed in the central directory: a size the payload cannot hold is a corrupt header, so the read fails.
     const std::size_t raw_at = cd_off + 24;
     image[raw_at + 0] = static_cast<char>(0x00);
     image[raw_at + 1] = static_cast<char>(0x00);

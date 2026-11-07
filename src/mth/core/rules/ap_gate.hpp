@@ -5,8 +5,7 @@
 namespace mth
 {
 
-// All-or-nothing: a client that half-works produces unwinnable seeds and, because AP is
-// multiplayer, releases items into a multiworld the local run can never reciprocate.
+// All-or-nothing: a half-working client produces unwinnable seeds and releases items into a multiworld it can't reciprocate.
 enum class GateVerdict
 {
     Pending, // static checks passed; waiting for proof the native mod hooks fire
@@ -14,8 +13,7 @@ enum class GateVerdict
     Refused
 };
 
-// Only worldupdate_observed is temporal. The rest are properties of the loaded binary: the mod
-// hooks no heap addresses, so nothing it depends on can drift while the game runs.
+// Only worldupdate_observed changes at runtime; the rest are properties of the loaded binary (the mod hooks no heap addresses).
 struct GateInputs
 {
     bool mod_api_present{false};
@@ -38,10 +36,8 @@ inline constexpr int kLivenessTimeoutTicks = 600;
 // Empty unless refused. Names the first failing input, so the banner alone is diagnosable.
 [[nodiscard]] std::string refusal_reason(const GateInputs &in);
 
-// The connect chokepoint's rule, kept out of App so it is testable: the test lane cannot compile
-// app.cpp without dragging in the whole PAL. Pending deliberately passes. The only input still
-// outstanding by then is the WorldUpdate liveness proof, which cannot fire until the game is
-// running, and every static probe that predicts it has already passed.
+// The connect chokepoint's rule, outside App so tests can reach it without the PAL. Pending passes: the only input left by then is the
+// WorldUpdate liveness proof, which can't fire until the game runs, and every static probe predicting it has passed.
 [[nodiscard]] bool should_refuse_connect(bool enforcing, GateVerdict v);
 
 // Terminal: once the verdict leaves Pending it never changes, so a late input cannot re-arm AP

@@ -33,8 +33,7 @@ TEST_CASE("find_riprel_load returns 0 when no opcode matches", "[sig]")
 
 TEST_CASE("find_riprel_load fails on an ambiguous match", "[sig]")
 {
-    // Two identical loads in the window: nothing says which global the fingerprint meant, and picking one
-    // would silently point g_saveManager at a foreign global. Fail like find_masked/resolve do.
+    // Two identical loads in the window: nothing says which global the fingerprint meant, and picking one would point g_saveManager at a foreign global.
     std::uint8_t buf[32] = {};
     const std::uint8_t op[] = {0x4c, 0x0f, 0x44, 0x0d};
     for (std::size_t at : {std::size_t{1}, std::size_t{16}})

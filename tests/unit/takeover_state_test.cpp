@@ -128,7 +128,7 @@ TEST_CASE("the ceiling releases every step that still wants the block", "[takeov
     mth::InputBlockState block;
     for (int i = 0; i < mth::kMaxInputBlockFrames; ++i)
         REQUIRE(block.advance(TakeoverStep::Launching, false));
-    REQUIRE(block.advance(TakeoverStep::Failed, true)); // the last frame inside the budget
+    REQUIRE(block.advance(TakeoverStep::Failed, true));
 
     REQUIRE_FALSE(block.advance(TakeoverStep::AwaitingMenu, true));
     REQUIRE_FALSE(block.advance(TakeoverStep::Launching, true));
@@ -137,8 +137,7 @@ TEST_CASE("the ceiling releases every step that still wants the block", "[takeov
 
 TEST_CASE("flush_refusal: a commit needs all three conditions, and each one alone can stop it", "[takeover]")
 {
-    // Stated as three necessary conditions rather than as the verdict for each input, so the order the
-    // guards run in stays free. #152 is the gameplay one: outside gameplay the live slot is the cleared
+    // Three necessary conditions, so the order the guards run in stays free. #152 is the gameplay one: outside gameplay the live slot is the cleared
     // title slot, and committing it destroys the run.
     for (mth::TakeoverStep step :
          {mth::TakeoverStep::Idle, mth::TakeoverStep::AwaitingMenu, mth::TakeoverStep::Launching, mth::TakeoverStep::Running, mth::TakeoverStep::Failed})
@@ -155,6 +154,6 @@ TEST_CASE("flush_refusal: a commit needs all three conditions, and each one alon
 
 TEST_CASE("flush_refusal: a running takeover in gameplay commits its own session's blob", "[takeover]")
 {
-    // Without this the invariants above are satisfied by refusing everything.
+    // Otherwise the invariants above are satisfied by refusing everything.
     REQUIRE(mth::flush_refusal(mth::FlushInputs{mth::TakeoverStep::Running, true, "seed", "slot", "seed", "slot"}) == nullptr);
 }

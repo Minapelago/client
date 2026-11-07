@@ -28,7 +28,7 @@ TEST_CASE("parse_deathlink_payload: a bounce may carry no cause", "[mth][deathli
 TEST_CASE("parse_deathlink_payload: malformed payloads yield nothing", "[mth][deathlink]")
 {
     REQUIRE_FALSE(parse_deathlink_payload("not json").has_value());
-    REQUIRE_FALSE(parse_deathlink_payload("[1,2,3]").has_value()); // valid JSON, wrong shape
+    REQUIRE_FALSE(parse_deathlink_payload("[1,2,3]").has_value());
 }
 
 TEST_CASE("deathlink_cause: names the sending player, because receivers show the cause verbatim", "[mth][deathlink]")
@@ -38,7 +38,7 @@ TEST_CASE("deathlink_cause: names the sending player, because receivers show the
 
 TEST_CASE("deathlink_cause: an unknown slot leaves the detail standing alone", "[mth][deathlink]")
 {
-    REQUIRE(deathlink_cause("", "was hollowed out") == "was hollowed out"); // no leading space
+    REQUIRE(deathlink_cause("", "was hollowed out") == "was hollowed out");
 }
 
 TEST_CASE("deathlink payload: source survives a round trip", "[mth][deathlink]")

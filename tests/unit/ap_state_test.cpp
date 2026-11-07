@@ -36,10 +36,8 @@ TEST_CASE("ap_state: ApConnected copies the parsed slot config through", "[mth][
     REQUIRE(s.config().lit_generator_lamp_mask == 0x2Au);
 }
 
-// slot_data "kear_rando" is an int mode, not a flag: 0 = vanilla (the pool carries Universal Kear items,
-// id 63, which must grant real keys), 1/2 = per-lock / per-area AP items (usable keys are meaningless and
-// stay pinned at zero). The client used to force suppression on for every session, so a received vanilla
-// kear never raised the count (issue #130).
+// slot_data "kear_rando" is an int mode: 0 = vanilla (the pool carries Universal Kear items, id 63, which must grant real keys), 1/2 = per-lock /
+// per-area AP items (usable keys stay pinned at zero). See #130.
 TEST_CASE("ap_state: vanilla kear mode does not suppress usable keys", "[mth][ap_state]")
 {
     mth::ApState s;
@@ -75,7 +73,7 @@ TEST_CASE("ap_state: has_received matches by item_id not index", "[mth][ap_state
     s.apply(mth::ApItemReceived{{3001, 0, 1, 0}});
     REQUIRE(s.has_received(3001));
     REQUIRE_FALSE(s.has_received(3000));
-    REQUIRE_FALSE(s.has_received(0)); // index 0 must not match
+    REQUIRE_FALSE(s.has_received(0));
 }
 
 TEST_CASE("ap_state: disconnect clears auth; status reflects events", "[mth][ap_state]")
@@ -130,7 +128,7 @@ TEST_CASE("ap_state: ApLocationsChecked accumulates and drains once", "[mth][ap_
     REQUIRE(std::count(batch.begin(), batch.end(), 10) == 1);
     REQUIRE(std::count(batch.begin(), batch.end(), 11) == 1);
     REQUIRE(std::count(batch.begin(), batch.end(), 12) == 1);
-    REQUIRE(s.take_server_checked_pending().empty()); // drained
+    REQUIRE(s.take_server_checked_pending().empty());
 }
 
 TEST_CASE("ap_state: reset_session drops the session stream but keeps the connection identity", "[mth][ap_state]")
@@ -187,8 +185,8 @@ TEST_CASE("ap_state: a removed id the server still lists stays a real check", "[
     s.apply(mth::ApConnected{
         .slot_data = "{}", .player_slot = 1, .checked_locations = {7}, .missing_locations = {5, 6}, .config = {.removed_locations = {5, 7, 40}}});
 
-    REQUIRE_FALSE(s.is_removed_location(5)); // in missing_locations, so the server's view wins
-    REQUIRE_FALSE(s.is_removed_location(7)); // in checked_locations, likewise
+    REQUIRE_FALSE(s.is_removed_location(5));
+    REQUIRE_FALSE(s.is_removed_location(7));
     REQUIRE(s.is_removed_location(40));
     REQUIRE(s.removed_locations().size() == 1);
     REQUIRE(s.is_valid_location(5));
@@ -201,7 +199,7 @@ TEST_CASE("ap_state: a disconnect keeps the removed set", "[mth][ap_state]")
     s.apply(mth::ApDisconnected{});
 
     REQUIRE_FALSE(s.authenticated());
-    REQUIRE(s.is_removed_location(40)); // a dropped link must not turn pruned pickups back into real items
+    REQUIRE(s.is_removed_location(40));
 }
 
 TEST_CASE("ap_state: an absent removed list leaves the set empty", "[mth][ap_state]")

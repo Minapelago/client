@@ -32,15 +32,12 @@ void sample_position()
 
 void *player()
 {
-    // Prefer the game's own live-Player pointer: it is nulled inside Player::~Player, so it goes away with
-    // the object. The note_player capture has no matching teardown signal - World::Destroy is the only thing
-    // that clears it, and a Player can be freed well before (or without) one, leaving a pointer that still
-    // looks canonical but whose fields are recycled heap. Walking it faulted on the Coltrane rest ride (#157).
-    // Null means no live player this tick; every caller re-tries, so deferring is lossless.
+    // Prefers the game's live-Player pointer, which Player::~Player nulls. The note_player capture is cleared only by World::Destroy, and a Player can be freed
+    // before or without one, leaving a canonical-looking pointer to recycled heap (faulted on the Coltrane rest ride, #157). Null means no live player this
+    // tick; callers retry.
     void *p = mod::player_component_available() ? mod::player_component() : g_player;
 
-    // A non-null-but-non-canonical value means a hook or the API resolved wrong. Fail closed (return null;
-    // upgrades/deathlink/abilities/grants all null-check) + warn once.
+    // A non-null, non-canonical value means a hook or the API resolved wrong: return null (every caller null-checks) and warn once.
     if (p != nullptr && !pal::pointer_looks_valid(p))
     {
         static bool warned = false;
@@ -72,9 +69,8 @@ void note_player(void *player)
 
 void invalidate_player()
 {
-    // World teardown frees the Player; a cached pointer past this point is a use-after-free the next time
-    // a tick writes through it (apply_upgrades then Player::UpdateStats). Position is per-player, so drop
-    // it too, since it is recaptured on the next tick's sample.
+    // World teardown frees the Player, and the next tick would write through a cached pointer (apply_upgrades, Player::UpdateStats). Position is per-player and
+    // recaptured on the next sample, so it goes too.
     g_player = nullptr;
     g_have_pos = false;
 }

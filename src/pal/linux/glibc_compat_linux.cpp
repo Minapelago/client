@@ -1,6 +1,5 @@
-// Keeps the LD_PRELOAD .so loadable on the game's older runtime glibc (floor 2.35). All
-// definitions are hidden so we resolve our own static-libc++/net refs without interposing
-// these symbols process-wide.
+// Keeps mod.so loadable on the game's older runtime glibc (floor 2.35). The definitions are hidden, so they satisfy our static libc++/net references
+// without interposing these symbols process-wide.
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
@@ -52,9 +51,7 @@ extern "C"
         return r;
     }
 
-    // arc4random is @GLIBC_2.36; back it with getentropy (@2.25) to stay under the floor.
-    // getentropy only fails on pre-3.17 kernels (unreachable here), so treat failure as fatal
-    // rather than hand libc++ non-random bytes.
+    // arc4random is @GLIBC_2.36; back it with getentropy (@2.25), which only fails on pre-3.17 kernels, so a failure aborts.
     std::uint32_t arc4random(void) noexcept
     {
         std::uint32_t v = 0;

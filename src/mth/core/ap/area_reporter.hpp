@@ -8,10 +8,8 @@ namespace mth
 
 class IApLink;
 
-// Publishes the current packed screen id (area<<16 | room) to AP data storage, but only when it
-// changes while connected. A disconnect clears the memory of the last-sent value, so the first
-// connected tick afterward always re-publishes (a freshly (re)connecting tracker immediately sees
-// correct state). Pure: no PAL/OS dependency.
+// Publishes the packed screen id (area<<16 | room) to AP data storage when it changes while connected.
+// A disconnect clears the last-sent value, so the first connected tick republishes for the reconnecting tracker. Pure.
 class AreaReporter
 {
   public:

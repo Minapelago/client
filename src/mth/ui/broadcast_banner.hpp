@@ -5,8 +5,8 @@ namespace mth
 
 class BannerQueue;
 
-// Renders the active BannerQueue message in the upper-right corner via the ImGui foreground draw
-// list (no window -> never captures input). Drawn every frame, independent of the dev-console toggle.
+// Draws the active BannerQueue message in the upper-right corner on the ImGui foreground draw list, so it never captures input. Drawn every frame
+// regardless of the dev-console toggle.
 class BroadcastBanner
 {
   public:

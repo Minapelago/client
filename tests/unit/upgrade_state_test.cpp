@@ -28,9 +28,9 @@ TEST_CASE("upgrade: counts receipts per type and flags dirty", "[upgrade]")
     make_state(s1, {kHealth, kHealth, kMagic});
     up.recompute(s1);
     REQUIRE(up.dirty());
-    REQUIRE(up.counts()[0] == 1); // Magic
-    REQUIRE(up.counts()[1] == 2); // Health
-    REQUIRE(up.counts()[4] == 0); // Trinket
+    REQUIRE(up.counts()[0] == 1);
+    REQUIRE(up.counts()[1] == 2);
+    REQUIRE(up.counts()[4] == 0);
 }
 
 TEST_CASE("upgrade: clamps to the per-type cap", "[upgrade]")
@@ -41,7 +41,7 @@ TEST_CASE("upgrade: clamps to the per-type cap", "[upgrade]")
     up.recompute(s2);
     REQUIRE(up.counts()[4] == mth::kUpgradeCaps[4]);
 
-    // Saturating, not wrapping or accumulating: one receipt over the cap lands where fifty do.
+    // Saturating: one receipt over the cap lands where fifty do.
     mth::UpgradeState just_over;
     mth::ApState s3;
     make_state(s3, std::vector<std::int64_t>(static_cast<std::size_t>(mth::kUpgradeCaps[4]) + 1, kTrinket));
@@ -68,25 +68,23 @@ TEST_CASE("upgrade: mark_applied clears dirty until counts change", "[upgrade]")
 
 TEST_CASE("upgrade: force_dirty re-arms a re-apply that survives recompute", "[upgrade]")
 {
-    // A SaveSlot::Clear (new-file, but also profile-menu / save-load while AP-connected) zeros the upgrade
-    // bitfields the kit suppressor targets. Counts are unchanged, so recompute alone would stay clean and the
-    // fields would never be refilled (the "starting items missing on load" bug). force_dirty re-arms the apply
-    // and recompute must not clear it before it lands.
+    // SaveSlot::Clear (new file, profile menu, save-load while AP-connected) zeros the upgrade bitfields the kit suppressor targets. Counts are
+    // unchanged, so recompute alone stays clean and the fields are never refilled. force_dirty re-arms the apply; recompute must not clear it.
     mth::UpgradeState up;
     mth::ApState s;
     make_state(s, {kHealth});
     up.recompute(s);
     up.mark_applied();
     up.recompute(s);
-    REQUIRE_FALSE(up.dirty()); // steady state: clean
+    REQUIRE_FALSE(up.dirty());
 
     up.force_dirty();
     REQUIRE(up.dirty());
-    up.recompute(s); // unchanged counts must NOT clear the forced re-apply
+    up.recompute(s); // unchanged counts must not clear the forced re-apply
     REQUIRE(up.dirty());
     up.mark_applied();
     up.recompute(s);
-    REQUIRE_FALSE(up.dirty()); // landed: clean again
+    REQUIRE_FALSE(up.dirty());
 }
 
 TEST_CASE("upgrade: non-upgrade items are ignored", "[upgrade]")

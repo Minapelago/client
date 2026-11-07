@@ -1,15 +1,11 @@
 // Linux Vulkan/SDL dev overlay.
 //
-// No libvulkan link at build time: VK_NO_PROTOTYPES, all entry points resolved at
-// runtime from the loader the game already opened via dlopen(RTLD_NOLOAD).
-// Hooks vkCreateSwapchainKHR/vkQueuePresentKHR to capture state and composite the
-// ImGui overlay (loadOp=LOAD) before each present. The instance/device/queue-family
-// are read from the game's renderer globals instead: the engine inlines its
-// vkCreateInstance/vkCreateDevice calls, so hooks on those never fire.
+// No libvulkan link: VK_NO_PROTOTYPES, with every entry point resolved from the loader the game already opened (dlopen RTLD_NOLOAD). Hooks
+// vkCreateSwapchainKHR/vkQueuePresentKHR and composites ImGui (loadOp=LOAD) before each present. Instance, device and queue family come from the game's
+// renderer globals because the engine inlines its vkCreateInstance/vkCreateDevice calls.
 //
-// Input: hooks ProcessSDLEvent(SDL_Event&), resolved here. Toggle key (default F1)
-// flips g_console_open; while open, input events are queued (mutex) and drained into
-// ImGui IO on the render thread before NewFrame. ImGui is not touched on the event thread.
+// Input: the ProcessSDLEvent(SDL_Event&) hook. The toggle key (default F1) flips g_console_open; while open, events are queued under a mutex and fed to
+// ImGui IO on the render thread before NewFrame. The event thread never touches ImGui.
 
 #define VK_NO_PROTOTYPES
 #include <atomic>
@@ -139,8 +135,7 @@ PFN_ProcessSDLEvent g_orig_process = nullptr;
 std::atomic<bool> g_console_open{false};
 std::atomic<bool> g_login_open{true};
 
-// Published by the render thread after each frame; read (one frame in arrears) by
-// the input hook to decide what to swallow from the game.
+// Published by the render thread after each frame; the input hook reads it a frame late to decide what to swallow.
 std::atomic<bool> g_imgui_want_keyboard{false};
 std::atomic<bool> g_imgui_want_mouse{false};
 
@@ -317,8 +312,7 @@ static bool feed_imgui(const SDL_Event &e)
     }
 }
 
-// Classifier (no ImGui): mirrors the event types feed_imgui() handles.
-// Used on the event thread where ImGui must not be touched.
+// Mirrors the event types feed_imgui() handles, without ImGui, for the event thread.
 static bool is_imgui_input_event(const SDL_Event &e)
 {
     switch (e.type)
@@ -760,19 +754,15 @@ bool state_complete_for_render()
 // Hook replacements.
 // ---------------------------------------------------------------------------
 
-// The game stores its Vulkan handles as named globals in the main module. Under native
-// modding we load after ycEngine::Run has already created the instance/device, so the
-// vkCreateInstance/vkCreateDevice hooks never fire - read the globals instead.
-// g_vkInst/g_vkPhysDev/g_vkDev are handles; g_vkGfxQueueIdx is the graphics queue family.
+// The game's Vulkan handles are named globals in the main module, already created by ycEngine::Run when the mod loads. g_vkInst/g_vkPhysDev/g_vkDev
+// are handles; g_vkGfxQueueIdx is the graphics queue family.
 constexpr const char *kSymVkInstance = "g_vkInst";
 constexpr const char *kSymVkPhysDev = "g_vkPhysDev";
 constexpr const char *kSymVkDevice = "g_vkDev";
 constexpr const char *kSymVkGfxFamily = "g_vkGfxQueueIdx";
 
-// The game's active render window (ycRenderer::s_mainWindow -> ycRenderWindow*) holds the swapchain and
-// its format/extent. Under native modding the game creates the swapchain before our vkCreateSwapchainKHR
-// hook is installed, so that hook never fires and resources are never built; read these from the window
-// and build lazily on first present instead. Offsets verified on build 8de7a6b5 (re-verify on game update).
+// The game's render window (ycRenderer::s_mainWindow -> ycRenderWindow*) holds the swapchain, format and extent. The swapchain exists before the
+// vkCreateSwapchainKHR hook does, so resources are built from these on first present. Offsets verified on build 8de7a6b5.
 constexpr const char *kSymMainWindow = "_ZN10ycRenderer12s_mainWindowE"; // ycRenderWindow** (single deref)
 constexpr std::ptrdiff_t kRWExtentWidthOff = 0x18;
 constexpr std::ptrdiff_t kRWExtentHeightOff = 0x1c;
@@ -781,9 +771,8 @@ constexpr std::ptrdiff_t kRWFormatOff = 0xb8;    // VkFormat (u32)
 
 bool g_globals_warned = false;
 
-// Populate instance/physical-device/device/queue-family from the game's globals.
-// Idempotent and cheap: symbol addresses are resolved once and cached; each call only
-// fills fields still unset (the game may set the globals slightly after we first look).
+// Fills instance, physical device, device and queue family from the game's globals. Symbols resolve once; each call fills only unset fields, since the
+// game may set the globals after the first look.
 void populate_state_from_globals()
 {
     if (g_state.instance != VK_NULL_HANDLE && g_state.physical_device != VK_NULL_HANDLE && g_state.device != VK_NULL_HANDLE && g_state.queue_family_known)
@@ -830,9 +819,8 @@ void populate_state_from_globals()
     }
 }
 
-// Recover the game's swapchain from ycRenderer::s_mainWindow and build our render resources, for the case
-// where we loaded after the game already created the swapchain (so repl_vkCreateSwapchainKHR never fired).
-// No-op once resources are ready; the create hook takes over for later recreates (resize).
+// Adopts the game's swapchain from ycRenderer::s_mainWindow and builds render resources when repl_vkCreateSwapchainKHR never fired. No-op once resources
+// are ready; the create hook handles later recreates (resize).
 void try_adopt_game_swapchain()
 {
     if (g_state.resources_ready.load(std::memory_order_acquire) || g_state.device == VK_NULL_HANDLE)
@@ -868,7 +856,7 @@ VKAPI_ATTR VkResult VKAPI_CALL repl_vkCreateSwapchainKHR(VkDevice device, const 
     if (r != VK_SUCCESS || pSwapchain == nullptr || pCreateInfo == nullptr)
         return r;
 
-    populate_state_from_globals(); // instance/phys/device/family come from game globals, not vkCreateDevice
+    populate_state_from_globals(); // instance/phys/device/family come from game globals
 
     if (g_state.device == VK_NULL_HANDLE)
     {
@@ -897,7 +885,7 @@ VKAPI_ATTR VkResult VKAPI_CALL repl_vkQueuePresentKHR(VkQueue queue, const VkPre
         g_state.queue = queue;
 
     populate_state_from_globals();
-    try_adopt_game_swapchain(); // native modload: recover the pre-created swapchain the create hook missed
+    try_adopt_game_swapchain(); // recover the pre-created swapchain the create hook missed
 
     if (!state_complete_for_render() || pPresentInfo == nullptr)
     {
@@ -1024,12 +1012,8 @@ VKAPI_ATTR VkResult VKAPI_CALL repl_vkQueuePresentKHR(VkQueue queue, const VkPre
 // ---------------------------------------------------------------------------
 // Deferred hook installation.
 //
-// In the Steam pressure-vessel container libvulkan loads after our constructor, and the
-// vkCreate* hooks must be in place before the game's create calls (a game tick is too
-// late - it runs after renderer init). A background thread polls for libvulkan and
-// installs the instant it appears (the libvulkan-load -> vkCreateInstance gap is ~150ms).
-// We deliberately do NOT hook dlopen: interposing it makes glibc resolve $ORIGIN/RUNPATH
-// against our .so instead of the caller, breaking the game's relative dlopen of Steam.
+// When libvulkan is not mapped yet, a background thread polls for it and installs the hooks as it appears. Hooking dlopen instead would make glibc
+// resolve $ORIGIN/RUNPATH against this .so and break the game's relative dlopen of Steam.
 // ---------------------------------------------------------------------------
 
 std::mutex g_install_mtx;
@@ -1044,9 +1028,8 @@ std::atomic<bool> g_vk_watch_stop{false};
 [[clang::no_destroy]] ScopedHook g_present_hook;
 [[clang::no_destroy]] ScopedHook g_process_sdl_event_hook;
 
-// True if libvulkan is already mapped. Uses dl_iterate_phdr, which (unlike a failing
-// dlopen probe) never sets dlerror - critical because we run inside the game's own
-// dlopen and it checks dlerror() afterward (e.g. for the Steam library).
+// True if libvulkan is already mapped. dl_iterate_phdr never sets dlerror, which a failing dlopen probe would, and the game checks dlerror() after its
+// own dlopen (e.g. for the Steam library).
 bool libvulkan_loaded()
 {
     bool found = false;
@@ -1064,8 +1047,8 @@ bool libvulkan_loaded()
     return found;
 }
 
-// Install the Vulkan + SDL hooks once libvulkan is loaded. Called from the constructor
-// and the watch thread; the try_lock + installed flag make concurrent calls a no-op.
+// Installs the Vulkan and SDL hooks once libvulkan is loaded. Called from overlay_start and the watch thread; try_lock and the installed flag make
+// concurrent calls a no-op.
 bool try_install_vulkan_hooks()
 {
     if (g_vk_hooks_installed.load(std::memory_order_acquire))
@@ -1134,13 +1117,6 @@ bool try_install_vulkan_hooks()
     return true;
 }
 
-// libvulkan loads after we initialize (in the pressure-vessel container the game maps it
-// during renderer init, and the loader is inlined into ycEngine::Run - which is already
-// executing by the time we run, so its entry can't be hooked). So we poll for libvulkan
-// and install the moment it maps; the load -> vkCreateInstance gap is ~150ms, plenty of
-// margin. We deliberately do NOT hook dlopen: interposing it makes glibc resolve
-// $ORIGIN/RUNPATH against our .so instead of the caller, breaking the game's relative
-// dlopen of the Steam library.
 void watch_for_libvulkan()
 {
     using namespace std::chrono_literals;
@@ -1168,9 +1144,7 @@ void overlay_start(IOverlayUi *ui)
     g_login_key = pal::parse_login_key<SDL_Keycode>(std::getenv("MTHAP_LOGIN_KEY"), g_toggle_key, SDLK_F1, SDLK_BACKQUOTE);
     pal::logf(pal::LogLevel::Info, "overlay: login toggle key = 0x%x (SDLK)", static_cast<int>(g_login_key));
 
-    // Fast path: libvulkan already loaded (native run, or loaded before us). Otherwise watch for
-    // libvulkan on a background thread and install the moment it maps (before the engine's inlined
-    // vkCreateInstance).
+    // Fast path: libvulkan is already mapped. Otherwise a background thread installs the hooks once it maps.
     if (!try_install_vulkan_hooks())
     {
         pal::logf(pal::LogLevel::Info, "overlay: libvulkan not loaded yet; watching for it");

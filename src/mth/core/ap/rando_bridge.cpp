@@ -39,7 +39,7 @@ bool RandoBridge::is_removed(int collection_slot) const
 
 bool RandoBridge::is_ap_location(int collection_slot) const
 {
-    // No per-call logging here: this is queried for every location every frame (it floods the log).
+    // No per-call logging: this runs for every location every frame.
     if (collection_slot < 0)
         return false;
     const std::int64_t id = ap_loc_id(collection_slot);
@@ -51,7 +51,7 @@ bool RandoBridge::is_checked(int collection_slot) const
     if (collection_slot < 0)
         return false;
     if (state_.is_removed_location(ap_loc_id(collection_slot)))
-        return true; // pruned by the seed, not a check the player actually made
+        return true; // pruned by the seed; the player never made this check
     if (save_ != nullptr)
         return save_->is_checked(collection_slot);
     return sent_.count(ap_loc_id(collection_slot)) != 0;
@@ -132,8 +132,7 @@ void RandoBridge::flush()
     std::vector<std::int64_t> ids;
     if (save_ != nullptr)
     {
-        // A stale statefile (written before the slot_data prune, or by any future checked_ writer) must
-        // not resend an id the server has never heard of.
+        // A stale statefile (written before the slot_data prune) must not resend an id the server has never heard of.
         for (int slot : save_->checked())
             if (!is_removed(slot))
                 ids.push_back(ap_loc_id(slot));

@@ -198,10 +198,10 @@ TEST_CASE("rando_bridge: reconcile_server_checked marks without sending", "[mth]
     mth::RandoBridge bridge(link, state);
     bridge.attach_save_state(save);
 
-    REQUIRE(bridge.reconcile_server_checked(5)); // newly checked
+    REQUIRE(bridge.reconcile_server_checked(5));
     REQUIRE(bridge.is_checked(5));
     REQUIRE(save.is_checked(5));
-    REQUIRE(link.sent_locations.empty()); // never sent to the server
+    REQUIRE(link.sent_locations.empty());
 }
 
 TEST_CASE("rando_bridge: reconcile_server_checked dedups and rejects non-AP", "[mth][rando]")
@@ -213,9 +213,9 @@ TEST_CASE("rando_bridge: reconcile_server_checked dedups and rejects non-AP", "[
     mth::RandoBridge bridge(link, state);
     bridge.attach_save_state(save);
 
-    REQUIRE(bridge.reconcile_server_checked(5));       // first time
-    REQUIRE_FALSE(bridge.reconcile_server_checked(5)); // already checked
-    REQUIRE_FALSE(bridge.reconcile_server_checked(7)); // not a valid AP location
+    REQUIRE(bridge.reconcile_server_checked(5));
+    REQUIRE_FALSE(bridge.reconcile_server_checked(5));
+    REQUIRE_FALSE(bridge.reconcile_server_checked(7));
     REQUIRE_FALSE(bridge.reconcile_server_checked(-1));
     REQUIRE(link.sent_locations.empty());
 }
@@ -227,7 +227,7 @@ TEST_CASE("rando_bridge: reconcile_server_checked is a no-op without a save", "[
     connect_with(state, {ap_loc_id(5)});
     mth::RandoBridge bridge(link, state); // no attach_save_state
 
-    REQUIRE_FALSE(bridge.reconcile_server_checked(5)); // ids stay pending in ApState until inbound-ready
+    REQUIRE_FALSE(bridge.reconcile_server_checked(5));
     REQUIRE_FALSE(bridge.is_checked(5));
     REQUIRE(link.sent_locations.empty());
 }
@@ -239,15 +239,15 @@ TEST_CASE("rando_bridge: checked_slots exposes the persisted set (nullptr withou
     mth::ApState state;
     connect_with(state, {ap_loc_id(5), ap_loc_id(9)});
     mth::RandoBridge bridge(link, state);
-    REQUIRE(bridge.checked_slots() == nullptr); // no save attached yet
+    REQUIRE(bridge.checked_slots() == nullptr);
 
     mth::ApSaveState save = detached();
     bridge.attach_save_state(save);
     REQUIRE(bridge.checked_slots() != nullptr);
     REQUIRE(bridge.checked_slots()->empty());
 
-    REQUIRE(bridge.reconcile_server_checked(5)); // server-collected (Collect/coop)
-    bridge.on_location_collected(9);             // live player collect
+    REQUIRE(bridge.reconcile_server_checked(5));
+    bridge.on_location_collected(9); // live player collect
     REQUIRE(*bridge.checked_slots() == std::set<int>{5, 9});
 }
 
@@ -266,7 +266,7 @@ TEST_CASE("rando_bridge: detach stops writing the released save and clears its d
 
     bridge.detach_save_state();
     bridge.on_location_collected(6);
-    REQUIRE_FALSE(save.is_checked(6)); // the released save must not keep receiving checks
+    REQUIRE_FALSE(save.is_checked(6));
     REQUIRE(bridge.checked_slots() == nullptr);
 }
 
@@ -289,7 +289,7 @@ TEST_CASE("rando_bridge: a new server's flush never resends the previous save's 
     mth::ApSaveState save_b = detached();
     bridge.attach_save_state(save_b);
     bridge.flush();
-    REQUIRE(link.sent_locations.empty()); // A's checked-set must never reach B
+    REQUIRE(link.sent_locations.empty());
 }
 
 TEST_CASE("rando_bridge: reset_session re-arms the one-shot goal for the next server", "[mth][rando]")
@@ -302,11 +302,11 @@ TEST_CASE("rando_bridge: reset_session re-arms the one-shot goal for the next se
 
     bridge.send_goal();
     bridge.send_goal();
-    REQUIRE(link.goal_calls == 1); // one-shot within a session
+    REQUIRE(link.goal_calls == 1);
 
     bridge.reset_session();
     bridge.send_goal();
-    REQUIRE(link.goal_calls == 2); // a new session must be able to send its own goal
+    REQUIRE(link.goal_calls == 2);
 }
 
 TEST_CASE("rando_bridge: a removed location reads as a checked AP location", "[mth][rando]")
@@ -317,8 +317,8 @@ TEST_CASE("rando_bridge: a removed location reads as a checked AP location", "[m
     state.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .missing_locations = {ap_loc_id(5)}, .config = {.removed_locations = {ap_loc_id(40)}}});
     mth::RandoBridge bridge(link, state);
 
-    REQUIRE(bridge.is_ap_location(40)); // opens the suppression gates
-    REQUIRE(bridge.is_checked(40));     // pickup despawn, shop sold-out, IsItemCollected redirect
+    REQUIRE(bridge.is_ap_location(40));
+    REQUIRE(bridge.is_checked(40));
     REQUIRE(bridge.is_removed(40));
     REQUIRE(bridge.is_ap_location(5));
     REQUIRE_FALSE(bridge.is_checked(5));
@@ -358,7 +358,7 @@ TEST_CASE("rando_bridge: a removed location is not reconciled or scouted", "[mth
     mth::RandoBridge bridge(link, state);
     bridge.attach_save_state(save);
 
-    REQUIRE_FALSE(bridge.reconcile_server_checked(40)); // must not enter checked_ and get re-flushed
+    REQUIRE_FALSE(bridge.reconcile_server_checked(40));
     REQUIRE_FALSE(save.is_checked(40));
 
     bridge.request_scouts({5, 40});
@@ -375,7 +375,7 @@ TEST_CASE("rando_bridge: a removed location suppresses without a save attached",
     state.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .missing_locations = {ap_loc_id(5)}, .config = {.removed_locations = {ap_loc_id(40)}}});
     mth::RandoBridge bridge(link, state); // no attach_save_state
 
-    REQUIRE(bridge.is_checked(40)); // session fallback must not shadow the removed set
+    REQUIRE(bridge.is_checked(40));
     bridge.on_location_collected(40);
     REQUIRE(link.sent_locations.empty());
 }

@@ -14,8 +14,7 @@ LoginWindow::LoginWindow(App &app) : app_(app)
 {
 }
 
-// Deferred rather than done in the ctor: the overlay is built during App construction, before
-// App can answer. Only fills empty fields, so it can never clobber what the player typed.
+// Deferred out of the ctor: the overlay is built during App construction, before App can answer. Fills only empty fields, so it never clobbers input.
 void LoginWindow::prefill_once()
 {
     if (prefilled_)
@@ -63,8 +62,7 @@ void LoginWindow::draw(bool login_open)
         break;
     case ConnectionPhase::Disconnected:
     case ConnectionPhase::Error:
-        // App refuses the call regardless; disabling the button is what makes that visible
-        // here, since a gate refusal never reaches ApState and so never becomes an Error phase.
+        // App refuses the call anyway, but a gate refusal never reaches ApState as an Error phase, so the disabled button is what shows it.
         ImGui::BeginDisabled(gate_blocks);
         if (ImGui::Button("Connect"))
             app_.connect(server_.data(), slot_.data(), password_.data());

@@ -18,9 +18,8 @@ constexpr std::uint16_t kVersionNeeded = 20;    // 2.0: the deflate floor
 constexpr std::uint16_t kDosEpochDate = 0x0021; // 1980-01-01
 constexpr std::uint16_t kDosEpochTime = 0x0000;
 
-// A header's uncompressed size is attacker-controlled up to 4 GB, and it is what we resize to before
-// inflating. Bound it two ways: an absolute ceiling far above any save, and deflate's best possible
-// ratio, so a few corrupt bytes cannot ask for a gigabyte.
+// A header's uncompressed size is attacker-controlled up to 4 GB and sizes the inflate buffer, so it is bounded by an absolute ceiling far above
+// any save and by deflate's best possible ratio.
 constexpr std::uint32_t kMaxEntrySize = 256u * 1024u * 1024u;
 constexpr std::uint32_t kMaxDeflateRatio = 1032;
 
@@ -50,8 +49,7 @@ std::uint32_t get32(std::string_view s, std::size_t off)
            (static_cast<std::uint32_t>(static_cast<unsigned char>(s[off + 3])) << 24);
 }
 
-// Rejects anything that could direct an extractor outside its target directory. Our own names are
-// flat, but a container on disk is user-writable.
+// Rejects names that could direct an extractor outside its target directory, since a container on disk is user-writable.
 bool name_is_safe(std::string_view name)
 {
     if (name.empty() || name.size() > 4096)
@@ -102,8 +100,7 @@ std::string deflate_raw(std::string_view data)
     return out;
 }
 
-// Sized rather than streaming: the uncompressed length is recorded in the header, so a stream that
-// does not fill it exactly is corrupt.
+// Inflates into a buffer of the header's uncompressed length; a stream that does not fill it exactly is corrupt.
 bool inflate_raw(std::string_view data, std::uint32_t expected, std::string &out)
 {
     out.clear();

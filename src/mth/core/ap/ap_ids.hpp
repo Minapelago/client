@@ -32,9 +32,8 @@ inline constexpr int game_item_type(std::int64_t ap_item_id_)
     return static_cast<int>(ap_item_id_ - kItemBase);
 }
 
-// Whether a type is a real s_rItems row. The vanilla item segment is 1000 ids wide but the table has only
-// kItemTypeCount rows, so a server (or console) id in the tail carries no itemType and granting it would
-// index the table out of bounds.
+// Whether a type is a real s_rItems row. The vanilla segment is 1000 ids wide but the table has kItemTypeCount rows, so granting an id in the
+// tail would index out of bounds.
 [[nodiscard]] inline constexpr bool is_valid_item_type(int item_type) noexcept
 {
     return item_type >= 0 && item_type < layout::kItemTypeCount;
@@ -48,21 +47,17 @@ inline constexpr int kUpgradeCount = 5;
 inline constexpr int kUpgradeCaps[kUpgradeCount] = {10, 18, 4, 10, 6}; // Magic, Health, Spark, Vial, Trinket (full-game counts)
 inline constexpr int kVialUpgradeIndex = 3;                            // Vial's slot in the index order above
 
-// SaveSlot bitfield value granting `count` of capacity-upgrade `upgrade_index` (low `count` bits;
-// popcount == capacity). Vials overwrite `current` instead of OR-ing it: the vanilla new file seeds a
-// 3-bit vial base an OR can't clear (#83), and the field is vial-only so overwriting is safe.
+// SaveSlot bitfield value granting `count` of capacity-upgrade `upgrade_index` (low `count` bits; popcount == capacity). Vials overwrite `current`:
+// the vanilla new file seeds a 3-bit vial base an OR can't clear (#83), and the field holds only vials.
 [[nodiscard]] inline constexpr std::uint32_t upgrade_field_value(int upgrade_index, int count, std::uint32_t current) noexcept
 {
     const std::uint32_t bits = count <= 0 ? 0u : (count >= 32 ? 0xFFFFFFFFu : (1u << count) - 1u);
     return upgrade_index == kVialUpgradeIndex ? bits : (current | bits);
 }
 
-// Plausibility bound for a capacity-upgrade SaveSlot field read *before* we write it: a valid field is a
-// low-bit popcount mask holding at most kUpgradeCaps[index] bits, so it never exceeds this max. A read above
-// it means the offset drifted onto unrelated memory (a pointer/float/large counter) - the caller fails closed.
-// Depends on a well-formed apworld never granting more than kUpgradeCaps[index] of an upgrade: an over-grant
-// writes a field above this bound, so the NEXT resend reads it back as out-of-domain and disables upgrades
-// for the session.
+// Plausibility bound for a capacity-upgrade SaveSlot field read before we write it: a valid field is a low-bit mask of at most kUpgradeCaps[index]
+// bits. A larger read means the offset drifted and the caller fails closed. An apworld over-grant also exceeds it, so the next resend disables
+// upgrades for the session.
 [[nodiscard]] inline constexpr bool upgrade_field_in_domain(int upgrade_index, std::uint32_t value) noexcept
 {
     const int cap = (upgrade_index >= 0 && upgrade_index < kUpgradeCount) ? kUpgradeCaps[upgrade_index] : 0;
@@ -70,9 +65,8 @@ inline constexpr int kVialUpgradeIndex = 3;                            // Vial's
     return value <= max;
 }
 
-// New held-vial count that preserves the missing amount (old_max - old_held) across a capacity change,
-// clamped to [0, new_max]. So a capacity grant mid-run raises the ceiling without refilling flasks, and a
-// full player stays full. Used by the mod-API vial path (PlayerSetMaxVials/PlayerSetVials).
+// New held-vial count keeping the missing amount (old_max - old_held) across a capacity change, clamped to [0, new_max]: a capacity grant raises
+// the ceiling without refilling, and a full player stays full. Used by PlayerSetMaxVials/PlayerSetVials.
 [[nodiscard]] inline constexpr int maintained_vial_held(int old_max, int old_held, int new_max) noexcept
 {
     const int held = old_held + (new_max - old_max);
@@ -89,11 +83,9 @@ inline constexpr int upgrade_index(std::int64_t ap_item_id_)
     return static_cast<int>(ap_item_id_ - kUpgradeItemBase); // valid only when is_capacity_upgrade_item()
 }
 
-// Train fast-travel: the 5 destinations are vanilla itemTypes 0x5f..0x63 (95..99, "tickets"). Whether a
-// destination is travelable lives in a SaveSlot unlocked-lines bitfield, one bit per line
-// (bit = 1 << (itemType - kTrainTicketItemTypeBase)). AP unlocks a destination by setting its bit; the game
-// otherwise sets it for free just by visiting the station (#98), so the client clamps the field to the mask
-// of AP-granted tickets each frame.
+// Train fast-travel: the 5 destinations are vanilla itemTypes 0x5f..0x63 (95..99, "tickets"). A SaveSlot unlocked-lines bitfield holds one bit per
+// line (1 << (itemType - kTrainTicketItemTypeBase)). The game sets a bit just for visiting the station (#98), so the client clamps the field to the
+// AP-granted tickets each frame.
 inline constexpr int kTrainTicketItemTypeBase = 0x5f; // itemType 95 == train line 0
 inline constexpr int kTrainLineCount = 5;
 
@@ -108,8 +100,8 @@ inline constexpr int kTrainLineCount = 5;
     return is_train_ticket_item_type(item_type) ? (1u << (item_type - kTrainTicketItemTypeBase)) : 0u;
 }
 
-// Cancel a picked line whose AP ticket isn't granted (96-99). Line 0 (Ossex/HUB, 95) rides on the Train
-// Pass alone, so it is never blocked; non-ticket codes (100 Exit, 101 locked box) aren't either.
+// True when a picked line (96-99) lacks its AP ticket. Line 0 (Ossex/HUB, 95) needs only the Train Pass, and non-ticket codes (100 Exit, 101
+// locked box) never block.
 [[nodiscard]] inline constexpr bool train_destination_blocked(int selected_code, std::uint32_t granted_mask) noexcept
 {
     if (selected_code == kTrainTicketItemTypeBase) // 95 = Ossex/HUB, always rideable with the pass
@@ -118,10 +110,9 @@ inline constexpr int kTrainLineCount = 5;
     return bit != 0 && (granted_mask & bit) == 0;
 }
 
-// The generic Train Pass (boarding, as opposed to a per-line ticket) and the collection index the
-// station's donation machine dispenses it at. 10000 donated bones make the machine call
-// Items::OnPickup(kTrainPassLocIdx, kTrainPassItemType), which is the vanilla train unlock; the pass is
-// an AP item, and the location is not in the apworld, so nothing else refuses that grant (#162).
+// The generic Train Pass and the collection index the station's donation machine dispenses it at. 10000 donated bones make the machine call
+// Items::OnPickup(kTrainPassLocIdx, kTrainPassItemType), the vanilla train unlock. The pass is an AP item and the location isn't in the apworld, so
+// the client has to refuse that grant itself (#162).
 inline constexpr int kTrainPassItemType = 0x5e; // 94
 inline constexpr int kTrainPassLocIdx = 149;    // Ticket_Pass
 
@@ -130,12 +121,9 @@ inline constexpr int kTrainPassLocIdx = 149;    // Ticket_Pass
     return loc_idx == kTrainPassLocIdx && item_type == kTrainPassItemType;
 }
 
-// Donating to the machine accumulates a SaveSlot counter, and the machine completes once that counter
-// passes kTicketMachineGoal. The goal is compiled in, so a cheaper donation comes from pre-seeding the
-// counter with the part the player does not have to pay: seeding 10000-cost leaves exactly `cost` owing.
-// Seeding beats topping the counter up on arrival at a threshold, because the game clamps how much the
-// player can dial in to what is still owed - so the seed also stops them over-paying, which a late top-up
-// (the deposit itself is unclamped) would not. cost is clamped to a payable, non-free range.
+// Donating accumulates a SaveSlot counter; the machine completes once it passes kTicketMachineGoal (compiled in). Pre-seeding the counter with
+// 10000-cost leaves exactly `cost` owing, and the game clamps the dial to what is still owed, so the player can't overpay (the deposit itself is
+// unclamped). cost is clamped to a payable, non-free range.
 inline constexpr unsigned kTicketMachineGoal = 10000;
 inline constexpr int kTrainPassCostDefault = 1000;
 
@@ -188,9 +176,8 @@ inline constexpr int weapon_itemtype(int family, int tier)
     return kWeaponItemTypes[family][tier - 1];
 }
 
-// Running per-family receipt count, shared by the granter (which tier does this receipt hand out) and by
-// the ownership clamp (which weapon bits did the seed authorize). Both must count the same way or the
-// clamp revokes a weapon the granter legitimately handed out.
+// Running per-family receipt count, shared by the granter (tier to hand out) and the ownership clamp (bits authorized). Both must count the same
+// way or the clamp revokes a granted weapon.
 struct WeaponTally
 {
     int tiers[kWeaponFamilyCount]{};
@@ -204,10 +191,8 @@ struct WeaponTally
         return ++tiers[weapon_family(ap_item_id_)];
     }
 
-    // SaveSlot ownership bits the tally authorizes for `family`. The granter hands out tiers in order and
-    // the engine bit for an itemType is (itemType - 2) % 3, so tier N sets bit N-1 and N tiers is exactly
-    // the low N bits. Saturates at the top tier: nothing beyond it is ever granted (weapon_itemtype fails),
-    // so a surplus receipt must not authorize a fourth bit.
+    // SaveSlot ownership bits authorized for `family`. Tiers are granted in order and the engine bit for an itemType is (itemType - 2) % 3, so N
+    // tiers is the low N bits. Saturates at the top tier, since nothing beyond it is ever granted.
     [[nodiscard]] constexpr std::uint32_t owned_mask(int family) const
     {
         if (family < 0 || family >= kWeaponFamilyCount)
@@ -217,9 +202,8 @@ struct WeaponTally
     }
 };
 
-// True once any family has an authorized tier, over the same per-family masks the ownership clamp enforces.
-// The intro chest gate arms on this: its equip-only mode lists owned weapons only, so demoting the chest
-// before a grant lands leaves the player with nothing to arm.
+// True once any family has an authorized tier (the clamp's masks). The intro chest gate arms on this: its equip-only mode lists owned weapons only,
+// so demoting the chest before a grant lands leaves nothing to arm.
 [[nodiscard]] constexpr bool any_weapon_authorized(const std::uint32_t (&authorized)[kWeaponFamilyCount])
 {
     for (int fam = 0; fam < kWeaponFamilyCount; ++fam)
@@ -301,9 +285,8 @@ inline constexpr std::int64_t kBlockerItemBase = 4000;      // Mirrors End short
 inline constexpr std::int64_t kTrapItemBase = 5000;         // modifier traps (kTrapItemBase + modifier index)
 inline constexpr std::int64_t kTrapSegmentWidth = 1000;
 
-// The apworld's five "<color> Astral Platforms" items sit at the bottom of the blocker segment, in its
-// own color order. The game's Color property uses a different one, so an id decodes through this table
-// rather than by arithmetic. Index = id - kBlockerItemBase, value = the game color the switch reports.
+// The apworld's five "<color> Astral Platforms" items sit at the bottom of the blocker segment in the apworld's color order, which differs from the
+// game's Color property. Index = id - kBlockerItemBase, value = the game color the switch reports.
 inline constexpr int kAstralPlatformCount = 5;
 inline constexpr std::array<int, kAstralPlatformCount> kAstralPlatformColors{
     1, // 4000 green  -> Nox's Bayou mirror
@@ -340,9 +323,8 @@ inline constexpr std::array<int, kAstralPlatformCount> kAstralPlatformColors{
 inline constexpr std::int64_t kMMFirstDoubleKearBlockID = 2304;
 inline constexpr std::int64_t kMMSecondDoubleKearBlockID = 2306;
 
-// The locks each area kear item removes (kear_rando=2), one row per lock: {area item id, kear-block
-// item id of the lock}. The kear-block ids are also the per-lock items of kear_rando=1, apart from
-// 2306, which the 2304 item removes alongside its own lock.
+// Locks each area kear item removes (kear_rando=2), one row per lock: {area item id, kear-block item id}. The kear-block ids are also the
+// kear_rando=1 per-lock items, except 2306, which item 2304 removes with its own lock.
 struct AreaLock
 {
     std::int64_t area_item_id;
@@ -410,9 +392,8 @@ inline constexpr std::int64_t ap_loc_id(int collection_idx)
     return kLocBase + collection_idx;
 }
 
-// Legovich (NPCBehavior_WeaponMerchant) weapon-upgrade shop slots. Their AP-checked count drives the shop's
-// out-of-stock total, which gates the Armand encounter; that count must reflect purchases, not weapons received
-// from the multiworld (#67 follow-up), but only when the shop itself is asking.
+// Legovich (NPCBehavior_WeaponMerchant) weapon-upgrade shop slots. Their AP-checked count drives the out-of-stock total that gates the Armand
+// encounter, so when the shop asks, it counts purchases and ignores weapons from the multiworld (#67).
 inline constexpr int kLegovichLocations[] = {174, 175, 176, 177, 178};
 
 [[nodiscard]] inline constexpr bool is_legovich_location(int loc)

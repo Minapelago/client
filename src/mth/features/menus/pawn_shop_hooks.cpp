@@ -13,9 +13,8 @@
 namespace
 {
 
-// Pawnty (PawnShopNPC::OnNPCEvent) disable. event 0x1f is InteractComponent::IsInteractable's veto
-// query: a nonzero float at info+0x8 means "not interactable" -> no prompt. No-op everything else so
-// no dialogue line is set and the sell menu never opens.
+// Pawnty (PawnShopNPC::OnNPCEvent) disable. Event 0x1f is InteractComponent::IsInteractable's veto query: a nonzero float at info+0x8 hides the prompt. Every
+// other event is swallowed so no dialogue or sell menu opens.
 constexpr unsigned kPawnInteractableQueryEvent = 0x1f;
 constexpr std::ptrdiff_t kPawnVetoFloatOff = 0x8; // InteractEventInfo veto float
 std::function<bool()> g_pawn_disable;
@@ -39,8 +38,7 @@ void repl_pawn_npc(void *self, unsigned event, void *info)
 namespace mth
 {
 
-// When disable() returns true the detour no-ops every event and vetoes the interactable query (no
-// prompt); otherwise it calls through.
+// While disable() is true the detour swallows every event and vetoes the interactable query; otherwise it calls through.
 void install_pawn_shop_hook(std::function<bool()> disable)
 {
     g_pawn_disable = std::move(disable);

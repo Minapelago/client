@@ -19,13 +19,11 @@ struct BannerSegment
     std::uint32_t rgba{};
 };
 
-// PrintJSON types addressed to the room rather than to one slot (chat, /say, countdowns, command
-// replies). They carry no slot to match against, so the slot gate below would drop them all.
+// PrintJSON types addressed to the room (chat, /say, countdowns, command replies). They carry no slot to match, so the slot gate would drop them.
 [[nodiscard]] bool broadcast_is_announcement(std::string_view print_type);
 
-// Relevant when the message is an announcement, or our slot is the message actor (`slot`), the item
-// receiver (`receiving`), or the item finder (`item_player`, i.e. a check we sent). The team must match
-// either way. Absent team passes (single-team default); only a present, different team filters out.
+// Relevant when the message is an announcement, or our slot is the actor (`slot`), item receiver (`receiving`) or item finder (`item_player`, a
+// check we sent). The team must match; an absent team passes (single-team default).
 [[nodiscard]] bool broadcast_relevant(std::string_view print_type, int our_team, int our_slot, std::optional<int> team, std::optional<int> slot,
                                       std::optional<int> receiving, std::optional<int> item_player);
 
@@ -33,9 +31,8 @@ struct BannerSegment
 // type/flags). Alpha is 255; the fade scales it.
 [[nodiscard]] std::uint32_t banner_color(std::string_view type, std::string_view explicit_color, unsigned item_flags, unsigned hint_status, bool is_self);
 
-// Attribution line for an inbound deathlink. The AP convention is that `cause` is already a full
-// sentence naming the dead player, so it is shown verbatim; `source` (who died, by slot name or by a
-// character name from within the sender's game) only carries the line when the sender supplied no cause.
+// Attribution line for an inbound deathlink. By AP convention `cause` is a full sentence naming the dead player and is shown verbatim; `source`
+// is used only when there is no cause.
 [[nodiscard]] std::string deathlink_banner_text(std::string_view source, std::string_view cause);
 
 struct BannerFrame
@@ -44,11 +41,9 @@ struct BannerFrame
     float alpha{}; // 0..1
 };
 
-// Thread-safe FIFO that shows up to kMaxVisible messages stacked at once: push() on the producer thread,
-// update(now) on the render thread. Each visible message keeps its own hold+fade timer; a message waits for
-// both a free slot and the promotion interval, so a burst arriving in one frame staggers in rather than
-// landing as a block. `now` is injected (monotonic seconds, e.g. ImGui::GetTime()) so the queue/fade logic
-// stays testable.
+// Thread-safe FIFO showing up to kMaxVisible messages at once: push() on the producer thread, update(now) on the render thread. Each message has
+// its own hold+fade timer and waits for a free slot plus the promotion interval, so bursts stagger in. `now` is monotonic seconds (e.g.
+// ImGui::GetTime()), injected for tests.
 class BannerQueue
 {
   public:

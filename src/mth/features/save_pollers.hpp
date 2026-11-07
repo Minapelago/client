@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-// Per-tick SaveSlot pollers. None of them installs a detour, so both platforms share them unchanged.
+// Per-tick SaveSlot pollers. None installs a detour, so both platforms share them.
 namespace mth
 {
 class RandoBridge;
@@ -37,13 +37,9 @@ class GoalTracker
     bool game_cleared_{false};
 };
 
-// Outbound boss-defeat checks by polling the SaveSlot+0x280 defeat bitmask instead of detouring the
-// death funnels. The bit index is the BossComponent index, so bit i maps straight to the same AP
-// location the funnels used. Read-only.
-// Only live kills count. The baseline is re-taken on every real save activation, because the game
-// keeps ONE working-slot buffer: loading a save refills it in place, so neither the slot pointer nor
-// a live Player distinguishes "the run's save arrived" from "a boss just died". Loading a save with
-// bosses already down otherwise reported every one of them as a fresh kill.
+// Outbound boss-defeat checks from the SaveSlot+0x280 defeat bitmask; bit i is the BossComponent index and maps to the matching AP location. Read-only.
+// Only live kills count: the baseline is re-taken on every real save activation, because a load refills the game's single working-slot buffer in place and
+// neither the slot pointer nor a live Player tells a load from a boss death.
 class BossTracker
 {
   public:

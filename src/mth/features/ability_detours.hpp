@@ -11,11 +11,9 @@ namespace mth
 // The ability detours AbilityHooks drives: the movement chokepoints, the TrainAuthority::OnNPCEvent
 // destination gate and the SetupBoxes patch. Everything here runs on the game thread unless noted.
 
-// Gate predicate consulted by the detours.
 using AbilityBlockFn = std::function<bool(Ability a)>;
 
-// Install the ability detours; each suppresses its action when block(a) is true. No-op for unresolved
-// symbols. Returns false if none installed.
+// Installs the ability detours; each suppresses its action when block(a) is true. Unresolved symbols are skipped; false if none installed.
 bool install_ability_hooks(AbilityBlockFn block);
 void remove_ability_hooks();
 
@@ -27,15 +25,12 @@ void enforce_train_presence(bool blocked);
 // to 0 while the pass is unowned, then releases it once received (#98). No-op if unavailable.
 void enforce_train_boarding();
 
-// Publishes the train_rando destination gate read by the OnNPCEvent detour. When rando_active, a selected
-// ticket line is cancelled unless its bit is in granted_mask; when inactive the detour uses the console
-// Train-ability block instead. Cheap; call each tick.
+// Publishes the train_rando destination gate for the OnNPCEvent detour: when rando_active, a selected ticket line is cancelled unless its bit is in
+// granted_mask; otherwise the console Train-ability block applies. Cheap; call each tick.
 void set_train_destination_gate(std::uint32_t granted_mask, bool rando_active);
 
-// Observers for the burrow lifetime (#163), invoked by the burrow detours: on_commit(deep) when a
-// burrow/swim commit is allowed through (deep = it classified as a swim), on_emerge() when the burrow
-// actually ends. Together they track which mode the player is in without reading the burrow-mode field,
-// whose offset drifts between builds. Cleared by remove_ability_hooks().
+// Burrow lifetime observers (#163): on_commit(deep) when a burrow/swim commit passes (deep = classified as a swim), on_emerge() when the burrow ends. They
+// track the mode without reading the burrow-mode field, whose offset drifts between builds. Cleared by remove_ability_hooks().
 using BurrowCommitFn = std::function<void(bool deep)>;
 using BurrowEmergeFn = std::function<void()>;
 void set_burrow_observers(BurrowCommitFn on_commit, BurrowEmergeFn on_emerge);

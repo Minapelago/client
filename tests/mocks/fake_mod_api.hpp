@@ -85,8 +85,7 @@ struct ModApiRecorder
     std::unordered_map<std::string, std::vector<void *>> entity_lists;
     int entity_list_calls = 0;
 
-    // CreateWeakPtr/WeakPtrGet/DestroyWeakPtr. A handle is an index into `weak_targets`; a null entry
-    // means the game freed the target, which is the case the chest registry has to survive.
+    // CreateWeakPtr/WeakPtrGet/DestroyWeakPtr. A handle indexes `weak_targets`; a null entry means the game freed the target.
     std::vector<void *> weak_targets;
     int weak_destroys = 0;
 
@@ -96,9 +95,7 @@ struct ModApiRecorder
         if (it != hooks.end() && it->second != nullptr)
             it->second(ctx);
     }
-    // Assign from a default instance rather than listing members, so a new recorder field cannot leak
-    // state into the next test by being forgotten here. The save state lives outside the recorder, so
-    // it needs its own line.
+    // Assign from a default instance so a new recorder field cannot leak into the next test. The save state lives outside the recorder and needs its own line.
     void reset()
     {
         *this = ModApiRecorder{};
@@ -135,7 +132,7 @@ inline void fake_set_item_collected(std::int32_t index, bool collected, ItemColl
     recorder().collected_value = collected;
 }
 
-// Records the channels as the API delivered them, so a test can pin the packed-word -> MM_Color mapping.
+// Records the channels as delivered, to pin the packed-word -> MM_Color mapping.
 inline void fake_text_set_color(ycComponent *component, MM_Color color)
 {
     ++recorder().text_color_calls;
@@ -146,8 +143,7 @@ inline void fake_text_set_color(ycComponent *component, MM_Color color)
     recorder().text_color[3] = color.a;
 }
 
-// The text and palette entries only need to exist, since mod_api gates on their presence; no test reads
-// what they were given.
+// The text and palette entries only need to exist, since mod_api gates on their presence.
 inline void fake_text_set_text(ycComponent * /*component*/, const char *const /*text*/)
 {
     ++recorder().text_set_calls;
@@ -185,7 +181,7 @@ inline bool fake_water_is_in_deep_water(WaterListener *listener, bool ignore_ena
     return recorder().in_deep_water;
 }
 
-// Serves the six recorded floats as one MM_AABB, so a test can pin the center.xyz/extents.xyz packing.
+// Serves the six recorded floats as one MM_AABB (center.xyz/extents.xyz packing).
 inline void fake_physics_get_aabb(PhysicsComponent *component, MM_AABB *out, bool local, std::uint32_t shape_flags)
 {
     ++recorder().aabb_calls;
@@ -202,7 +198,7 @@ inline void fake_physics_get_aabb(PhysicsComponent *component, MM_AABB *out, boo
     out->extents.z = recorder().aabb[5];
 }
 
-// Records the by-value box the same way, so the round trip out of physics_get_aabb can be checked end to end.
+// Records the by-value box, for the round trip out of physics_get_aabb.
 inline CarryableObject *fake_closest_carryable(CarryManager *manager, MM_AABB box, std::int32_t layer, float max_dist, std::int32_t *out_count,
                                                std::uint64_t mask_ignore)
 {
@@ -240,8 +236,7 @@ inline void fake_cheat_manager_set_cheat_applied(std::int32_t cheat, bool active
     recorder().cheat_manager_set_cheat_active = active;
 }
 
-// Mirrors the real contract: the total count comes back even when the buffer is too small, and a
-// null/0 buffer is the sizing call.
+// Mirrors the real contract: the total count comes back even when the buffer is too small; a null/0 buffer is the sizing call.
 inline std::size_t fake_world_entity_list(World * /*world*/, const char *list, GameComponent **out, std::size_t cap)
 {
     ++recorder().entity_list_calls;
@@ -254,8 +249,7 @@ inline std::size_t fake_world_entity_list(World * /*world*/, const char *list, G
     return src.size();
 }
 
-// A handle is (index + 1) so it is never null; get() serves whatever the slot currently holds, which a
-// test clears to model the game freeing the target.
+// A handle is (index + 1) so it is never null; get() serves the slot's current content, which a test clears to model the game freeing the target.
 inline MM_WeakPtr *fake_create_weak_ptr(void *target)
 {
     recorder().weak_targets.push_back(target);
@@ -275,7 +269,7 @@ inline void fake_destroy_weak_ptr(MM_WeakPtr * /*weak*/)
 
 inline void *fake_get_sym_addr(const char *name)
 {
-    // Only the two data symbols, enough to prove the mapping reaches the API.
+    // Only the two data symbols, to prove the mapping reaches the API.
     if (std::strcmp(name, "s_rItems") == 0)
         return reinterpret_cast<void *>(static_cast<std::uintptr_t>(0x1000));
     return nullptr;
@@ -297,14 +291,12 @@ inline std::int32_t fake_get_spark()
 {
     return recorder().spark;
 }
-// The real PlayerDie does not take effect instantly: health/the guard byte keep reading alive for many polls
-// afterwards, so this only records the request. Tests drive the delayed death themselves.
+// The real PlayerDie takes effect late (health and the guard byte read alive for many polls), so this only records the request; tests drive the death.
 inline void fake_player_die()
 {
     ++recorder().deaths;
 }
-// The room clock runs off the world's gameplay queues: advance it per read, but not while either pause holds
-// it. A caller polling once per tick then sees what a real menu or game-level pause looks like.
+// The room clock advances per read, except while either pause holds, so a caller polling per tick sees a real menu or game-level pause.
 inline float fake_get_room_time()
 {
     if (!recorder().paused && !recorder().game_paused)
@@ -315,8 +307,7 @@ inline bool fake_world_is_paused(World * /*world*/)
 {
     return recorder().paused;
 }
-// Sized to carry the AreaManager slot Player::InitDeath walks, so a test can serve a populated World that
-// has no area bound. The area pointer only has to be non-null; nothing dereferences it.
+// Sized to carry the AreaManager slot Player::InitDeath walks, so a test can serve a World with no area bound. The area pointer only has to be non-null.
 inline unsigned char *fake_world_storage()
 {
     static std::vector<unsigned char> world(static_cast<std::size_t>(mth::layout::kWorldAreaManagerOff) + sizeof(void *), 0);
@@ -346,15 +337,13 @@ inline MM_Vec3 fake_get_pos3()
     return v;
 }
 
-// Fake scene graph for the walk primitive. A node IS its own handle: the walk only ever reads the first
-// word (looking for something vtable-shaped) and then asks the API about it, so a plain struct whose
-// first member is any valid pointer satisfies every check walk_scene makes.
+// Fake scene graph for the walk primitive. A node is its own handle: the walk reads the first word (looking for something vtable-shaped) and asks the
+// API about it, so a struct whose first member is a valid pointer satisfies walk_scene.
 struct FakeComponent
 {
     void *vtable{nullptr};
     std::uint64_t type{0};
-    std::uint64_t base{0}; // a second id the node also answers to, since the engine's ComponentIsa is a
-                           // hierarchy test and one object can be both an entity and something else
+    std::uint64_t base{0}; // a second id the node also answers to (ComponentIsa is a hierarchy test)
     std::vector<void *> children;
 };
 
@@ -386,8 +375,7 @@ inline FakeScene &fake_scene()
     return s;
 }
 
-// Must stay non-null: mod::entity_walk_api_available() gates the two entries the walk actually uses on
-// this one being present. Tests pass the root they built straight to walk_scene, so it is never called.
+// Must stay non-null: mod::entity_walk_api_available() gates on it being present. Tests pass the root straight to walk_scene, so it is never called.
 inline ycEntity *fake_world_game_root(World *)
 {
     return nullptr;
@@ -485,8 +473,7 @@ inline MinaModAPI make_fake_api()
     return mm;
 }
 
-// Resets the recorder, installs a fake api for the scope and puts the previous api back on exit. Needs
-// mod/mod_api.hpp from the including TU.
+// Resets the recorder, installs a fake api for the scope and restores the previous one on exit. Needs mod/mod_api.hpp from the including TU.
 struct ScopedFakeApi
 {
     MinaModAPI api;

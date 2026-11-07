@@ -5,10 +5,8 @@
 namespace mth
 {
 
-// Whether the world's gameplay queues ran this tick. Two freezes stop them and neither is visible to the
-// other: a paused world (any menu; World::Update then runs only its pause queue), and a paused game (the
-// whole world queue is skipped, which stalls the room clock). A build whose API has no room clock reads as
-// advancing every tick. Each owner keeps its own instance, since the previous reading is per caller.
+// Whether the world's gameplay queues ran this tick. A paused world (any menu) runs only its pause queue; a paused game skips the world queue and stalls the
+// room clock. Without the room-clock API every tick reads as advancing. One instance per owner, since the previous reading is per caller.
 struct RoomClock
 {
     enum class Tick

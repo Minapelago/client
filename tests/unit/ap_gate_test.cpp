@@ -86,8 +86,7 @@ TEST_CASE("gate: liveness observed beats the timeout", "[gate]")
 
 TEST_CASE("gate: an unknown revision alone does not refuse", "[gate]")
 {
-    // Revision is a trigger to verify, not a verdict: gating on "unfamiliar build" would brick
-    // the mod on every game patch, including ones where nothing load-bearing moved.
+    // A revision triggers verification and is not a verdict: gating on an unfamiliar build would brick the mod on every game patch.
     mth::GateInputs in = healthy_clear();
     in.revision_known = false;
     REQUIRE(mth::evaluate(in) == mth::GateVerdict::Clear);
@@ -218,8 +217,7 @@ TEST_CASE("gate: connect is refused only when enforcing and refused", "[gate]")
 
 TEST_CASE("gate: Pending does not block connect", "[gate]")
 {
-    // The liveness proof cannot arrive before the game runs, so holding connects until it does
-    // would strand a launch-time login behind a 600-tick wait for no diagnostic gain.
+    // The liveness proof cannot arrive before the game runs, so holding connects for it would strand a launch-time login behind a 600-tick wait.
     REQUIRE_FALSE(mth::should_refuse_connect(true, mth::GateVerdict::Pending));
     REQUIRE(mth::evaluate(healthy_pending()) == mth::GateVerdict::Pending);
 }

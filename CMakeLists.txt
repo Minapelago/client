@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-# No VERSION on project(): release-please stamps prerelease versions like 1.0.1-beta.1 and project()
-# rejects those outright ("VERSION format invalid"), which would break configure on every beta. The
-# build's real version comes from git describe in cmake/SimpleGitVersion.cmake.
+# project() has no VERSION: it rejects prerelease versions like 1.0.1-beta.1. The real version comes from git describe (cmake/SimpleGitVersion.cmake).
 project(mth-apclient
     LANGUAGES C CXX
 )
@@ -15,15 +13,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# The mod is loaded into the game's process, so it must export only its entry point:
-# anything else is interposition surface against the host and any other loaded mod.
-# MinaMod_Init carries an explicit default-visibility attribute and is unaffected.
-# --exclude-libs,ALL additionally localizes the symbols of the static archives.
+# The module exports only MinaMod_Init (explicit default visibility); any other export is interposition surface in the host process.
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-# The unit tests exercise the Linux PAL pieces, so they are off for Windows builds.
+# The unit tests exercise the Linux PAL pieces.
 if(WIN32)
     set(_mthap_tests_default OFF)
 else()
@@ -36,9 +31,7 @@ set(MTHAP_MAX_GAME_VERSION 999999)
 
 include(SimpleGitVersion)
 
-# The LLVM-MinGW dev cross routes printf-family calls through msvcrt, which drops
-# C99 specifiers like %lld/%zu unless we switch mingw to its own conformant stdio.
-# Harmless on the canonical clang-cl (UCRT) and Linux builds, where MINGW is unset.
+# llvm-mingw routes printf through msvcrt, which drops %lld/%zu; switch to mingw's own stdio. MINGW is unset on clang-cl and Linux.
 if(MINGW)
     add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
 endif()
@@ -51,15 +44,12 @@ endif()
 # Sets MTHAP_OVERLAY_FONT_SOURCE, compiled into the module.
 include(OverlayFont)
 
-# Archipelago net stack (apclientpp/wswrap/websocketpp), fetched into the build
-# dir. ApClient.cmake rewrites one line of websocketpp's tls.hpp after the fetch.
+# Archipelago net stack (apclientpp/wswrap/websocketpp), fetched into the build dir. ApClient.cmake patches one line of websocketpp's tls.hpp.
 include(ApClient)
 include(DearImGui)
 include(MinaModApi)
 
-# Directory-scope flags reach only targets created after this point, so every
-# FetchContent dependency (imgui, minhook, apclientpp, ...) is declared above and
-# keeps its own flags.
+# Directory-scope flags apply only to targets created below, so the FetchContent dependencies above keep their own flags. Catch2 (tests/) gets them.
 include(compiler_setup)
 
 add_subdirectory(src/mth)

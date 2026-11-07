@@ -19,8 +19,7 @@ pal::ShopBuyFn g_on_shop_buy = nullptr;
 [[clang::no_destroy]] pal::ScopedHook g_shop_hook;
 void (*g_orig_item_present)(void *) = nullptr;
 
-// ItemPresent runs once when a shop item is granted; read locIdx/itemType, let the AP callback
-// collect it, and write back the (possibly redirected) itemType BEFORE the original grants.
+// ItemPresent runs once per granted shop item: read locIdx/itemType, let the AP callback collect it, and write back the itemType before the original grants.
 void repl_item_present(void *self)
 {
     if (g_on_shop_buy != nullptr && self != nullptr)
@@ -34,12 +33,11 @@ void repl_item_present(void *self)
         g_orig_item_present(self);
 }
 
-// Items::IsItemCollected override lives in native_mod_entry.cpp (native modding hook; cross-platform).
+// The Items::IsItemCollected override is the native "IsItemCollected" hook in mod/mod_api.cpp.
 
 // ---- per-stat level cap ----
-// LevelUpMenu cursor-selected stat index, read as int at this byte offset (build 16280b26 decompile
-// of LevelUpMenu::UpdateState; state machine is at +0x64). Build-specific: repl_max_level logs the
-// read value so it can be runtime-confirmed against the shipping build.
+// LevelUpMenu cursor-selected stat index as an int (build 16280b26 decompile of LevelUpMenu::UpdateState; the state machine is at +0x64).
+// repl_max_level logs the value read so it can be confirmed on the shipping build.
 constexpr std::ptrdiff_t kLevelUpMenuStatOff = 0xb8;
 
 bool g_lc_resolved = false;

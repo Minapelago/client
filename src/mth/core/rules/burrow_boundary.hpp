@@ -13,26 +13,22 @@ enum class BoundaryAction
 };
 
 // twin: src/pal/*/game_*.cpp repl_burrow_ground / repl_burrow_jump (the arm/disarm sites).
-// Player::SetBurrowGround is classify-and-commit, so once burrow state is entered the game flips between
-// ground-burrow and water-swim through a path that gate never sees, and owning one of Burrow/Swim grants the
-// other (#163). Watching the boundary avoids reading the burrow-mode field, whose offset drifts between
-// builds; the two commit sites are already hooked.
+// Player::SetBurrowGround is classify-and-commit, so once burrowed the game flips between ground-burrow and water-swim through a path that gate
+// never sees, and owning one of Burrow/Swim grants the other (#163). Watching the boundary avoids the burrow-mode field, whose offset drifts.
 //
 // arm(deep) on a commit the gate allowed, disarm() on the emerge commit. Callers must also feed
 // observe_burrowing() every tick, because most ways a burrow ends never reach the emerge commit.
 class BurrowBoundaryGate
 {
   public:
-    // Consecutive agreeing polls before a changed water reading counts. The game debounces its own deep-water
-    // test; the raw discriminator is an exact ground-bitmask compare that also goes false under covering
-    // geometry, so it flickers along a shoreline where the game does not. Acting consumes the arm, so one
-    // spurious reading would punish a player walking a beach.
+    // Consecutive agreeing polls before a changed water reading counts. The raw discriminator is an exact ground-bitmask compare that also goes
+    // false under covering geometry, so it flickers along shorelines where the game's debounced test does not; one spurious reading would punish a
+    // player walking a beach.
     static constexpr int kWaterConfirmTicks = 10;
 
-    // Consecutive non-burrow readings before the arm drops. A burrow requested by another entity's state
-    // machine (a room transition) is applied a frame late, and disarming on that one frame would silently
-    // switch the gate off for the rest of that burrow. Damage and death hold the reading, so they still
-    // disarm; nothing can act while the reading says not-burrowing either way.
+    // Consecutive non-burrow readings before the arm drops. A burrow requested by another entity's state machine (a room transition) applies a
+    // frame late, and disarming on that frame would switch the gate off for the rest of that burrow. Damage and death hold the reading, so they
+    // still disarm.
     static constexpr int kBurrowConfirmGraceTicks = 2;
 
     void arm(bool deep)
@@ -66,15 +62,13 @@ class BurrowBoundaryGate
         }
     }
 
-    // No water reading available this tick (null WaterListener during a room transition). Restart the
-    // confirmation rather than skipping it, so a partial streak cannot bridge the gap.
+    // No water reading this tick (null WaterListener during a room transition). Restart the confirmation so a partial streak can't bridge the gap.
     void reading_unavailable()
     {
         confirmed_ = 0;
     }
 
-    // Returns what to do about a crossing into an ungranted mode, and consumes the arm when it returns one,
-    // so the fall or emerge is applied once rather than every tick over the same water.
+    // What to do about a crossing into an ungranted mode. Returning one consumes the arm, so the fall or emerge applies once.
     BoundaryAction observe(bool deep, bool burrow_blocked, bool swim_blocked)
     {
         if (state_ == State::None)

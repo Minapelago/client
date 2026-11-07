@@ -51,7 +51,7 @@ TEST_CASE("wallet_cap counts received wallet items", "[wallet_cap]")
 {
     mth::ApState s;
     make_state(s, {mth::kProgWalletId, mth::kProgWalletId, mth::kProgWalletId});
-    REQUIRE(mth::wallet_cap(s) == 2250); // 750 + 500*3
+    REQUIRE(mth::wallet_cap(s) == 2250);
 }
 
 TEST_CASE("wallet_cap ignores non-wallet items", "[wallet_cap]")

@@ -49,8 +49,7 @@ void note_fixed_update_delta(float elapsed)
     g_fixed_update_delta = elapsed;
 }
 
-// Restores the process-wide range on scope exit so a failing REQUIRE mid-test cannot leave it
-// stuck at a value that would make every later test's usable() reject the fake api's pointers.
+// Restores the process-wide range on scope exit so a failing REQUIRE cannot leave it where every later usable() rejects the fake api's pointers.
 struct TextRangeGuard
 {
     pal::TextRange saved{pal::text_range_storage()};
@@ -129,7 +128,7 @@ TEST_CASE("mod: IsItemCollected trampoline ignores negative index", "[mod]")
     g_forced = 1;
     ctx.mod_handled = false;
     mth::test::recorder().fire("IsItemCollected", &ctx);
-    REQUIRE_FALSE(ctx.mod_handled); // index < 0 -> untouched
+    REQUIRE_FALSE(ctx.mod_handled);
 
     mod::remove_item_collected_hook();
     mod::set_api(nullptr);
@@ -229,7 +228,7 @@ TEST_CASE("mod: player_component forwards whatever the API reports, null include
     mod::set_api(&fake);
     REQUIRE(mod::player_component_available());
 
-    REQUIRE(mod::player_component() == nullptr); // the accessor answers null: so does the forwarder
+    REQUIRE(mod::player_component() == nullptr);
 
     int live = 0;
     mth::test::recorder().player = &live;
@@ -271,7 +270,7 @@ TEST_CASE("mod: entries outside the game .text range are not called", "[mod]")
     pal::set_game_text_range(pal::TextRange{});
     REQUIRE(mod::game_revision() == 4242);
 
-    // A range that deliberately excludes the test binary's own code.
+    // A range that excludes the test binary's own code.
     pal::set_game_text_range(pal::TextRange{0x1000, 0x10});
     REQUIRE(mod::game_revision() == 0);
     REQUIRE(mod::active_save_slot() == -1);
@@ -314,13 +313,12 @@ TEST_CASE("mod: player_position reports the native position, false when unset", 
     mod::set_api(nullptr);
 }
 
-// One body, because the fired flags are process-global and nothing resets them: split across two cases
-// the "still unfired" half would only hold while it happened to be declared first.
+// One body: the fired flags are process-global and never reset, so split across two cases the "still unfired" half holds only if declared first.
 TEST_CASE("mod: a named hook registers under its game-facing name, unfired until it is dispatched", "[mod]")
 {
     mth::test::recorder().reset();
     mod::set_api(nullptr);
-    REQUIRE_FALSE(mod::install_items_on_pickup_hook(nullptr)); // no API: nothing armed, nothing crashes
+    REQUIRE_FALSE(mod::install_items_on_pickup_hook(nullptr));
 
     auto fake = mth::test::make_fake_api();
     mod::set_api(&fake);
@@ -340,7 +338,7 @@ TEST_CASE("mod: a named hook registers under its game-facing name, unfired until
     mth::test::recorder().hooks["ItemsOnPickup"](&ctx);
 
     REQUIRE(g_pickup_seen_slot == 42);
-    REQUIRE(ctx.modHandled); // the callback asked to suppress the original
+    REQUIRE(ctx.modHandled);
 
     const auto after = mod::unfired_hooks();
     REQUIRE(std::find(after.begin(), after.end(), std::string("ItemsOnPickup")) == after.end());
@@ -349,8 +347,7 @@ TEST_CASE("mod: a named hook registers under its game-facing name, unfired until
     mod::set_api(nullptr);
 }
 
-// The appended-entry guard: an entry added to the API struct after the running game build lies past
-// the end of that build's shorter struct, so it must be gated on the revision BEFORE it is read.
+// Appended-entry guard: an entry added after the running build's shorter API struct lies past its end, so it is gated on the revision before it is read.
 TEST_CASE("mod: appended entries stay unavailable on a build that predates them", "[mod]")
 {
     TextRangeGuard guard;
@@ -391,7 +388,7 @@ TEST_CASE("mod: appended entries stay unavailable on a build that predates them"
     int physics = 0;
     float box[6]{-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
     REQUIRE_FALSE(mod::physics_get_aabb(&physics, box, false, 0u));
-    REQUIRE(box[0] == -1.0f); // left untouched, so a caller cannot query on a garbage box
+    REQUIRE(box[0] == -1.0f);
     REQUIRE(mth::test::recorder().aabb_calls == 0);
 
     int manager = 0;
@@ -408,7 +405,7 @@ TEST_CASE("mod: appended entries stay unavailable on a build that predates them"
     int block = 0;
     mth::test::recorder().entity_lists["KeyBlock"] = {&block};
     void *live_world = mod::player_world();
-    REQUIRE(live_world != nullptr); // the world accessor itself predates the appended block
+    REQUIRE(live_world != nullptr);
     REQUIRE(mod::world_entity_list(live_world, "KeyBlock", nullptr, 0) == 0);
     REQUIRE(mth::test::recorder().entity_list_calls == 0);
 
@@ -430,8 +427,7 @@ TEST_CASE("mod: appended entries become available on a newer build", "[mod]")
     REQUIRE(mod::queue_destroy_entity(&world, &entity, false));
     REQUIRE(mth::test::fake_queue_destroys == before + 1);
 
-    // sym_addr forwards the name verbatim, so this only pins that the entry is reached and that a name
-    // the game does not export comes back null. The mangled to plain mapping is kNativeSymNames' job,
+    // sym_addr forwards the name verbatim; this pins that the entry is reached and an unexported name returns null. The mangled-to-plain mapping is
     // covered in native_sym_names_test.cpp.
     REQUIRE(mod::sym_addr("s_rItems") != nullptr);
     REQUIRE(mod::sym_addr("NotAnExposedName") == nullptr);
@@ -446,10 +442,10 @@ TEST_CASE("mod: appended entries become available on a newer build", "[mod]")
     REQUIRE(mod::text_color_available());
     REQUIRE(mod::set_text_color(&widget, 0xC0806040u));
     REQUIRE(mth::test::recorder().text_color_target == &widget);
-    REQUIRE(mth::test::recorder().text_color[0] == 0x40); // r
-    REQUIRE(mth::test::recorder().text_color[1] == 0x60); // g
-    REQUIRE(mth::test::recorder().text_color[2] == 0x80); // b
-    REQUIRE(mth::test::recorder().text_color[3] == 0xC0); // a
+    REQUIRE(mth::test::recorder().text_color[0] == 0x40);
+    REQUIRE(mth::test::recorder().text_color[1] == 0x60);
+    REQUIRE(mth::test::recorder().text_color[2] == 0x80);
+    REQUIRE(mth::test::recorder().text_color[3] == 0xC0);
 
     // Null guards, so no null component and no null string ever reaches the game's own entry.
     REQUIRE_FALSE(mod::set_text(nullptr, "Golden Kear"));
@@ -501,8 +497,7 @@ TEST_CASE("mod: appended entries become available on a newer build", "[mod]")
     REQUIRE(mod::player_update_stats());
     REQUIRE(mth::test::recorder().update_stats_calls == 1);
 
-    // A null world or a null list name is refused before the game's entry is called, since the real one
-    // dereferences both.
+    // A null world or list name is refused before the game's entry is called, since the real one dereferences both.
     void *live_world = mod::player_world();
     REQUIRE(live_world != nullptr);
     REQUIRE(mod::world_entity_list(nullptr, "KeyBlock", nullptr, 0) == 0);
@@ -516,7 +511,7 @@ TEST_CASE("mod: ChestConstruct hands the callback the ctx's Chest", "[mod]")
 {
     mth::test::recorder().reset();
     mod::set_api(nullptr);
-    REQUIRE_FALSE(mod::install_chest_construct_hook(&note_chest)); // no API: nothing armed
+    REQUIRE_FALSE(mod::install_chest_construct_hook(&note_chest));
 
     auto fake = mth::test::make_fake_api();
     mod::set_api(&fake);
@@ -528,7 +523,7 @@ TEST_CASE("mod: ChestConstruct hands the callback the ctx's Chest", "[mod]")
     ctx.chest = reinterpret_cast<Chest *>(&chest);
     g_constructed_chest = nullptr;
     mth::test::recorder().fire("ChestConstruct", &ctx);
-    REQUIRE(g_constructed_chest == &chest); // the ctx carries the real Chest*, so no subobject fixup
+    REQUIRE(g_constructed_chest == &chest);
 
     mod::remove_chest_construct_hook();
     mod::set_api(nullptr);
@@ -538,7 +533,7 @@ TEST_CASE("mod: FixedUpdate hands the callback the ctx's elapsed", "[mod]")
 {
     mth::test::recorder().reset();
     mod::set_api(nullptr);
-    REQUIRE_FALSE(mod::set_fixed_update_delta_hook(&note_fixed_update_delta)); // no API: nothing armed
+    REQUIRE_FALSE(mod::set_fixed_update_delta_hook(&note_fixed_update_delta));
 
     auto fake = mth::test::make_fake_api();
     mod::set_api(&fake);
@@ -581,7 +576,7 @@ TEST_CASE("mod: weak pointers need no revision gate and report a dead target", "
     mod::weak_ptr_destroy(weak);
     REQUIRE(mth::test::recorder().weak_destroys == 1);
 
-    REQUIRE(mod::weak_ptr_create(nullptr) == nullptr); // never hands the game a null target
+    REQUIRE(mod::weak_ptr_create(nullptr) == nullptr);
     REQUIRE(mod::weak_ptr_get(nullptr) == nullptr);
     mod::weak_ptr_destroy(nullptr); // no-op, not a call
     REQUIRE(mth::test::recorder().weak_destroys == 1);
@@ -621,7 +616,7 @@ TEST_CASE("mod: set_item_collected and set_text_color refuse bad arguments", "[m
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
     mth::test::recorder().revision = 200000;
 
-    REQUIRE_FALSE(mod::set_item_collected(-1, true, nullptr, nullptr)); // negative index would write an unrelated bit
+    REQUIRE_FALSE(mod::set_item_collected(-1, true, nullptr, nullptr));
     REQUIRE_FALSE(mod::set_text_color(nullptr, 0xFFFFFFFFu));
     REQUIRE(mth::test::recorder().collected_calls == 0);
     REQUIRE(mth::test::recorder().text_color_calls == 0);
@@ -639,19 +634,18 @@ TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the query
 
     REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(-1));
     REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(0xfe));
-    REQUIRE(mth::test::recorder().cheat_manager_is_cheat_applied_calls == 0); // rejected, not asked
+    REQUIRE(mth::test::recorder().cheat_manager_is_cheat_applied_calls == 0);
 
     REQUIRE(mod::cheat_manager_is_cheat_applied(0));
-    REQUIRE(mod::cheat_manager_is_cheat_applied(0xfd)); // both ends of the range are in
+    REQUIRE(mod::cheat_manager_is_cheat_applied(0xfd));
 
     mth::test::recorder().cheat_manager_is_cheat_applied_result = false;
-    REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(100)); // the game's answer, not the guard's
+    REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(100));
 
     mod::set_api(nullptr);
 }
 
-// The writer carries the same clamp, and it is the call that actually writes to a live save, so an index
-// past the end of the cheat array has to stop here.
+// The writer carries the same clamp and is the call that writes to a live save, so an index past the end of the cheat array stops here.
 TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the write reaches the game", "[mod_api][trap]")
 {
     TextRangeGuard guard;
@@ -662,7 +656,7 @@ TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the write
 
     REQUIRE_FALSE(mod::cheat_manager_set_cheat_applied(-1, true));
     REQUIRE_FALSE(mod::cheat_manager_set_cheat_applied(0xfe, true));
-    REQUIRE(mth::test::recorder().cheat_manager_set_cheat_applied_calls == 0); // rejected, not written
+    REQUIRE(mth::test::recorder().cheat_manager_set_cheat_applied_calls == 0);
 
     REQUIRE(mod::cheat_manager_set_cheat_applied(0xfd, true));
     REQUIRE(mth::test::recorder().cheat_manager_set_cheat_index == 0xfd);

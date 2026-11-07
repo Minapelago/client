@@ -1,7 +1,7 @@
 name: build
 
-# Reusable build of the mod drop-in for both platforms. The Linux leg also builds and runs the native
-# tests. Called by ci.yml for pull requests and by release.yml, which passes the release tag.
+# Reusable build of the mod drop-in for both platforms. The Linux leg also builds and runs the native tests. Called by ci.yml for pull requests and
+# by release.yml, which passes the release tag.
 
 on:
   workflow_call:

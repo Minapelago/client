@@ -10,11 +10,10 @@ namespace mth
 // Older seeds carry no slot_data "broken_generators"; every generator counts for them.
 inline constexpr std::uint64_t kAllGeneratorsMask = ~std::uint64_t{0};
 
-// slot_data / lamp generator index -> SaveSlot 0x290 generator-fixed bit. These are NOT equal: the game's
-// BossComponent::SetGeneratorFixed(bit) decodes the area name from the bit position directly, so the bit is
-// {crypt=1, bayou=2, septemburg=3, boneBeach=4, coltranePeak=5, astralOrrery=6}. Indexed by apworld generator
-// index (bayou/Noxs=0, crypt/Queensbury=1, septemburg=2, boneBeach=3, coltranePeak=4, astralOrrery=5). Bit 0
-// is unused by the game (#146). See docs re-notes 2026-07-17-ossex-fountain-lamps.
+// slot_data / lamp generator index -> SaveSlot 0x290 generator-fixed bit. They differ: BossComponent::SetGeneratorFixed(bit) decodes the area
+// from the bit, so the bit is {crypt=1, bayou=2, septemburg=3, boneBeach=4, coltranePeak=5, astralOrrery=6}. Indexed by apworld generator index
+// (bayou/Noxs=0, crypt/Queensbury=1, septemburg=2, boneBeach=3, coltranePeak=4, astralOrrery=5); bit 0 is unused (#146). See docs re-notes
+// 2026-07-17-ossex-fountain-lamps.
 inline constexpr int kGeneratorSaveBit[] = {2, 1, 3, 4, 5, 6};
 inline constexpr int kGeneratorCount = static_cast<int>(sizeof(kGeneratorSaveBit) / sizeof(kGeneratorSaveBit[0]));
 
@@ -54,15 +53,14 @@ inline constexpr int kGoalFinish = 0;     // beat the game (SaveSlot game-clear 
 inline constexpr int kGoalGenerators = 1; // repair >= goal_generators generators
 inline constexpr int kGoalBosses = 2;     // defeat >= goal_bosses bosses
 
-// Plausibility bound for the SaveSlot game-clear flag: the game stores it as a boolean byte, so anything
-// above 1 means the offset drifted onto unrelated memory. Reporting the goal is irreversible on the server,
-// which is why the caller fails closed on a single implausible read instead of retrying.
+// Plausibility bound for the SaveSlot game-clear flag, a boolean byte; above 1 means the offset drifted. Reporting the goal is irreversible on
+// the server, so the caller fails closed on one implausible read.
 [[nodiscard]] inline constexpr bool game_clear_flag_in_domain(unsigned char value) noexcept
 {
     return value <= 1;
 }
 
-// Whether the configured goal is satisfied by the polled SaveSlot state. Pure so it is unit-testable.
+// Whether the configured goal is satisfied by the polled SaveSlot state. Pure.
 [[nodiscard]] constexpr bool goal_met(int config, int gens_needed, int bosses_needed, bool game_cleared, int gens_done, int bosses_done) noexcept
 {
     if (config == kGoalGenerators)

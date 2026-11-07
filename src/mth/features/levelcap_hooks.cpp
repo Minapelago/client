@@ -23,8 +23,7 @@ namespace
 // leave the vanilla text alone.
 std::function<int(int stat)> g_boneup_cap;
 
-// Runs at frame rate, so a reading is logged only when it changes. Silent while the menu is closed:
-// LevelUpMenu ticks with no display for the whole session otherwise.
+// Runs at frame rate, so a reading is logged only when it changes. Silent while the menu is closed, since LevelUpMenu ticks with no display all session.
 void probe(int state, int stat, const void *display, const void *text, const char *current)
 {
     static int last = -1;
@@ -47,9 +46,8 @@ void boneup_annotate_description(void *level_up_menu)
     const int state = pal::at<int>(level_up_menu, layout::kLevelUpMenuStateOff);
     const int stat = pal::at<int>(level_up_menu, layout::kLevelUpMenuStatOff);
 
-    // Both offsets are pinned on Linux and on Windows r149150, so a mismatch means the game moved. Each
-    // hop is checked before use: a live game object carries a vtable in the module's read-only data, so a
-    // drifted offset that lands on another live pointer is rejected before anything writes to it.
+    // Both offsets are pinned on Linux and Windows r149150, so a mismatch means the game moved. Each hop must carry a vtable in the module's read-only data, so
+    // a drifted offset landing on another live pointer is rejected before any write.
     void *display = pal::at<void *>(level_up_menu, layout::kLevelUpMenuDisplayOff);
     void *text = looks_like_component(display) ? pal::at<void *>(display, layout::kLevelUpDisplayDescOff) : nullptr;
     const char *current = looks_like_component(text) ? mod::text_of(text) : nullptr;
@@ -127,7 +125,7 @@ void LevelCapHooks::set_enforce_live(bool on)
 int LevelCapHooks::provide(int stat, int vanilla_cap)
 {
     if (!enforce_live_.load())
-        return vanilla_cap; // vanilla play (not connected, not test mode): never restrict
+        return vanilla_cap; // vanilla play: not connected, not test mode
     // Per-stat ceiling (slot_data max for real stats, native for the bone bank), then cap-up gating.
     return caps_.enforced_cap(stat, stat_cap_ceiling(stat, max_stat_level_, vanilla_cap));
 }

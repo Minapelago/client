@@ -37,8 +37,7 @@ class HookManager
     HookManager &operator=(const HookManager &) = delete;
 
     void tick(ApState &state, const SessionPolicy &policy, int save_game_slot); // -1 when no save state
-    // Session boundary: drop the feature state seeded from one connection's received items (lock removals)
-    // and the captured AP-game slot, so none of it carries into the next connection's save.
+    // Session boundary: drop the lock removals seeded from one connection's items and the captured AP-game slot, so neither reaches the next save.
     void clear_session_state();
     void drain();                          // World::Update pre-hook window
     void on_world_update_end(void *world); // menu-world scene walk for the save takeover
@@ -48,16 +47,14 @@ class HookManager
   private:
     bool vendor_locked(const ApState &state); // arms vendor_lockout_ while connected, then reports it
 
-    // Set the first time a save sees an AP session, cleared only on save load. Vendors that sell outside
-    // AP logic latch on this rather than the live phase, so a mid-run disconnect cannot reopen them.
+    // Set the first time a save sees an AP session and cleared only on save load, so a mid-run disconnect cannot reopen the off-logic vendors.
     std::atomic<bool> vendor_lockout_{false};
 
     RandoBridge &rando_;                 // checked-location state; the donation machine reads it (#162)
     std::function<void *()> get_player_; // live Player* accessor for the burrow tick
 
   public:
-    // App reaches the features directly for the console and session seams. Destroyed in reverse order,
-    // so every feature that holds a reference to another is declared after it.
+    // App reaches the features directly for the console and session seams. A feature that references another is declared after it.
     LocationHooks location_hooks_;
     BossTracker boss_tracker_;
     GoalTracker goal_tracker_;

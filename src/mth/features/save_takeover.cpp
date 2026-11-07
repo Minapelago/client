@@ -17,9 +17,8 @@ namespace mth
 {
 namespace
 {
-// SaveManager::WriteSaveData(bool): the flush trigger for mod-owned saves. Observed only, never
-// suppressed; the mod's own SetSaveWriteEnabled(false) (via the native MinaModAPI) is what
-// actually keeps saveData.yc untouched during a takeover. It fires on the game's own save cadence.
+// SaveManager::WriteSaveData(bool), observed as the mod-save flush trigger on the game's save cadence. SetSaveWriteEnabled(false) via MinaModAPI is what keeps
+// saveData.yc untouched.
 std::function<void()> g_save_request_fn;
 [[clang::no_destroy]] pal::ScopedHook g_save_request_hook;
 void (*g_orig_write_save_data)(void *, bool) = nullptr;
@@ -53,16 +52,13 @@ bool install_save_request_hook(std::function<void()> on_save)
     return true;
 }
 
-// The vanilla slot staged into. Arbitrary once writes are suppressed; fixed so the takeover is
-// deterministic. Its on-disk contents are never modified.
+// The vanilla slot staged into, fixed so the takeover is deterministic. Its on-disk contents are never modified.
 constexpr unsigned int kScratchSlot = 0;
 
-// The scene walk hands back the object's primary pointer on both platforms, so the shared mth::layout
-// offsets apply directly - unlike the old detour, where MSVC passed a base subobject that needed a
-// per-platform adjust.
+// The scene walk returns the object's primary pointer on both platforms, so the shared mth::layout offsets apply with no per-platform subobject adjust.
 //
-// A menu parked outside the range its own dispatch tables accept is either mid-construction or a
-// mis-based pointer; writing through the latter corrupts whatever the offsets land on.
+// A menu outside the state range its dispatch tables accept is mid-construction or mis-based, and writing through a mis-based one corrupts whatever the offsets
+// hit.
 bool menu_drivable(void *menu)
 {
     if (!pal::pointer_looks_valid(menu))
@@ -90,13 +86,11 @@ int menu_state(void *menu)
 bool in_gameplay()
 {
     const int gs = mod::current_game_state();
-    // -1 = accessor unavailable, must not read as "in gameplay". Profile-select is its own gamestate, so
-    // excluding only the title screen would read the menu opening as gameplay.
+    // -1 (accessor unavailable) must not read as gameplay. Profile-select is its own gamestate, so excluding only the title would count the menu as gameplay.
     return gs >= 0 && gs != kGameStateTitleScreen && gs != kGameStateProfileSelect;
 }
 
-// Requests the state rather than writing it, so the menu's own state machine still runs its
-// enter/exit. Idempotent: re-requesting a state already pending would restart it.
+// Requests the state so the menu's own state machine runs its enter/exit. Idempotent, since re-requesting a pending state would restart it.
 bool menu_request_state(void *menu, int state)
 {
     if (!menu_drivable(menu))
@@ -109,8 +103,7 @@ bool menu_request_state(void *menu, int state)
     pal::at<unsigned char>(menu, layout::kProfileMenuStateReqOff) = 1;
     return true;
 }
-// Resolved on first use rather than eagerly: on Windows each resolve is a full .text signature scan,
-// and the staging path runs on a game frame.
+// Resolved on first use: on Windows each resolve is a full .text signature scan, and the staging path runs on a game frame.
 std::uintptr_t g_takeover_slot_clear = 0;
 std::uintptr_t g_takeover_init_gamestate = 0;
 bool g_takeover_syms_resolved = false;
@@ -126,10 +119,9 @@ void resolve_takeover_symbols()
         pal::logf(pal::LogLevel::Warn, "takeover: g_saveManager/SaveSlot::Clear/InitGamestate not all resolved; a new save cannot be staged");
 }
 
-// Runs the game's own new-file init on the vanilla SaveSlot array element for `slot`, not the live
-// working slot: the launch copies array over working, so a working-slot write here is discarded.
-// Clear(false) then InitGamestate(); true would be the NG+ cycle. Deliberately does not persist;
-// WriteSaveData is not on the launch path. False if the symbols or the slot address do not resolve.
+// Runs the game's new-file init on the vanilla SaveSlot array element for `slot`; the launch copies array over working, so a working-slot write would be
+// discarded. Clear(false) then InitGamestate(). Does not persist (WriteSaveData is not on the launch path). false if the symbols or slot address do not
+// resolve.
 bool init_new_save_file(unsigned int slot)
 {
     resolve_takeover_symbols();
@@ -153,8 +145,8 @@ bool init_new_save_file(unsigned int slot)
     auto clear_fn = reinterpret_cast<void (*)(void *, bool)>(g_takeover_slot_clear);
     auto init_fn = reinterpret_cast<void (*)(void *)>(g_takeover_init_gamestate);
     pal::logf(pal::LogLevel::Info, "takeover: initializing new save file (array slot %u at %p)", slot, file_slot);
-    // false = fresh file, what the vanilla profile-select new-file sites pass; true is the NG+ cycle.
-    // Going through the real address re-triggers the newfile-kit suppressor, so AP's starting kit wins.
+    // false = fresh file, as the vanilla profile-select new-file sites pass; true is the NG+ cycle. Calling the real address re-triggers the newfile-kit
+    // suppressor, so AP's starting kit wins.
     clear_fn(file_slot, false);
     init_fn(file_slot);
     return true;
@@ -184,17 +176,15 @@ std::filesystem::path mod_save_dir()
 
 bool SaveTakeover::begin()
 {
-    // Without the scene walk nothing would ever find the menu to drive, and the recovery that bounces
-    // the player back to the title runs off the same pass. Refuse the launch instead.
+    // Without the scene walk nothing finds the menu to drive, and the bounce back to the title runs off the same pass, so refuse the launch.
     if (!mod::entity_walk_api_available() || !mod::world_menu_root_api_available())
     {
         pal::logf(pal::LogLevel::Error, "takeover: scene-walk API unavailable; refusing to start");
         return false;
     }
 
-    // Running means the player came back to the title from a live session; Failed means the prior attempt
-    // gave up. Both re-arm. Every other non-Idle step is mid-sequence. No flush here: begin() only runs from
-    // the title, where the slot is already cleared, so it would store a blank save over the run (#152).
+    // Running (back at the title from a live session) and Failed both re-arm; other non-Idle steps are mid-sequence. No flush here: begin() runs only from the
+    // title, where the slot is already cleared, so it would store a blank save over the run (#152).
     if (step_ != TakeoverStep::Running && !takeover_settled(step_))
         return true; // already claimed, mid-flight
 
@@ -202,16 +192,14 @@ bool SaveTakeover::begin()
     seed_ = std::move(seed);
     slot_ = std::move(slot);
 
-    mod::set_save_write_enabled(false); // re-assert; off since connect, this covers a savetest re-enable
+    mod::set_save_write_enabled(false); // re-assert: off since connect; covers a savetest re-enable
     step_ = TakeoverStep::AwaitingMenu;
     frames_in_step_ = 0;
     input_block_.rearm();
-    // Here rather than on the next tick: this runs inside the StartGame confirm, and the input update
-    // that would carry a still-held button into the file-select menu is the very next one.
+    // Run now, inside the StartGame confirm, because the very next input update would carry a held button into the file-select menu.
     update_input_block();
-    // InstallHook succeeds on a name the build never dispatches, so the ctor's return value proves
-    // nothing. These fire every input frame, which makes "still silent by the time a launch is claimed"
-    // the same statement as "this build has no input hooks", and the footgun is back.
+    // InstallHook succeeds for a name the build never dispatches, so only firing proves the hooks. They fire every input frame, so silence by the time a launch
+    // is claimed means this build has none.
     if (!mod::input_suppress_hooks_fired() && !warned_input_inert_)
     {
         warned_input_inert_ = true;
@@ -221,13 +209,11 @@ bool SaveTakeover::begin()
     return true;
 }
 
-// The block outlives the steps that want it: a takeover that gave up still has the player sitting on a
-// live file-select for the frames the bounce takes.
+// The block outlives the steps that want it: a failed takeover still leaves the player on a live file-select for the bounce frames.
 void SaveTakeover::update_input_block()
 {
-    // Only the Failed bounce reads this, so the accessor stays off every other tick. An unavailable
-    // accessor reads as "menu gone" and releases, the opposite of in_gameplay() above: holding a dead
-    // controller on a build that cannot answer is worse than the narrow window it would cover.
+    // Only the Failed bounce reads this, so the accessor stays off otherwise. An unavailable accessor reads as "menu gone" and releases, unlike in_gameplay():
+    // a dead controller on a build that cannot answer is worse than the window it would cover.
     const bool on_profile_select = step_ == TakeoverStep::Failed && mod::current_game_state() == kGameStateProfileSelect;
 
     const bool was_blocked = input_block_.blocked();
@@ -249,7 +235,7 @@ void SaveTakeover::tick()
     update_input_block(); // ahead of the early return: Failed still blocks while the menu is up
 
     if (takeover_settled(step_))
-        return; // begin() re-arms these; the flush is driven by the save-request hook, not the tick
+        return; // begin() re-arms these; the save-request hook drives the flush
 
     TakeoverInputs in;
     in.save_api_ready = mod::save_api_available();
@@ -278,9 +264,8 @@ void SaveTakeover::fail(const char *why)
     pal::logf(pal::LogLevel::Error, "takeover: aborted (%s); save writes remain disabled", why);
 }
 
-// The ProfileSelectMenu is docked directly on the menu world's root entity, so this is normally a
-// single level; the descent is insurance against a build that nests it. A menu world is tiny compared
-// with a room, so this runs every pass rather than on a cadence - the launch should not wait.
+// The ProfileSelectMenu is docked on the menu world's root entity, so this is normally one level; descending covers a build that nests it. Menu worlds are
+// tiny, so this runs every pass and the launch does not wait for a cadence.
 void SaveTakeover::on_world_update_end(void *world)
 {
     // Only the AwaitingMenu claim and the Failed bounce need the menu; every other step ignores it.
@@ -294,8 +279,7 @@ void SaveTakeover::on_world_update_end(void *world)
 
     // ProfileSelectMenu is a plain ycComponent, so it is a leaf: the walk never descends into it.
     const SceneWalk walk = walker_.find_first(root, rtti::kProfileSelectMenu, [&](void *c) { drive_profile_menu(c); });
-    // Silence is also the normal case here: the menu only exists for the seconds between the title and
-    // the launch, so this is only a real signal while a claim is waiting on it.
+    // Silence is normal here too: the menu exists only between title and launch, so it is a real signal only while a claim waits on it.
     walker_.report_silence(walk, step_ == TakeoverStep::AwaitingMenu);
 }
 
@@ -310,9 +294,8 @@ void SaveTakeover::drive_profile_menu(void *menu)
     }
     if (step_ != TakeoverStep::AwaitingMenu)
         return;
-    // Browse state only. The animate-in states run while the intro cinematic is still scrolling and
-    // parallaxing backdrop layers out of the resident world region; launching there swaps that region
-    // away underneath it, and it never reaches the state that watches for the launch.
+    // Browse state only. The animate-in states run while the intro cinematic still scrolls backdrop layers out of the resident world region; launching there
+    // swaps that region away and the menu never reaches the state that watches for the launch.
     if (menu_state(menu) != layout::kProfileMenuBrowseState)
         return;
 
@@ -329,8 +312,7 @@ void SaveTakeover::drive_profile_menu(void *menu)
 
 bool SaveTakeover::stage_save()
 {
-    // Writes the vanilla save FILE, not the live working slot: the launch copies file over working,
-    // so a working-slot write here is discarded.
+    // Writes the vanilla save file; the launch copies file over working, so a working-slot write would be discarded.
     if (const auto blob = store_.load(seed_, slot_))
     {
         if (!mod::set_save_slot_contents(kScratchSlot, blob->c_str()))
@@ -351,8 +333,7 @@ bool SaveTakeover::stage_save()
 
 void SaveTakeover::on_game_save_requested()
 {
-    // Ahead of the step test on purpose: without it, "the game never asked to save" and "we declined
-    // to commit" leave the same empty log.
+    // Logged before the step test so "the game never asked to save" and "we declined to commit" leave different logs.
     pal::logf(pal::LogLevel::Debug, "takeover: game save requested (step=%s)", takeover_step_name(step_));
     flush();
 }
@@ -362,16 +343,14 @@ void SaveTakeover::flush()
     const auto [current_seed, current_slot] = identity_();
     if (const char *refusal = flush_refusal({step_, in_gameplay(), seed_, slot_, current_seed, current_slot}); refusal != nullptr)
     {
-        // The game asking while we hold no claim is every vanilla save, so it stays at Debug. The rest
-        // mean a commit the player expected did not happen.
+        // The game asking with no claim is every vanilla save, so Debug. Otherwise a commit the player expected did not happen.
         const pal::LogLevel level = step_ != TakeoverStep::Running ? pal::LogLevel::Debug : pal::LogLevel::Warn;
         pal::logf(level, "takeover: skipping flush (%s; step=%s seed=%s slot=%s now seed=%s slot=%s)", refusal, takeover_step_name(step_), seed_.c_str(),
                   slot_.c_str(), current_seed.c_str(), current_slot.c_str());
         return;
     }
 
-    // Only under a live claim: outside one the game's own writes are none of our business, and
-    // suppressing them here would silently break vanilla saving for a player with no AP session.
+    // Only under a live claim: suppressing the game's writes outside one would break vanilla saving without an AP session.
     if (mod::save_write_enabled())
     {
         pal::logf(pal::LogLevel::Warn, "takeover: game save writes were re-enabled; suppressing");
@@ -384,8 +363,7 @@ void SaveTakeover::flush()
         pal::logf(pal::LogLevel::Warn, "takeover: empty save blob; skipping flush");
         return;
     }
-    // The only place AP state reaches the disk, so a log here is the evidence that a run's progress
-    // and its checks were committed together.
+    // The only place AP state reaches disk, so this log shows a run's progress and checks were committed together.
     if (!store_.store(seed_, slot_, blob))
         pal::logf(pal::LogLevel::Error, "takeover: failed to write mod save for seed=%s slot=%s", seed_.c_str(), slot_.c_str());
     else
