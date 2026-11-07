@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.2.2](https://github.com/Minapelago/client/compare/v1.2.1...v1.2.2) (2026-11-07)
+
+
+### Bug fixes
+
+* add purple switch to list of mirror switches ([7054271](https://github.com/Minapelago/client/commit/7054271d7f2e1568c4fa6a55df5de1a00912a22d))
+* defer deathlink deaths until player exits sensitive states ([5cb57c2](https://github.com/Minapelago/client/commit/5cb57c20b3f0971a016f57d8a64ce785172c761f))
+* read the host CA store inside the Steam container ([301fb78](https://github.com/Minapelago/client/commit/301fb78e6958d992cb58a466cdfab723616288cd))
+* refuse the connection when slot_data has a wrong-typed key ([da08667](https://github.com/Minapelago/client/commit/da0866785b2ef630e045d9a79f99f12f09c33218))
+* report why an AP connect actually failed ([f5a0ca7](https://github.com/Minapelago/client/commit/f5a0ca75bd2676f98b6852d6ef817459cce6bcbd))
+* resync received items when the server skips an index ([48ee6d9](https://github.com/Minapelago/client/commit/48ee6d93f0539f544dbb2c03963d083a35384482))
+* store the save-loaded callback before its detour goes live ([0b2f50d](https://github.com/Minapelago/client/commit/0b2f50daf8997bcc5c1541e814773d285f6b56f1))
+
+
+### Internals
+
+* compose App and HookManager from plain members ([70529d9](https://github.com/Minapelago/client/commit/70529d916ce734f6758b4d46e85a767f982b8eca))
+* group core/ and features/ into subfolders ([9d15c8f](https://github.com/Minapelago/client/commit/9d15c8f463a677638c4de9b305da56415a957e3a))
+* move the game detours from pal into their features ([3ec1e2c](https://github.com/Minapelago/client/commit/3ec1e2cf22f314cc9cb8796072eedd267025c6dc))
+* trim core state classes, tables and helpers ([780e402](https://github.com/Minapelago/client/commit/780e402075333aa415a03993a3e99785e514a678))
+* turn the PAL hook engine and overlay into free functions ([05fb5c1](https://github.com/Minapelago/client/commit/05fb5c196508aa33233a57e52909be2a9177eca4))
+
+
+### Build and CI
+
+* add Nexus crosspost to release ci ([2f5d085](https://github.com/Minapelago/client/commit/2f5d0854029f22af0554a4e0f63664072387fc85))
+* cache compiles with ccache ([6cb58fb](https://github.com/Minapelago/client/commit/6cb58fbf24f089624e2a34fdcb1147722861b21d))
+* drop unused CMake options and fold our code into two targets ([8a94ceb](https://github.com/Minapelago/client/commit/8a94ceb3e4b2ae212f252ab1b85c15d8f72d242e))
+* share one reusable build workflow between ci and release ([306ba2d](https://github.com/Minapelago/client/commit/306ba2db68b64d83dcc18c64dae81c8e4f5fa96a))
+* skip builds and tests when the code matches a green base ([a9d6e55](https://github.com/Minapelago/client/commit/a9d6e557bc8f3013ed8c561e9deac12c057245c2))
+* speed up release ci ([8deb828](https://github.com/Minapelago/client/commit/8deb828e5431af3e576db6fb3fb2ddaf82e69993))
+
+
+### Documentation
+
+* add PR template ([6c3102d](https://github.com/Minapelago/client/commit/6c3102db33d97ede0b4fbcacca77cf86a75da14a))
+* shorten comments and match them to the current code ([a6d06ed](https://github.com/Minapelago/client/commit/a6d06ed296bb502e74c4f6830433a5d1c2197b2f))
+
 ## [1.2.1](https://github.com/Axertin/mth-apclient/compare/v1.2.0...v1.2.1) (2026-09-02)
 
 
