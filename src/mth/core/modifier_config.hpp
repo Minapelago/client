@@ -1,8 +1,5 @@
 #pragma once
 
-#include <set>
-#include <vector>
-
 namespace mth
 {
 
@@ -15,13 +12,5 @@ inline constexpr int kCheatWarpHome = 121;
 inline constexpr int kCheatLandingDone = 128;
 inline constexpr int kCheatCheaperBoneUp = 102;
 inline constexpr int kCheatUnlockBoneUps = 106;
-
-// A modifier set to enforce. `indices` is the requested set, deduped. `forced` are indices to apply
-// even though they are on the deny-list, which the caller opts into per index.
-struct ModifierRequest
-{
-    std::vector<int> indices;
-    std::set<int> forced;
-};
 
 } // namespace mth

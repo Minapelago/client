@@ -12,15 +12,9 @@
 namespace
 {
 
-// Ticks between walks. A full traversal is microseconds, but it is pure waste in every room that has no
-// machine, so this runs at about 1Hz rather than per frame.
-constexpr int kWalkIntervalTicks = 60;
-
 using mth::looks_like_component;
 
-// Disables the machine's interact component. Writes only on a real transition, so the log marks the one
-// tick that changed something instead of repeating at the walk cadence - and would speak up again if the
-// game ever cleared the byte, which is worth knowing.
+// Disables the machine's interact component, logging only the tick that changed it.
 void disable_machine(void *machine)
 {
     void *ic = *reinterpret_cast<void **>(static_cast<char *>(machine) + mth::layout::kTicketMachineInteractOff);
@@ -30,11 +24,8 @@ void disable_machine(void *machine)
                   static_cast<std::size_t>(mth::layout::kTicketMachineInteractOff));
         return;
     }
-    auto *disabled = reinterpret_cast<std::uint8_t *>(static_cast<char *>(ic) + mth::layout::kInteractDisabledOff);
-    if (*disabled != 0)
-        return;
-    *disabled = 1;
-    pal::logf(pal::LogLevel::Info, "train: donation machine %p disabled (interact %p) (#162)", machine, ic);
+    if (mth::disable_interact(ic))
+        pal::logf(pal::LogLevel::Info, "train: donation machine %p disabled (interact %p) (#162)", machine, ic);
 }
 
 } // namespace
@@ -44,19 +35,7 @@ namespace mth
 
 void TicketMachineGate::tick()
 {
-    if (!mod::entity_walk_api_available())
-        return;
-    if (cooldown_ > 0)
-    {
-        --cooldown_;
-        return;
-    }
-    cooldown_ = kWalkIntervalTicks;
-
-    void *world = mod::player_world(); // null until a player is live, which is also when no room exists
-    if (world == nullptr)
-        return;
-    void *root = mod::world_game_root_entity(world);
+    void *root = walker_.due_root();
     if (root == nullptr)
         return;
 
@@ -66,7 +45,7 @@ void TicketMachineGate::tick()
 
 void TicketMachineGate::on_world_destroy()
 {
-    cooldown_ = 0;
+    walker_.reset_cadence();
 }
 
 } // namespace mth

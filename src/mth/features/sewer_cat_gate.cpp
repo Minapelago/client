@@ -13,10 +13,6 @@
 namespace
 {
 
-// About 1Hz, matching the donation-machine gate: a traversal costs microseconds but is waste in every
-// room he is not in.
-constexpr int kWalkIntervalTicks = 60;
-
 using mth::looks_like_component;
 
 // The game's ownership link, and the only path that names THIS vendor's component. Both offsets are
@@ -64,33 +60,17 @@ void SewerCatGate::disable_vendor(void *behavior, void *sibling_interact, bool s
         }
         return;
     }
-    auto *disabled = reinterpret_cast<std::uint8_t *>(static_cast<char *>(ic) + mth::layout::kInteractDisabledOff);
-    if (*disabled != 0)
-        return;
-    *disabled = 1;
-    pal::logf(pal::LogLevel::Info, "panino: fetch vendor %p disabled (interact %p via %s) (#88)", behavior, ic, via);
+    if (disable_interact(ic))
+        pal::logf(pal::LogLevel::Info, "panino: fetch vendor %p disabled (interact %p via %s) (#88)", behavior, ic, via);
 }
 
 void SewerCatGate::tick()
 {
     if (!should_disable_ || !should_disable_())
         return;
-    if (!mod::entity_walk_api_available())
-        return;
-    if (cooldown_ > 0)
-    {
-        --cooldown_;
-        return;
-    }
-    void *world = mod::player_world(); // null until a player is live
-    if (world == nullptr)
-        return;
-    void *root = mod::world_game_root_entity(world);
+    void *root = walker_.due_root();
     if (root == nullptr)
         return;
-    // Charged only when a walk runs. Charging it above lets the first tick after a room load, which
-    // usually has no live player yet, eat the on_world_destroy reset and cost a full interval.
-    cooldown_ = kWalkIntervalTicks;
 
     // Behaviour and interact component are docked as siblings, so one node's children yield both. The
     // count is what makes the sibling usable: one under this entity can only be his, several cannot be
@@ -123,7 +103,7 @@ void SewerCatGate::tick()
 
 void SewerCatGate::on_world_destroy()
 {
-    cooldown_ = 0;
+    walker_.reset_cadence();
 }
 
 } // namespace mth

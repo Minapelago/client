@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "mod/mod_api.hpp"
+#include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/ap_state.hpp"
 #include "mth/features/ability_detours.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
@@ -135,8 +137,12 @@ void AbilityHooks::set_enforce(bool on)
     enforce_ = on;
 }
 
-void AbilityHooks::set_train_gate(bool rando_active, std::uint32_t line_mask)
+void AbilityHooks::set_train_gate(bool rando_active, const ApState &state)
 {
+    std::uint32_t line_mask = 0;
+    for (const auto &it : state.received_items())
+        if (is_vanilla_game_item(it.item_id))
+            line_mask |= train_ticket_bit(game_item_type(it.item_id));
     train_rando_active_ = rando_active;
     train_mask_ = line_mask;
     set_train_destination_gate(line_mask, rando_active); // published to the OnNPCEvent detour
@@ -201,7 +207,7 @@ void AbilityHooks::enforce_burrow_tick(void *player)
         burrow_.disarm();
         return;
     }
-    if (mod::pause_api_available() && mod::world_is_paused())
+    if (mod::world_is_paused())
         return; // frozen frame: hold the confirmation rather than advancing it on a stale reading
     const bool burrowing = player_is_burrowing(player);
     burrow_.observe_burrowing(burrowing);

@@ -7,7 +7,7 @@
 namespace mth
 {
 
-class ICommandSink;
+class App;
 class BannerQueue;
 
 // Composite overlay UI: owns the dev console and login window; fans per-window visibility
@@ -15,7 +15,7 @@ class BannerQueue;
 class OverlayRoot final : public pal::IOverlayUi
 {
   public:
-    OverlayRoot(ICommandSink &sink, BannerQueue &banner_queue);
+    OverlayRoot(App &app, BannerQueue &banner_queue);
 
     OverlayRoot(const OverlayRoot &) = delete;
     OverlayRoot &operator=(const OverlayRoot &) = delete;

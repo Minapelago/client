@@ -8,23 +8,24 @@
 #include <vector>
 
 #include "mod/mod_api.hpp"
-#include "mth/app/ap_session.hpp"
 #include "mth/app/gate_probes.hpp"
-#include "mth/app/grant_pipeline.hpp"
 #include "mth/app/hook_manager.hpp"
+#include "mth/core/ap/ap_coordinator.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_link.hpp"
+#include "mth/core/area_reporter.hpp"
 #include "mth/core/broadcast.hpp"
 #include "mth/core/data/ability_ids.hpp"
 #include "mth/core/data/game_symbols.hpp"
-#include "mth/core/game_events.hpp"
 #include "mth/core/rando_bridge.hpp"
+#include "mth/features/fountain_lamp_hooks.hpp"
 #include "mth/features/mirror_switches.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "mth/features/room_tracker.hpp"
 #include "mth/features/save_takeover.hpp"
 #include "mth/features/trap_hooks.hpp"
 #include "mth/features/upgrades.hpp"
+#include "mth/net/ap_link_apclient.hpp"
 #include "mth/ui/overlay_root.hpp"
 #include "mth_version.h"
 #include "pal/pal_hook.hpp"
@@ -35,45 +36,49 @@
 namespace
 {
 
-// Thin forwarder to App. drive_tick: post-FixedUpdate. drain_grants: pre-World::Update spawn window.
-class AppTickSink final : public mth::IGameEvents
-{
-  public:
-    explicit AppTickSink(mth::App &app) : app_(app)
-    {
-    }
-    // Every game-thread event is gated on App being fully constructed. The tick hooks go live mid-ctor
-    // (GameHooks installs Game::FixedUpdate before hooks_ is assigned), so on a fast-initializing host an
-    // event can arrive before App is wired; app_ exists (we are its member) but its members may not, and
-    // ready() is the release/acquire barrier. Gating here covers every current and future forward at once.
-    void on_game_fixed_update() override
-    {
-        if (app_.ready())
-            app_.drive_tick();
-    }
-    void on_world_update_pre() override
-    {
-        if (!app_.ready())
-            return;
-        // Liveness first: this callback firing at all is the proof the native mod-hook path works,
-        // and the gate's verdict depends on observing it.
-        app_.gate_note_worldupdate();
-        app_.drain_grants();
-    }
-    void on_world_update_end(void *world) override
-    {
-        if (app_.ready())
-            app_.on_world_update_end(world);
-    }
-    void on_world_destroy() override
-    {
-        if (app_.ready())
-            app_.on_world_destroy();
-    }
+mth::App *g_app = nullptr; // set by the ctor before the tick hooks go live
 
-  private:
-    mth::App &app_;
-};
+void (*g_orig_game_fixed_update)() = nullptr;
+
+// Every game-thread event is gated on App being fully constructed. The tick hooks go live mid-ctor, so on
+// a fast-initializing host an event can arrive before App is wired; ready() is the release/acquire barrier.
+bool app_ready()
+{
+    return g_app != nullptr && g_app->ready();
+}
+
+void repl_game_fixed_update()
+{
+    if (g_orig_game_fixed_update)
+        g_orig_game_fixed_update();
+    if (app_ready())
+        g_app->drive_tick();
+}
+
+// World::Update is not detoured: its pre-update spawn window is delivered by the native "WorldUpdate"
+// mod hook (fires at the top of World::Update, before the update queue runs), so no original to forward.
+void world_update_notify()
+{
+    if (!app_ready())
+        return;
+    // Liveness first: this callback firing at all is the proof the native mod-hook path works,
+    // and the gate's verdict depends on observing it.
+    g_app->gate_note_worldupdate();
+    g_app->drain_grants();
+}
+
+void world_update_end_notify(void *world)
+{
+    if (app_ready())
+        g_app->on_world_update_end(world);
+}
+
+// World::Destroy has no original to forward: it is delivered by the native "WorldDestroy" mod hook.
+void world_destroy_notify()
+{
+    if (app_ready())
+        g_app->on_world_destroy();
+}
 
 } // namespace
 
@@ -117,14 +122,17 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
     pal::logf(pal::LogLevel::Info, "gate: verdict=%s enforcing=%d (console: `gate enforce off` to override)", verdict_name(gate_verdict_.load()),
               gate_enforcing_.load() ? 1 : 0);
 
-    net_ = std::make_unique<ApSession>(
-        state_,
+    link_ = std::make_unique<mth::net::ApLink>();
+    coordinator_ = std::make_unique<ApCoordinator>(
+        *link_, state_,
         // Runs on the game thread (coordinator tick), same as the consumer in tick().
         [this](const std::string &source, const std::string &cause)
         {
             pending_death_text_ = deathlink_banner_text(source, cause);
             pending_inbound_death_.store(true);
         },
+        // on_broadcast: hand PrintJSON banners to the render thread.
+        [this](const std::vector<mth::BannerSegment> &segs) { banner_queue_.push(segs); },
         // on_scout: fill the registry on the game thread (coordinator tick runs there).
         [this](const std::vector<mth::ScoutInfo> &locs)
         {
@@ -133,7 +141,7 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         },
         // on_session_reset: fires on the game thread (coordinator tick) for a fresh ApConnected or
         // ApDisconnected. The registry is lock-free game-thread-only data; disconnect() itself runs on
-        // the overlay render thread (ICommandSink), so clearing it there would race a concurrent
+        // the overlay render thread, so clearing it there would race a concurrent
         // lookup()/record() here. Also covers connect-to-a-new-server-without-disconnecting, which would
         // otherwise leave stale entries under reused slot numbers.
         [this]
@@ -150,17 +158,14 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             // A disconnect reaches here but NOT on_session_end, so a deathlink still latched for retry would
             // otherwise land seconds after the player left the multiworld.
             pending_inbound_death_.store(false);
-            if (hooks_)
-                hooks_->clear_pending_death();
+            hooks_->death_hooks_.reset();
         },
         // on_session_end: a different (seed, slot) authenticated. Ordered ahead of that connection's
         // ApConnected, so it is the one safe point to drop the previous session wholesale.
         [this] { clear_session_state(); });
-    tracker_ = std::make_unique<PlayerTracker>();
-    room_tracker_ = std::make_unique<RoomTracker>();
-    events_ = std::make_unique<AppTickSink>(*this);
-    grants_ = std::make_unique<GrantPipeline>(
-        *tracker_, [this](int loc) { return net_->rando().is_ap_location(loc); }, [this](int loc) { net_->rando().on_location_collected(loc); });
+    area_reporter_ = std::make_unique<AreaReporter>(*link_);
+    rando_ = std::make_unique<RandoBridge>(*link_, state_);
+    granter_.emplace([this](int loc) { return rando_->is_ap_location(loc); }, [this](int loc) { rando_->on_location_collected(loc); });
     traps_ = std::make_unique<TrapHooks>();
     // Suppress the game's default new-file starting kit while AP-authenticated (AP supplies it instead).
     // SaveSlot::Clear also fires on profile-menu / save-load, so the zero can hit an existing save's upgrade
@@ -174,16 +179,22 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             return true;
         });
 
-    // Built last: GameHooks needs *events_, and the manager's hooks tick into all managers.
+    // Tick sources, then the feature hooks they tick into. Both go live before ready_, which holds the
+    // trampolines off until the ctor finishes.
+    g_app = this;
+    fixed_update_hook_ = pal::ScopedHook(sym::game_fixed_update, &repl_game_fixed_update, &g_orig_game_fixed_update, "Game::FixedUpdate");
+    mod::install_world_update_hook(&world_update_notify);
+    mod::install_world_update_end_hook(&world_update_end_notify);
+    mod::install_world_destroy_hook(&world_destroy_notify);
     hooks_ = std::make_unique<HookManager>(
-        *events_, net_->rando(), scout_registry_, state_, bundle_store_, [this](const std::string &detail) { net_->link().send_death(detail); },
-        [this]() -> void * { return tracker_->player(); });
+        *rando_, scout_registry_, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
     {
-        overlay_root_ = std::make_unique<OverlayRoot>(*this, net_->banner_queue());
+        overlay_root_ = std::make_unique<OverlayRoot>(*this, banner_queue_);
         pal::overlay_start(overlay_root_.get());
         pal::logf(pal::LogLevel::Info, "overlay: dev console attached"); // overlay logs the resolved toggle key
     }
     ready_.store(true); // everything wired: allow the game-thread tick hooks to run (they may already be firing)
+    pal::logf(pal::LogLevel::Info, "app: tick hooks installed, idling");
 }
 
 App::~App()
@@ -192,19 +203,22 @@ App::~App()
     pal::overlay_stop();   // removes render/input hooks + stops drawing first
     overlay_root_.reset(); // then unregister the log observer
     remove_newfile_kit_suppressor();
-    hooks_.reset(); // GameHooks (tick source) stops first inside the manager, then feature hooks
-    grants_.reset();
-    room_tracker_.reset();
-    tracker_.reset();
-    events_.reset(); // AppTickSink; must outlive GameHooks (now gone) - reset after hooks_
-    net_.reset();    // link stops the net thread last
+    // Tick sources stop before the feature hooks they tick into. g_app is cleared before the detour goes,
+    // so a FixedUpdate already inside the trampoline only forwards to the original.
+    mod::remove_world_destroy_hook();
+    mod::remove_world_update_end_hook();
+    mod::remove_world_update_hook();
+    g_app = nullptr;
+    fixed_update_hook_.reset();
+    hooks_.reset();
+    inbound_.reset(); // references granter_; tear it down first
+    granter_.reset();
+    rando_.reset();
+    area_reporter_.reset();
+    coordinator_.reset();
+    link_.reset(); // stops the net thread last
     pal::shutdown_hook_engine();
     pal::logf(pal::LogLevel::Info, "mth-apclient unloading");
-}
-
-void App::run()
-{
-    pal::logf(pal::LogLevel::Info, "App::run: tick hooks installed, idling");
 }
 
 void App::drive_tick()
@@ -219,29 +233,29 @@ void App::drive_tick()
         first_tick_logged_ = true;
         pal::logf(pal::LogLevel::Info, "tick: Game::FixedUpdate live; AP coordinator pumping");
     }
-    if (tracker_)
-        tracker_->sample_position(); // post-FixedUpdate, so grants drained from WorldUpdate read the prior frame
+    player_tracker::sample_position(); // post-FixedUpdate, so grants drained from WorldUpdate read the prior frame
     std::optional<std::uint32_t> screen;
     std::uint32_t screen_id = 0;
-    if (room_tracker_ && room_tracker_->current_screen(&screen_id))
+    if (room_tracker::current_screen(&screen_id))
         screen = screen_id;
-    net_->tick(state_, screen);
+    coordinator_->tick();
+    area_reporter_->tick(state_.authenticated(), screen);
     hooks_->tick(state_, policy_, save_state_ ? save_state_->game_slot() : -1);
     upgrades_.recompute(state_);
     // Diagnostic (#46): apply_upgrades runs only while dirty, so if it never fires the pal-layer trace is
     // silent. Log the call-site gating on change to separate "never attempted" from "attempted and failed".
     {
         static int s_last_gate = -1;
-        const int gate = !upgrades_.dirty() ? 0 : (!tracker_ ? 1 : (tracker_->player() == nullptr ? 2 : 3));
+        const int gate = !upgrades_.dirty() ? 0 : (player_tracker::player() == nullptr ? 1 : 2);
         if (gate != s_last_gate)
         {
             s_last_gate = gate;
             const int *c = upgrades_.counts();
-            const char *w = gate == 0 ? "idle (not dirty)" : gate == 1 ? "dirty, no tracker" : gate == 2 ? "dirty, player null" : "dirty, attempting apply";
+            const char *w = gate == 0 ? "idle (not dirty)" : gate == 1 ? "dirty, player null" : "dirty, attempting apply";
             pal::logf(pal::LogLevel::Debug, "upgrades: drive_tick gate -> %s counts=[%d,%d,%d,%d,%d]", w, c[0], c[1], c[2], c[3], c[4]);
         }
     }
-    if (upgrades_.dirty() && tracker_ && apply_upgrades(upgrades_.counts(), tracker_->player()))
+    if (upgrades_.dirty() && apply_upgrades(upgrades_.counts(), player_tracker::player()))
         upgrades_.mark_applied(); // applied to the save; retry next tick if player not ready yet
     // Vials are deliberately outside the dirty gate: the game re-seeds their bitfield mid-run, so the AP
     // count has to be re-asserted every tick rather than once per change (#171).
@@ -252,23 +266,24 @@ void App::drive_tick()
         // No log line here: DeathHooks::kill() is the one that knows whether the death actually landed, and
         // it logs either outcome itself. The banner is best-effort by comparison, and can name a sender for
         // a death kill() went on to decline.
-        hooks_->kill_player();
+        hooks_->death_hooks_.kill();
         // Salmon is the AP palette's trap color, which is what a deathlink is from the receiver's side.
-        net_->banner_queue().push({{pending_death_text_, banner_color("", "salmon", 0, 0, false)}});
+        banner_queue_.push({{pending_death_text_, banner_color("", "salmon", 0, 0, false)}});
     }
     ensure_inbound_ready();
     reconcile_server_checked();
-    if (resend_gate_.fire(net_->link().is_connected(), grants_->inbound_ready()))
+    if (resend_gate_.fire(link_->is_connected(), inbound_.has_value()))
     {
-        net_->rando().flush(); // (re)connect: resend the full persisted checked set; server dedups
+        rando_->flush(); // (re)connect: resend the full persisted checked set; server dedups
         pal::logf(pal::LogLevel::Info, "outbound: (re)connect -> flushed checked-set");
     }
     traps_->tick();
-    grants_->tick();
+    if (inbound_)
+        inbound_->tick();
     // Persist a freshly captured AP-game slot so it's known on the next load/session.
     if (save_state_)
     {
-        const int s = hooks_->captured_ap_slot();
+        const int s = hooks_->modifier_hooks_.captured_ap_slot();
         if (s >= 0 && s != save_state_->game_slot())
         {
             save_state_->set_game_slot(s);
@@ -281,7 +296,7 @@ void App::drive_tick()
 void App::drain_grants()
 {
     hooks_->drain();
-    grants_->drain();
+    granter_->drain();
 }
 
 void App::enforce_vial_capacity()
@@ -347,13 +362,13 @@ void App::gate_tick()
         pal::logf(pal::LogLevel::Error, "gate: REFUSED - %s", reason.c_str());
         if (!gate_enforcing_.load())
             pal::logf(pal::LogLevel::Warn, "gate: enforcement is off, so AP behavior is NOT being blocked; run `gate enforce on` to enforce");
-        else if (net_)
+        else if (link_)
         {
             // Liveness is the one input that can settle after connect() already allowed a session
-            // through, so the refusal has to reach back and drop it. net_ is still null under the
+            // through, so the refusal has to reach back and drop it. link_ is still null under the
             // ctor's first gate_tick(), which is why this is guarded.
             pal::logf(pal::LogLevel::Error, "gate: dropping the AP session that was opened before the verdict settled");
-            net_->link().disconnect();
+            link_->disconnect();
         }
     }
     else if (after == GateVerdict::Clear)
@@ -372,22 +387,18 @@ void App::gate_tick()
 
 void App::on_world_update_end(void *world)
 {
-    if (room_tracker_)
-        room_tracker_->poll();
-    if (hooks_)
-        hooks_->on_world_update_end(world);
+    room_tracker::poll();
+    hooks_->on_world_update_end(world);
 }
 
 void App::on_world_destroy()
 {
     // The Player is freed with the world; drop our cached pointer so the next drive_tick's upgrade
     // re-apply (armed by the newfile-kit suppressor on reload) can't write through a dead Player.
-    if (tracker_)
-        tracker_->invalidate_player();
+    player_tracker::invalidate_player();
     // A save reload clears s_rItemCollection of our in-memory collected-bit writes; re-arm so the next
     // in-game tick re-applies them for server-collected durable-bit locations.
-    if (hooks_)
-        hooks_->on_world_destroy();
+    hooks_->on_world_destroy();
 }
 
 // A different (seed, slot) authenticated. The mod owns one save per (seed, slot), so a clean slate is the
@@ -397,8 +408,12 @@ void App::on_world_destroy()
 // would restart the run (#152).
 void App::clear_session_state()
 {
-    net_->rando().reset_session(); // releases the save; must precede save_state_.reset()
-    grants_->release_inbound();    // holds an ApSaveState reference; same ordering constraint
+    rando_->reset_session(); // releases the save; must precede save_state_.reset()
+    // inbound_ holds an ApSaveState reference too, so it goes before save_state_. Its queued grants belong
+    // to that save and must not survive into the next session's (#175); the next connection rebuilds
+    // inbound_ against its own save.
+    granter_->discard_pending();
+    inbound_.reset();
     save_state_.reset();
     state_.reset_session();
     scout_registry_.clear();
@@ -415,7 +430,7 @@ void App::clear_session_state()
 
 void App::ensure_inbound_ready()
 {
-    if (grants_->inbound_ready() || !state_.authenticated())
+    if (inbound_ || !state_.authenticated())
         return;
     remember_successful_login(); // first tick after authentication: this target worked
     const std::string seed = state_.seed();
@@ -423,12 +438,12 @@ void App::ensure_inbound_ready()
     const std::string key = bundle_store_.path_for(seed, slot).string();
     save_state_.emplace([this, seed, slot] { return bundle_store_.load_state(seed, slot); },
                         [this, seed, slot](std::string_view text) { bundle_store_.stage_state(seed, slot, text); });
-    grants_->build_inbound(
-        state_, *save_state_, [this] { return hooks_->credit_kear_key(); }, // vanilla-kear key grant (#130)
+    inbound_.emplace(
+        *granter_, state_, *save_state_, [this] { return hooks_->location_hooks_.credit_kear_key(player_tracker::player()); }, // vanilla-kear key grant (#130)
         [this](int modifier_index) { return traps_->arm(modifier_index); });
     pal::logf(pal::LogLevel::Info, "inbound: state loaded (%s); granter live", key.c_str());
-    hooks_->set_ap_slot(save_state_->game_slot()); // restore the AP-game slot (skip capture if known)
-    net_->rando().attach_save_state(*save_state_);
+    hooks_->modifier_hooks_.set_ap_slot(save_state_->game_slot()); // restore the AP-game slot (skip capture if known)
+    rando_->attach_save_state(*save_state_);
     pal::logf(pal::LogLevel::Info, "outbound: bridge attached to %s", key.c_str());
 }
 
@@ -440,7 +455,7 @@ void App::reconcile_server_checked()
     bool changed = false;
     for (std::int64_t id : ids)
         if (id >= 0 && id <= std::numeric_limits<int>::max())
-            changed |= net_->rando().reconcile_server_checked(static_cast<int>(id));
+            changed |= rando_->reconcile_server_checked(static_cast<int>(id));
     if (changed)
         save_state_->stage(); // one stage per reconcile pass (batched)
 }
@@ -464,7 +479,7 @@ void App::connect(const std::string &server, const std::string &slot, const std:
         pending_server_ = server;
         pending_slot_ = slot;
     }
-    net_->link().connect(server, slot, password);
+    link_->connect(server, slot, password);
 }
 
 SavedLogin App::saved_login() const
@@ -489,10 +504,10 @@ void App::remember_successful_login()
 
 void App::disconnect()
 {
-    // Runs on the overlay render thread (ICommandSink caller), not the game thread. The registry is
+    // Runs on the overlay render thread, not the game thread. The registry is
     // cleared from the coordinator's on_session_reset callback instead (game thread; see ctor), since
     // clearing the lock-free map here would race a concurrent game-thread lookup()/record().
-    net_->link().disconnect();
+    link_->disconnect();
 }
 
 ConnectionStatus App::connection_status() const
@@ -503,7 +518,7 @@ ConnectionStatus App::connection_status() const
 std::vector<std::string> App::status_lines() const
 {
     std::vector<std::string> out;
-    out.push_back(std::string("connected: ") + (net_->link().is_connected() ? "yes" : "no"));
+    out.push_back(std::string("connected: ") + (link_->is_connected() ? "yes" : "no"));
     out.push_back("ap status: " + state_.status());
     out.push_back("player slot: " + std::to_string(state_.player_slot()));
     out.push_back("received items: " + std::to_string(state_.received_items().size()));
@@ -573,7 +588,8 @@ void App::give_item(std::int64_t ap_item_id)
     }
 
     const int item_type = mth::game_item_type(ap_item_id);
-    if (grants_->grant(item_type))
+    // Dev-console path: nothing durable to record, so it carries no receipt.
+    if (granter_->grant(item_type, kNoReceipt))
         pal::logf(pal::LogLevel::Info, "console: giveapitem %lld (type=%d) queued", static_cast<long long>(ap_item_id), item_type);
     else
         pal::logf(pal::LogLevel::Warn, "console: giveapitem %lld not ready (collect any pickup first to capture player + position)",
@@ -582,14 +598,14 @@ void App::give_item(std::int64_t ap_item_id)
 
 void App::remove_lock(int slot)
 {
-    hooks_->remove_lock(slot);
+    hooks_->lock_hooks_.locks().set_removed(slot);
     pal::logf(pal::LogLevel::Info, "console: removelock %d (live if spawned; opens on entry otherwise)", slot);
 }
 
 void App::set_modifier(int idx, bool on)
 {
     policy_.arm_console_modifiers();
-    hooks_->set_modifier_live(idx, on);
+    hooks_->modifier_hooks_.set_live(idx, on);
     pal::logf(pal::LogLevel::Info, "console: modifier %d %s", idx, on ? "on" : "off");
 }
 
@@ -621,33 +637,33 @@ void App::set_mirror_switch_override(bool on)
 void App::lock_modifiers(bool armed)
 {
     policy_.arm_console_modifiers();
-    hooks_->set_modifiers_armed(armed);
+    hooks_->modifier_hooks_.set_armed(armed);
     pal::logf(pal::LogLevel::Info, "console: modifiers %s", armed ? "locked" : "unlocked");
 }
 
 void App::set_stat_caps(int attack, int defense, int sidearm)
 {
     policy_.arm_forced_caps();
-    hooks_->set_stat_caps(attack, defense, sidearm);
+    hooks_->level_cap_hooks_.set_counts(attack, defense, sidearm);
     pal::logf(pal::LogLevel::Info, "console: stat caps attack=%d defense=%d sidearm=%d", attack, defense, sidearm);
 }
 
 void App::set_ability_randomized(Ability a, bool on)
 {
     policy_.arm_console_abilities();
-    hooks_->set_ability_randomized(a, on);
+    hooks_->ability_hooks_.set_randomized(a, on);
     pal::logf(pal::LogLevel::Info, "console: ability %d randomized %s", static_cast<int>(a), on ? "on" : "off");
 }
 
 void App::enable_deathlink(bool on)
 {
-    net_->link().enable_deathlink(on);
+    link_->enable_deathlink(on);
     pal::logf(pal::LogLevel::Info, "console: deathlink %s", on ? "enabled" : "disabled");
 }
 
 void App::set_lit_lamps(std::uint32_t lamp_mask)
 {
-    hooks_->set_lamp_console_override(lamp_mask);
+    set_fountain_console_mask(lamp_mask);
     pal::logf(pal::LogLevel::Info, "console: fountain lamp override mask=0x%x", lamp_mask);
 }
 
@@ -690,7 +706,7 @@ void App::save_test(const std::string &op)
     {
         // Re-opens the one path by which mod state can reach vanilla saveData.yc (and Steam Cloud);
         // refused during a takeover.
-        if (hooks_->takeover_active())
+        if (hooks_->save_takeover_.takeover_active())
         {
             pal::logf(pal::LogLevel::Warn, "savetest: refusing to enable save writes; a save takeover is active");
             return;

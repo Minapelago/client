@@ -3,7 +3,7 @@
 namespace mth
 {
 
-OverlayRoot::OverlayRoot(ICommandSink &sink, BannerQueue &banner_queue) : console_(sink, banner_queue), login_(sink)
+OverlayRoot::OverlayRoot(App &app, BannerQueue &banner_queue) : console_(app, banner_queue), login_(app)
 {
 }
 

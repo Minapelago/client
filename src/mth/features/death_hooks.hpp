@@ -4,6 +4,7 @@
 #include <string>
 
 #include "mth/core/death_broadcast_gate.hpp"
+#include "mth/features/room_clock.hpp"
 
 namespace mth
 {
@@ -47,8 +48,8 @@ class DeathHooks
     DeathBroadcastGate gate_;
     std::function<void(const std::string &)> on_local_death_;
     std::function<void *()> get_player_;
-    int last_alive_spark_{0};        // spark sampled on the last alive tick; the death drop zeroes the live value before the edge
-    float last_room_time_{0.0f};     // previous room clock; unchanged means the world did not update this tick
+    int last_alive_spark_{0}; // spark sampled on the last alive tick; the death drop zeroes the live value before the edge
+    RoomClock room_clock_;
     bool room_clock_stalled_{false}; // last tick froze with the world unpaused: a transition, not a menu
     int pending_kill_ticks_{0};      // gameplay ticks left to land a received death that could not be applied yet
     int pending_broadcast_ticks_{0}; // ticks left for our own death to reach the death screen before we drop it

@@ -8,8 +8,8 @@
 
 #include <imgui.h>
 
+#include "mth/app/app.hpp"
 #include "mth/core/ap_gate.hpp"
-#include "mth/core/command_sink.hpp"
 #include "mth/core/data/ability_ids.hpp"
 #include "mth/core/dev_commands.hpp"
 #include "mth/core/fountain_lamps.hpp"
@@ -28,6 +28,11 @@ template <typename T> bool parse_num(const std::string &s, T &out)
     const char *end = s.data() + s.size();
     const auto r = std::from_chars(s.data(), end, out);
     return r.ec == std::errc{} && r.ptr == end;
+}
+
+bool parse_on(const std::string &arg)
+{
+    return arg == "on" || arg == "1" || arg == "true";
 }
 
 void textOutlined(const char *text, ImU32 textCol = IM_COL32_WHITE, ImU32 outlineCol = IM_COL32_BLACK)
@@ -49,7 +54,7 @@ void textOutlined(const char *text, ImU32 textCol = IM_COL32_WHITE, ImU32 outlin
 namespace mth
 {
 
-DevConsole::DevConsole(ICommandSink &sink, BannerQueue &banner_queue) : sink_(sink), banner_(banner_queue)
+DevConsole::DevConsole(App &app, BannerQueue &banner_queue) : app_(app), banner_(banner_queue)
 {
     // Observer runs on arbitrary threads; must never call pal::logf.
     pal::set_log_observer([this](pal::LogLevel, std::string_view msg) { log_.push(msg); });
@@ -94,7 +99,7 @@ void DevConsole::draw_version_hud()
 // renders on exactly the builds where the game-side hooks are what failed.
 void DevConsole::draw_gate_banner()
 {
-    const GateStatus g = sink_.gate_status();
+    const GateStatus g = app_.gate_status();
     const GateVerdict verdict = g.verdict;
     if (verdict == GateVerdict::Clear)
         return;
@@ -186,16 +191,14 @@ void DevConsole::run_input()
         log_.clear();
         break;
     case CommandKind::Status:
-        for (const auto &l : sink_.status_lines())
+        for (const auto &l : app_.status_lines())
             println(l);
         break;
     case CommandKind::Gate:
     {
         if (cmd.args.size() >= 2 && cmd.args[0] == "enforce")
         {
-            const bool on = cmd.args[1] == "on" || cmd.args[1] == "1" || cmd.args[1] == "true";
-            sink_.set_gate_enforcing(on);
-            println(std::string("gate enforcing ") + (on ? "on" : "off"));
+            app_.set_gate_enforcing(parse_on(cmd.args[1]));
             break;
         }
         if (!cmd.args.empty())
@@ -204,14 +207,14 @@ void DevConsole::run_input()
             println("       gate enforce on|off");
             break;
         }
-        const GateStatus g = sink_.gate_status();
+        const GateStatus g = app_.gate_status();
         println(std::string("gate verdict: ") + verdict_name(g.verdict) + (g.enforcing ? " (enforcing)" : " (observe-only)"));
         if (!g.reason.empty())
             println("gate reason: " + g.reason);
         break;
     }
     case CommandKind::Items:
-        for (const auto &l : sink_.item_lines())
+        for (const auto &l : app_.item_lines())
             println(l);
         break;
     case CommandKind::GiveItem:
@@ -223,10 +226,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], id))
                 println("giveapitem: '" + cmd.args[0] + "' is not a number");
             else
-            {
-                sink_.give_item(id);
-                println("granting item id " + cmd.args[0]);
-            }
+                app_.give_item(id);
         }
         break;
     case CommandKind::RemoveLock:
@@ -238,10 +238,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], slot))
                 println("removelock: '" + cmd.args[0] + "' is not a number");
             else
-            {
-                sink_.remove_lock(slot);
-                println("removing lock slot " + cmd.args[0]);
-            }
+                app_.remove_lock(slot);
         }
         break;
     case CommandKind::Modifier:
@@ -253,25 +250,17 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], idx))
                 println("modifier: '" + cmd.args[0] + "' is not a number");
             else
-            {
-                const bool on = cmd.args[1] == "on" || cmd.args[1] == "1" || cmd.args[1] == "true";
-                sink_.set_modifier(idx, on);
-                println("modifier " + cmd.args[0] + " " + (on ? "on" : "off"));
-            }
+                app_.set_modifier(idx, parse_on(cmd.args[1]));
         }
         break;
     case CommandKind::ModifierLock:
         if (cmd.args.empty())
         {
-            for (const auto &l : sink_.status_lines())
+            for (const auto &l : app_.status_lines())
                 println(l);
         }
         else
-        {
-            const bool armed = cmd.args[0] == "lock" || cmd.args[0] == "on" || cmd.args[0] == "1";
-            sink_.lock_modifiers(armed);
-            println(std::string("modifiers ") + (armed ? "locked" : "unlocked"));
-        }
+            app_.lock_modifiers(cmd.args[0] == "lock" || cmd.args[0] == "on" || cmd.args[0] == "1");
         break;
     case CommandKind::Connect:
         if (cmd.args.size() < 2)
@@ -280,7 +269,7 @@ void DevConsole::run_input()
         }
         else
         {
-            sink_.connect(cmd.args[0], cmd.args[1], cmd.args.size() > 2 ? cmd.args[2] : std::string());
+            app_.connect(cmd.args[0], cmd.args[1], cmd.args.size() > 2 ? cmd.args[2] : std::string());
             println("connecting to " + cmd.args[0] + " as " + cmd.args[1] + " ...");
         }
         break;
@@ -295,10 +284,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], attack) || !parse_num(cmd.args[1], defense) || !parse_num(cmd.args[2], sidearm))
                 println("caps: expected three numbers");
             else
-            {
-                sink_.set_stat_caps(attack, defense, sidearm);
-                println("stat caps set: attack=" + cmd.args[0] + " defense=" + cmd.args[1] + " sidearm=" + cmd.args[2]);
-            }
+                app_.set_stat_caps(attack, defense, sidearm);
         }
         break;
     case CommandKind::Ability:
@@ -313,26 +299,18 @@ void DevConsole::run_input()
                 println("usage: ability <name> on|off  (names: burrow swim rope puff spring carry train)");
             }
             else
-            {
-                const bool on = cmd.args[1] == "on" || cmd.args[1] == "1" || cmd.args[1] == "true";
-                sink_.set_ability_randomized(*ab, on);
-                println("ability " + cmd.args[0] + " randomized " + (on ? "on" : "off"));
-            }
+                app_.set_ability_randomized(*ab, parse_on(cmd.args[1]));
         }
         break;
     case CommandKind::Disconnect:
-        sink_.disconnect();
+        app_.disconnect();
         println("disconnect requested");
         break;
     case CommandKind::Deathlink:
         if (cmd.args.empty())
             println("usage: deathlink on|off");
         else
-        {
-            const bool on = cmd.args[0] == "on" || cmd.args[0] == "1" || cmd.args[0] == "true";
-            sink_.enable_deathlink(on);
-            println("deathlink " + std::string(on ? "enabled" : "disabled"));
-        }
+            app_.enable_deathlink(parse_on(cmd.args[0]));
         break;
     case CommandKind::LitLamps:
     {
@@ -347,41 +325,20 @@ void DevConsole::run_input()
             else
                 println("litlamps: ignoring non-numeric arg '" + a + "'");
         }
-        const std::uint32_t mask = mth::lit_mask_from_indices(indices);
-        sink_.set_lit_lamps(mask);
-        if (mask == 0)
-            println("litlamps cleared");
-        else
-        {
-            std::string lit;
-            for (int i = 0; i < mth::kGeneratorLampCount; ++i)
-                if ((mask >> static_cast<unsigned>(i)) & 1u)
-                    lit += (lit.empty() ? "" : ",") + std::to_string(i);
-            println("litlamps lit: " + lit);
-        }
+        app_.set_lit_lamps(mth::lit_mask_from_indices(indices));
         break;
     }
     case CommandKind::Switches:
         if (cmd.args.empty())
-        {
-            sink_.probe_switches();
-            println("switches: walking this room; see log");
-        }
+            app_.probe_switches();
         else
-        {
-            const bool on = cmd.args[0] == "on" || cmd.args[0] == "1" || cmd.args[0] == "true";
-            sink_.set_mirror_switch_override(on);
-            println("switches: AP drive forced " + std::string(on ? "on (scratch saves only)" : "off"));
-        }
+            app_.set_mirror_switch_override(parse_on(cmd.args[0]));
         break;
     case CommandKind::SaveTest:
         if (cmd.args.empty())
             println("usage: savetest dump|write|noflush|flush");
         else
-        {
-            sink_.save_test(cmd.args[0]);
-            println("savetest " + cmd.args[0] + " issued; see log");
-        }
+            app_.save_test(cmd.args[0]);
         break;
     case CommandKind::Trap:
         if (cmd.args.empty())
@@ -395,10 +352,7 @@ void DevConsole::run_input()
             else if (cmd.args.size() > 1 && !parse_num(cmd.args[1], secs))
                 println("trap: '" + cmd.args[1] + "' is not a number");
             else
-            {
-                sink_.fire_trap(idx, static_cast<float>(secs));
-                println("trap: modifier " + std::to_string(idx) + " queued for the next game tick (see the log for the result)");
-            }
+                app_.fire_trap(idx, static_cast<float>(secs));
         }
         break;
     case CommandKind::Unknown:

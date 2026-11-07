@@ -1,5 +1,6 @@
 #include "mth/features/fountain_lamp_hooks.hpp"
 
+#include <atomic>
 #include <cstdint>
 
 #include "mth/core/data/game_layout.hpp"
@@ -15,42 +16,23 @@ namespace
 
 // HubFountain::Bulb::Update(float dt, bool lit): forces lit=true for AP-granted generator lamps.
 // Prototype order (self, dt, lit) matches the mangled Update(float,bool) on both ABIs; never reorder.
-// Reads the force-lit mask (bit i => force lamp index i lit) per bulb per frame.
-const std::atomic<std::uint32_t> *g_fountain_mask = nullptr;
+// Reads the force-lit masks (bit i => force lamp index i lit) per bulb per frame.
+std::atomic<std::uint32_t> g_slot_mask{0};    // slot_data lamps, from the game-thread tick
+std::atomic<std::uint32_t> g_console_mask{0}; // sticky console override, from the render thread
 [[clang::no_destroy]] pal::ScopedHook g_fountain_hook;
 void (*g_orig_bulb_update)(void *, float, bool) = nullptr;
 
 void repl_bulb_update(void *self, float dt, bool lit)
 {
-    if (g_fountain_mask != nullptr && self != nullptr)
+    if (self != nullptr)
     {
+        const std::uint32_t mask = g_slot_mask.load(std::memory_order_relaxed) | g_console_mask.load(std::memory_order_relaxed);
         const std::uint32_t idx = pal::at<std::uint32_t>(self, mth::layout::kBulbIndexOff);
-        if (idx < static_cast<std::uint32_t>(mth::kGeneratorLampCount) && ((g_fountain_mask->load(std::memory_order_relaxed) >> idx) & 1u))
+        if (idx < static_cast<std::uint32_t>(mth::kGeneratorLampCount) && ((mask >> idx) & 1u))
             lit = true; // force this generator lamp lit; never writes SaveSlot+0x290
     }
     if (g_orig_bulb_update)
         g_orig_bulb_update(self, dt, lit);
-}
-
-bool install_fountain_lamp_hook(const std::atomic<std::uint32_t> *lit_mask)
-{
-    g_fountain_mask = lit_mask;
-    const std::uintptr_t addr = pal::resolve_game_symbol(mth::sym::hub_fountain_bulb_update);
-    if (addr == 0)
-    {
-        pal::logf(pal::LogLevel::Warn, "fountain: HubFountain::Bulb::Update not resolved; lamp pre-light off");
-        g_fountain_mask = nullptr;
-        return false;
-    }
-    g_fountain_hook = pal::ScopedHook(addr, &repl_bulb_update, &g_orig_bulb_update);
-    if (!g_fountain_hook.installed())
-    {
-        pal::logf(pal::LogLevel::Error, "fountain: failed to hook HubFountain::Bulb::Update");
-        g_fountain_mask = nullptr;
-        return false;
-    }
-    pal::logf(pal::LogLevel::Info, "fountain: hooked HubFountain::Bulb::Update at %p", g_fountain_hook.target());
-    return true;
 }
 
 } // namespace
@@ -58,16 +40,36 @@ bool install_fountain_lamp_hook(const std::atomic<std::uint32_t> *lit_mask)
 namespace mth
 {
 
-FountainLampHooks::FountainLampHooks()
+void install_fountain_lamp_hook()
 {
-    if (!install_fountain_lamp_hook(&mask_))
-        pal::logf(pal::LogLevel::Warn, "FountainLampHooks: HubFountain::Bulb::Update unresolved; lamp pre-light inactive");
+    const std::uintptr_t addr = pal::resolve_game_symbol(mth::sym::hub_fountain_bulb_update);
+    if (addr == 0)
+    {
+        pal::logf(pal::LogLevel::Warn, "fountain: HubFountain::Bulb::Update not resolved; lamp pre-light off");
+        return;
+    }
+    g_fountain_hook = pal::ScopedHook(addr, &repl_bulb_update, &g_orig_bulb_update);
+    if (!g_fountain_hook.installed())
+    {
+        pal::logf(pal::LogLevel::Error, "fountain: failed to hook HubFountain::Bulb::Update");
+        return;
+    }
+    pal::logf(pal::LogLevel::Info, "fountain: hooked HubFountain::Bulb::Update at %p", g_fountain_hook.target());
 }
 
-FountainLampHooks::~FountainLampHooks()
+void remove_fountain_lamp_hook()
 {
     g_fountain_hook.reset();
-    g_fountain_mask = nullptr;
+}
+
+void set_fountain_slot_mask(std::uint32_t mask)
+{
+    g_slot_mask.store(mask, std::memory_order_relaxed);
+}
+
+void set_fountain_console_mask(std::uint32_t mask)
+{
+    g_console_mask.store(mask, std::memory_order_relaxed);
 }
 
 } // namespace mth

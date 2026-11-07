@@ -52,35 +52,20 @@ DeathHooks::DeathHooks(std::function<void(const std::string &)> on_local_death, 
 DeathHooks::~DeathHooks() = default;
 
 // PlayerDie only queues damage for the world's gameplay queues, so a requested death cannot land on a tick
-// where those did not run. Two freezes stop them and neither is visible to the other: a paused world (any
-// menu; World::Update then runs only its pause queue), and a paused game (the whole world queue is skipped,
-// which stalls the room clock). A build whose API lacks both accessors falls back to wall ticks rather than
-// freezing the gate.
-// They are not equally safe to kill through, so record which one this was: a paused world holds a requested
-// death until the menu closes and then runs it, while a stalled room clock is a transition or an in-progress
-// death sequence, where it lands at an unpredictable point.
+// where those did not run (see RoomClock). The two freezes are not equally safe to kill through, so record
+// which one this was: a paused world holds a requested death until the menu closes and then runs it, while
+// a stalled room clock is a transition or an in-progress death sequence, where it lands at an unpredictable
+// point.
 bool DeathHooks::gameplay_advanced()
 {
-    if (mod::pause_api_available() && mod::world_is_paused())
-    {
-        room_clock_stalled_ = false;
-        return false;
-    }
-    if (!mod::room_time_api_available())
-    {
-        room_clock_stalled_ = false;
-        return true;
-    }
-    const float now = mod::room_time();
-    const bool moved = now != last_room_time_;
-    last_room_time_ = now;
-    room_clock_stalled_ = !moved;
-    return moved;
+    const RoomClock::Tick t = room_clock_.sample();
+    room_clock_stalled_ = t == RoomClock::Tick::Stalled;
+    return t == RoomClock::Tick::Advanced;
 }
 
 void DeathHooks::poll()
 {
-    const bool advanced = gameplay_advanced(); // sampled every tick: last_room_time_ must not go stale
+    const bool advanced = gameplay_advanced(); // sampled every tick: the room clock reading must not go stale
     drive_pending_death(advanced);
     drive_pending_broadcast(); // ahead of the null-player return below: the death screen has no player
     void *p = get_player_ ? get_player_() : nullptr;

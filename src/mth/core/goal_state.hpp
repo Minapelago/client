@@ -36,7 +36,7 @@ inline constexpr int kGeneratorCount = static_cast<int>(sizeof(kGeneratorSaveBit
     return std::popcount(generator_bits & broken_mask);
 }
 
-// twin: mth/features/goal_tracker.hpp polls the save against this.
+// twin: GoalTracker in mth/features/save_pollers.hpp polls the save against this.
 // slot_data "goal_config": which condition completes the AP goal. Unknown/absent -> finish.
 inline constexpr int kGoalFinish = 0;     // beat the game (SaveSlot game-clear flag)
 inline constexpr int kGoalGenerators = 1; // repair >= goal_generators generators

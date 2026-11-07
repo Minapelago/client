@@ -1,50 +1,38 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
 #include <functional>
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "mth/core/data/ability_ids.hpp"
+#include "mth/features/ability_hooks.hpp"
+#include "mth/features/death_hooks.hpp"
+#include "mth/features/intro_chest_gate.hpp"
+#include "mth/features/levelcap_hooks.hpp"
+#include "mth/features/location_hooks.hpp"
+#include "mth/features/lock_hooks.hpp"
+#include "mth/features/modifier_hooks.hpp"
+#include "mth/features/save_pollers.hpp"
+#include "mth/features/save_takeover.hpp"
+#include "mth/features/sewer_cat_gate.hpp"
+#include "mth/features/status_menu_caps.hpp"
 
 namespace mth
 {
 
-struct IGameEvents;
-class GameHooks;
 class RandoBridge;
 class ScoutRegistry;
 class ApState;
 class SessionPolicy;
-class LocationHooks;
-class BossTracker;
-class GoalTracker;
-class KearCompletionTracker;
-class LockHooks;
-class ChestHooks;
-class DeathHooks;
-class AbilityHooks;
-class PawnShopHooks;
-class SewerCatGate;
-class IntroChestGate;
-class ModifierHooks;
-class LevelCapHooks;
-class StatusMenuCaps;
-class FountainLampHooks;
-class TitleGate;
-class SaveTakeover;
 class ApSaveBundleStore;
 
-// Owns the game-hook plumbing (GameHooks) + the 16 feature hooks, and drives their slice
-// of the per-frame tick. Thin: wiring + lifetime + enforcement dispatch, no new logic.
+// Owns the feature hooks and drives their slice of the per-frame tick.
 class HookManager
 {
   public:
-    HookManager(IGameEvents &events, RandoBridge &rando, ScoutRegistry &scout, ApState &state, ApSaveBundleStore &bundle,
-                std::function<void(const std::string &)> send_death, std::function<void *()> get_player);
-    ~HookManager(); // out of line: the owned hook types are only forward-declared here
+    HookManager(RandoBridge &rando, ScoutRegistry &scout, ApState &state, ApSaveBundleStore &bundle, std::function<void(const std::string &)> send_death,
+                std::function<void *()> get_player);
+    ~HookManager();
 
     HookManager(const HookManager &) = delete;
     HookManager &operator=(const HookManager &) = delete;
@@ -53,58 +41,36 @@ class HookManager
     // Session boundary: drop the feature state seeded from one connection's received items (lock removals)
     // and the captured AP-game slot, so none of it carries into the next connection's save.
     void clear_session_state();
-    void clear_pending_death();            // drop a deathlink latched for retry; also on plain disconnect, not just a new session
     void drain();                          // World::Update pre-hook window
     void on_world_update_end(void *world); // menu-world scene walk for the save takeover
     void on_world_destroy();               // re-arm native collected-bit enforcement (save reload clears it)
-    void kill_player();
-    bool credit_kear_key(); // vanilla kear mode: grant one usable key to the live player (#130); false if not ready
-
-    [[nodiscard]] int captured_ap_slot() const;
-    void set_ap_slot(int slot);
-
-    void set_modifier_live(int idx, bool on);
-    void set_modifiers_armed(bool armed);
-    void remove_lock(int slot);
-    void set_stat_caps(int attack, int defense, int sidearm);
-    void set_ability_randomized(Ability a, bool on);
-    void set_lamp_console_override(std::uint32_t mask); // offline test: OR extra Ossex fountain lamps lit each frame
-
-    // True while a save-takeover session is live; gates the dev console's save-write toggle.
-    [[nodiscard]] bool takeover_active() const;
-
     void append_status_lines(std::vector<std::string> &out) const;
 
   private:
-    void seed_kear_blocks(ApState &state); // received kear-block items -> LockRegistry removals
-    // Clamp weapon ownership to the tiers AP granted. Bound AP save only: it is a durable, destructive write.
-    void enforce_weapon_grants(ApState &state, bool authed, bool slot_ok);
+    bool vendor_locked(const ApState &state); // arms vendor_lockout_ while connected, then reports it
 
-    std::atomic<std::uint32_t> lamp_console_override_{0}; // sticky console-forced lamp mask (render thread) OR'd over slot_data in tick (game thread)
     // Set the first time a save sees an AP session, cleared only on save load. Vendors that sell outside
     // AP logic latch on this rather than the live phase, so a mid-run disconnect cannot reopen them.
     std::atomic<bool> vendor_lockout_{false};
 
     RandoBridge &rando_;                 // checked-location state; the donation machine reads it (#162)
-    std::function<void *()> get_player_; // live Player* accessor (shared with DeathHooks + kear credit)
-    std::unique_ptr<GameHooks> game_hooks_;
-    std::unique_ptr<LocationHooks> location_hooks_;
-    std::unique_ptr<BossTracker> boss_tracker_;
-    std::unique_ptr<GoalTracker> goal_tracker_;
-    std::unique_ptr<KearCompletionTracker> kear_completion_;
-    std::unique_ptr<LockHooks> lock_hooks_;
-    std::unique_ptr<ChestHooks> chest_hooks_;
-    std::unique_ptr<DeathHooks> death_hooks_;
-    std::unique_ptr<AbilityHooks> ability_hooks_;
-    std::unique_ptr<PawnShopHooks> pawn_shop_hooks_;
-    std::unique_ptr<SewerCatGate> sewer_cat_gate_;
-    std::unique_ptr<IntroChestGate> intro_chest_gate_;
-    std::unique_ptr<ModifierHooks> modifier_hooks_;
-    std::unique_ptr<LevelCapHooks> level_cap_hooks_;
-    std::unique_ptr<StatusMenuCaps> status_menu_caps_;
-    std::unique_ptr<FountainLampHooks> fountain_lamp_hooks_;
-    std::unique_ptr<SaveTakeover> save_takeover_; // before TitleGate: it holds the detour that calls in
-    std::unique_ptr<TitleGate> title_gate_;
+    std::function<void *()> get_player_; // live Player* accessor for the burrow tick
+
+  public:
+    // App reaches the features directly for the console and session seams. Destroyed in reverse order,
+    // so every feature that holds a reference to another is declared after it.
+    LocationHooks location_hooks_;
+    BossTracker boss_tracker_;
+    GoalTracker goal_tracker_;
+    LockHooks lock_hooks_;
+    DeathHooks death_hooks_;
+    AbilityHooks ability_hooks_;
+    SewerCatGate sewer_cat_gate_; // reads vendor_lockout_
+    IntroChestGate intro_chest_gate_;
+    ModifierHooks modifier_hooks_;
+    LevelCapHooks level_cap_hooks_;
+    StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
+    SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it
 };
 
 } // namespace mth

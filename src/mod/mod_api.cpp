@@ -60,6 +60,20 @@ template <class Fn> bool usable_appended(Fn fn)
     return fn != nullptr && pal::text_range_published() && pal::in_game_text(reinterpret_cast<const void *>(fn));
 }
 
+// True when the API table is set and its entry is callable. Written over pointers to members so the
+// call sites name the entry once.
+template <class Fn> bool has(Fn MinaModAPI::*entry)
+{
+    return g_mod_api != nullptr && usable(g_mod_api->*entry);
+}
+
+// Same for an appended entry: the revision gate comes first, because the entry itself must not be read
+// on a build whose struct ends before it.
+template <class Fn> bool has_appended(Fn MinaModAPI::*entry)
+{
+    return appended_api_possible() && usable_appended(g_mod_api->*entry);
+}
+
 // Every named hook the mod installs. InstallHook accepts any string and returns a valid handle
 // whether or not the build dispatches that name, and RunHooks ignores a hash it does not know, so
 // neither the handle nor RemoveHook proves a hook exists. Firing is the only evidence, so each
@@ -73,7 +87,6 @@ enum HookId
     kHookItemsOnPickupDone,
     kHookPickupOnPickup,
     kHookShopItemRefresh,
-    kHookAreaManagerNewArea,
     kHookChestConstruct,
     kHookWorldUpdateEnd,
     kHookKeyboardUpdate,
@@ -83,8 +96,8 @@ enum HookId
 };
 
 constexpr const char *kHookNames[kHookCount] = {
-    "IsItemCollected",    "WorldUpdate",    "WorldDestroy",   "ItemsOnPickup",    "ItemsOnPickupDone",  "PickupOnPickup", "ShopItemRefresh",
-    "AreaManagerNewArea", "ChestConstruct", "WorldUpdateEnd", "ycKeyboardUpdate", "ycControllerUpdate", "FixedUpdate",
+    "IsItemCollected", "WorldUpdate",    "WorldDestroy",   "ItemsOnPickup",    "ItemsOnPickupDone",  "PickupOnPickup",
+    "ShopItemRefresh", "ChestConstruct", "WorldUpdateEnd", "ycKeyboardUpdate", "ycControllerUpdate", "FixedUpdate",
 };
 
 std::atomic<bool> g_hook_fired[kHookCount];
@@ -99,10 +112,53 @@ void note_fired(HookId id)
 // Null when the API is unusable. A non-null handle says nothing about whether the name dispatches.
 void *install_named(HookId id, MM_HookCallback cb)
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->InstallHook))
+    if (!has(&MinaModAPI::InstallHook))
         return nullptr;
     g_hook_handles[id] = g_mod_api->InstallHook(kHookNames[id], 0, cb);
     return g_hook_handles[id];
+}
+
+void remove_named(HookId id)
+{
+    if (g_hook_handles[id] != nullptr && has(&MinaModAPI::RemoveHook))
+        g_mod_api->RemoveHook(g_hook_handles[id]);
+    g_hook_handles[id] = nullptr;
+}
+
+// Log lines for one hook. A null unavailable skips the up-front API check, so a missing API shows up as
+// the failed line; a null ok logs nothing on success.
+struct InstallLogs
+{
+    const char *unavailable;
+    const char *failed;
+    const char *ok;
+};
+
+// Stores cb in slot before installing so a hook that fires at once finds it, and clears it again if
+// the install fails.
+template <class Fn> bool install_hook(HookId id, MM_HookCallback trampoline, Fn &slot, Fn cb, const InstallLogs &logs)
+{
+    if (logs.unavailable != nullptr && !has(&MinaModAPI::InstallHook))
+    {
+        pal::logf(pal::LogLevel::Warn, "%s", logs.unavailable);
+        return false;
+    }
+    slot = cb;
+    if (install_named(id, trampoline) == nullptr)
+    {
+        pal::logf(pal::LogLevel::Warn, "%s", logs.failed);
+        slot = nullptr;
+        return false;
+    }
+    if (logs.ok != nullptr)
+        pal::logf(pal::LogLevel::Info, "%s", logs.ok);
+    return true;
+}
+
+template <class Fn> void remove_hook(HookId id, Fn &slot)
+{
+    remove_named(id);
+    slot = nullptr;
 }
 
 mod::ItemCollectedFn g_item_collected_cb = nullptr;
@@ -204,17 +260,6 @@ void shop_item_refresh_trampoline(void *pctx)
         g_shop_item_refresh_cb(static_cast<void *>(c->shopItem));
 }
 
-mod::AreaNewAreaFn g_area_new_area_cb = nullptr;
-
-void area_new_area_trampoline(void *pctx)
-{
-    note_fired(kHookAreaManagerNewArea);
-    auto *c = static_cast<AreaManagerNewAreaCtx *>(pctx);
-    if (g_area_new_area_cb == nullptr || c == nullptr || c->oldArea == nullptr || c->newArea == nullptr)
-        return;
-    g_area_new_area_cb(*c->oldArea, *c->newArea);
-}
-
 std::atomic<bool> g_input_suppressed{false};
 
 // keysDown is sized [(YC_KEY_COUNT+31)/32] and upstream publishes no YC_KEY_COUNT. The engine's own
@@ -290,7 +335,7 @@ void set_api(MinaModAPI *api)
 
 bool api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->InstallHook);
+    return has(&MinaModAPI::InstallHook);
 }
 
 bool api_version_matches()
@@ -305,122 +350,65 @@ std::uint32_t expected_api_version()
 
 std::uint32_t game_revision()
 {
-    return (g_mod_api != nullptr && usable(g_mod_api->GetGameRevision)) ? g_mod_api->GetGameRevision() : 0;
+    return (has(&MinaModAPI::GetGameRevision)) ? g_mod_api->GetGameRevision() : 0;
 }
 
 int current_game_state()
 {
-    return (g_mod_api != nullptr && usable(g_mod_api->GetCurrentGameState)) ? g_mod_api->GetCurrentGameState() : -1;
+    return (has(&MinaModAPI::GetCurrentGameState)) ? g_mod_api->GetCurrentGameState() : -1;
 }
 
 bool install_item_collected_hook(ItemCollectedFn query)
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->InstallHook))
-    {
-        pal::logf(pal::LogLevel::Warn, "items: modding API unavailable; IsItemCollected override disabled");
-        return false;
-    }
-    g_item_collected_cb = query;
-    if (install_named(kHookIsItemCollected, &is_item_collected_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "items: InstallHook(IsItemCollected) returned null; override disabled");
-        g_item_collected_cb = nullptr;
-        return false;
-    }
-    pal::logf(pal::LogLevel::Info, "items: IsItemCollected override installed (modding hook)");
-    return true;
+    return install_hook(kHookIsItemCollected, &is_item_collected_trampoline, g_item_collected_cb, query,
+                        {"items: modding API unavailable; IsItemCollected override disabled",
+                         "items: InstallHook(IsItemCollected) returned null; override disabled", "items: IsItemCollected override installed (modding hook)"});
 }
 
 void remove_item_collected_hook()
 {
-    if (g_hook_handles[kHookIsItemCollected] != nullptr && g_mod_api != nullptr && usable(g_mod_api->RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[kHookIsItemCollected]);
-    g_hook_handles[kHookIsItemCollected] = nullptr;
-    g_item_collected_cb = nullptr;
+    remove_hook(kHookIsItemCollected, g_item_collected_cb);
 }
 
 bool install_world_update_hook(WorldUpdatePreFn on_pre)
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->InstallHook))
-    {
-        pal::logf(pal::LogLevel::Warn, "world: modding API unavailable; World::Update pre-hook disabled");
-        return false;
-    }
-    g_world_update_cb = on_pre;
-    if (install_named(kHookWorldUpdate, &world_update_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "world: InstallHook(WorldUpdate) returned null; pre-hook disabled");
-        g_world_update_cb = nullptr;
-        return false;
-    }
-    pal::logf(pal::LogLevel::Info, "world: World::Update pre-hook installed (modding hook)");
-    return true;
+    return install_hook(kHookWorldUpdate, &world_update_trampoline, g_world_update_cb, on_pre,
+                        {"world: modding API unavailable; World::Update pre-hook disabled", "world: InstallHook(WorldUpdate) returned null; pre-hook disabled",
+                         "world: World::Update pre-hook installed (modding hook)"});
 }
 
 void remove_world_update_hook()
 {
-    if (g_hook_handles[kHookWorldUpdate] != nullptr && g_mod_api != nullptr && usable(g_mod_api->RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[kHookWorldUpdate]);
-    g_hook_handles[kHookWorldUpdate] = nullptr;
-    g_world_update_cb = nullptr;
+    remove_hook(kHookWorldUpdate, g_world_update_cb);
 }
 
 bool install_world_update_end_hook(WorldUpdateEndFn on_end)
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->InstallHook))
-    {
-        pal::logf(pal::LogLevel::Warn, "world: modding API unavailable; World::Update post-hook disabled");
-        return false;
-    }
-    g_world_update_end_cb = on_end;
-    if (install_named(kHookWorldUpdateEnd, &world_update_end_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "world: InstallHook(WorldUpdateEnd) returned null; post-hook disabled");
-        g_world_update_end_cb = nullptr;
-        return false;
-    }
-    pal::logf(pal::LogLevel::Info, "world: World::Update post-hook installed (modding hook)");
-    return true;
+    return install_hook(kHookWorldUpdateEnd, &world_update_end_trampoline, g_world_update_end_cb, on_end,
+                        {"world: modding API unavailable; World::Update post-hook disabled",
+                         "world: InstallHook(WorldUpdateEnd) returned null; post-hook disabled", "world: World::Update post-hook installed (modding hook)"});
 }
 
 void remove_world_update_end_hook()
 {
-    if (g_hook_handles[kHookWorldUpdateEnd] != nullptr && g_mod_api != nullptr && usable(g_mod_api->RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[kHookWorldUpdateEnd]);
-    g_hook_handles[kHookWorldUpdateEnd] = nullptr;
-    g_world_update_end_cb = nullptr;
+    remove_hook(kHookWorldUpdateEnd, g_world_update_end_cb);
 }
 
 bool install_world_destroy_hook(WorldDestroyFn on_destroy)
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->InstallHook))
-    {
-        pal::logf(pal::LogLevel::Warn, "world: modding API unavailable; World::Destroy hook disabled");
-        return false;
-    }
-    g_world_destroy_cb = on_destroy;
-    if (install_named(kHookWorldDestroy, &world_destroy_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "world: InstallHook(WorldDestroy) returned null; teardown hook disabled");
-        g_world_destroy_cb = nullptr;
-        return false;
-    }
-    pal::logf(pal::LogLevel::Info, "world: World::Destroy hook installed (modding hook)");
-    return true;
+    return install_hook(kHookWorldDestroy, &world_destroy_trampoline, g_world_destroy_cb, on_destroy,
+                        {"world: modding API unavailable; World::Destroy hook disabled",
+                         "world: InstallHook(WorldDestroy) returned null; teardown hook disabled", "world: World::Destroy hook installed (modding hook)"});
 }
 
 void remove_world_destroy_hook()
 {
-    if (g_hook_handles[kHookWorldDestroy] != nullptr && g_mod_api != nullptr && usable(g_mod_api->RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[kHookWorldDestroy]);
-    g_hook_handles[kHookWorldDestroy] = nullptr;
-    g_world_destroy_cb = nullptr;
+    remove_hook(kHookWorldDestroy, g_world_destroy_cb);
 }
 
 bool vial_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetMaxVials) && usable(g_mod_api->PlayerSetMaxVials) && usable(g_mod_api->PlayerGetVials) &&
-           usable(g_mod_api->PlayerSetVials);
+    return has(&MinaModAPI::PlayerGetMaxVials) && has(&MinaModAPI::PlayerSetMaxVials) && has(&MinaModAPI::PlayerGetVials) && has(&MinaModAPI::PlayerSetVials);
 }
 
 int player_max_vials()
@@ -447,7 +435,7 @@ void set_player_vials(int n)
 
 bool bones_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetBones) && usable(g_mod_api->PlayerSetBones);
+    return has(&MinaModAPI::PlayerGetBones) && has(&MinaModAPI::PlayerSetBones);
 }
 
 int player_bones()
@@ -463,7 +451,7 @@ void set_player_bones(int n)
 
 bool bosses_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetBossesDefeated);
+    return has(&MinaModAPI::PlayerGetBossesDefeated);
 }
 
 std::uint64_t player_bosses_defeated()
@@ -473,7 +461,7 @@ std::uint64_t player_bosses_defeated()
 
 bool player_position(float out[3])
 {
-    if (out == nullptr || g_mod_api == nullptr || !usable(g_mod_api->PlayerGetWorld) || !usable(g_mod_api->PlayerGetPos3))
+    if (out == nullptr || !has(&MinaModAPI::PlayerGetWorld) || !has(&MinaModAPI::PlayerGetPos3))
         return false;
     // PlayerGetPos3 only null-checks the outer component pointer, not the entity pointer one
     // level in; when that second level is unwired it either faults or returns {0,0,0} instead of
@@ -490,7 +478,7 @@ bool player_position(float out[3])
 
 bool player_die()
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->PlayerDie))
+    if (!has(&MinaModAPI::PlayerDie))
         return false;
     g_mod_api->PlayerDie();
     return true;
@@ -498,7 +486,7 @@ bool player_die()
 
 bool player_component_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetComponent);
+    return has(&MinaModAPI::PlayerGetComponent);
 }
 
 void *player_component()
@@ -508,7 +496,7 @@ void *player_component()
 
 bool health_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetHealth);
+    return has(&MinaModAPI::PlayerGetHealth);
 }
 
 float player_health()
@@ -518,7 +506,7 @@ float player_health()
 
 bool spark_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetSpark);
+    return has(&MinaModAPI::PlayerGetSpark);
 }
 
 int player_spark()
@@ -528,14 +516,14 @@ int player_spark()
 
 void *player_world()
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->PlayerGetWorld))
+    if (!has(&MinaModAPI::PlayerGetWorld))
         return nullptr;
     return static_cast<void *>(g_mod_api->PlayerGetWorld());
 }
 
 std::size_t world_entity_list(void *world, const char *list, void **out, std::size_t cap)
 {
-    if (world == nullptr || list == nullptr || !appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->WorldGetEntityList))
+    if (world == nullptr || list == nullptr || !has_appended(&MinaModAPI::WorldGetEntityList))
         return 0;
     // out may be null with cap 0: that is the sizing call.
     return g_mod_api->WorldGetEntityList(static_cast<World *>(world), list, reinterpret_cast<GameComponent **>(out), cap);
@@ -543,7 +531,7 @@ std::size_t world_entity_list(void *world, const char *list, void **out, std::si
 
 bool entity_walk_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->WorldGetGameRootEntity) && usable(g_mod_api->EntityGetChildren) && usable(g_mod_api->ComponentIsa);
+    return has(&MinaModAPI::WorldGetGameRootEntity) && has(&MinaModAPI::EntityGetChildren) && has(&MinaModAPI::ComponentIsa);
 }
 
 void *world_game_root_entity(void *world)
@@ -573,7 +561,7 @@ bool component_isa(void *component, std::uint64_t type_id)
 
 bool weak_ptr_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->CreateWeakPtr) && usable(g_mod_api->WeakPtrGet) && usable(g_mod_api->DestroyWeakPtr);
+    return has(&MinaModAPI::CreateWeakPtr) && has(&MinaModAPI::WeakPtrGet) && has(&MinaModAPI::DestroyWeakPtr);
 }
 
 void *weak_ptr_create(void *component_or_entity)
@@ -596,14 +584,9 @@ void weak_ptr_destroy(void *weak)
         g_mod_api->DestroyWeakPtr(static_cast<MM_WeakPtr *>(weak));
 }
 
-bool pause_api_available()
-{
-    return g_mod_api != nullptr && usable(g_mod_api->PlayerGetWorld) && usable(g_mod_api->WorldIsPaused);
-}
-
 bool world_is_paused()
 {
-    if (!pause_api_available())
+    if (!has(&MinaModAPI::PlayerGetWorld) || !has(&MinaModAPI::WorldIsPaused))
         return false;
     void *w = player_world(); // null with no live player; WorldIsPaused would dereference it
     return w != nullptr && g_mod_api->WorldIsPaused(static_cast<World *>(w));
@@ -611,7 +594,7 @@ bool world_is_paused()
 
 bool room_time_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->GetRoomTime);
+    return has(&MinaModAPI::GetRoomTime);
 }
 
 float room_time()
@@ -622,13 +605,13 @@ float room_time()
 bool save_api_available()
 {
     // Only what the takeover actually calls: gating on more would fail a launch that would work.
-    return g_mod_api != nullptr && usable(g_mod_api->SetSaveSlotContents) && usable(g_mod_api->GetActiveSaveSlotContents) && usable(g_mod_api->Free) &&
-           usable(g_mod_api->SetSaveWriteEnabled) && usable(g_mod_api->IsSaveWriteEnabled);
+    return has(&MinaModAPI::SetSaveSlotContents) && has(&MinaModAPI::GetActiveSaveSlotContents) && has(&MinaModAPI::Free) &&
+           has(&MinaModAPI::SetSaveWriteEnabled) && has(&MinaModAPI::IsSaveWriteEnabled);
 }
 
 int active_save_slot()
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->GetActiveSaveSlot))
+    if (!has(&MinaModAPI::GetActiveSaveSlot))
         return -1;
     const int slot = g_mod_api->GetActiveSaveSlot();
     // The game's no-slot value is one past the last slot, not a negative sentinel.
@@ -637,107 +620,65 @@ int active_save_slot()
 
 bool set_active_save_slot_contents(const char *ycdata)
 {
-    if (ycdata == nullptr || g_mod_api == nullptr || !usable(g_mod_api->SetActiveSaveSlotContents))
+    if (ycdata == nullptr || !has(&MinaModAPI::SetActiveSaveSlotContents))
         return false;
     return g_mod_api->SetActiveSaveSlotContents(ycdata);
 }
 
 bool set_save_slot_contents(unsigned int slot, const char *ycdata)
 {
-    if (ycdata == nullptr || g_mod_api == nullptr || !usable(g_mod_api->SetSaveSlotContents))
+    if (ycdata == nullptr || !has(&MinaModAPI::SetSaveSlotContents))
         return false;
     return g_mod_api->SetSaveSlotContents(slot, ycdata);
 }
 
 std::string active_save_slot_contents()
 {
-    if (g_mod_api == nullptr || !usable(g_mod_api->GetActiveSaveSlotContents))
+    if (!has(&MinaModAPI::GetActiveSaveSlotContents))
         return {};
     char *raw = g_mod_api->GetActiveSaveSlotContents();
     if (raw == nullptr)
         return {};
     std::string out(raw);
-    if (usable(g_mod_api->Free))
+    if (has(&MinaModAPI::Free))
         g_mod_api->Free(raw); // the API contract requires freeing through the game's allocator
     return out;
 }
 
 void player_restore_from_save()
 {
-    if (g_mod_api != nullptr && usable(g_mod_api->PlayerRestoreFromSave))
+    if (has(&MinaModAPI::PlayerRestoreFromSave))
         g_mod_api->PlayerRestoreFromSave();
 }
 
 bool install_items_on_pickup_hook(ItemsOnPickupFn on_pickup)
 {
-    g_items_on_pickup_cb = on_pickup;
-    if (install_named(kHookItemsOnPickup, &items_on_pickup_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "items: InstallHook(ItemsOnPickup) failed; armor-upgrade suppression disabled");
-        g_items_on_pickup_cb = nullptr;
-        return false;
-    }
-    return true;
+    return install_hook(kHookItemsOnPickup, &items_on_pickup_trampoline, g_items_on_pickup_cb, on_pickup,
+                        {nullptr, "items: InstallHook(ItemsOnPickup) failed; armor-upgrade suppression disabled", nullptr});
 }
 
 bool install_items_on_pickup_done_hook(ItemsOnPickupDoneFn on_done)
 {
-    g_items_on_pickup_done_cb = on_done;
-    if (install_named(kHookItemsOnPickupDone, &items_on_pickup_done_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "items: InstallHook(ItemsOnPickupDone) failed; grant suppression disabled");
-        g_items_on_pickup_done_cb = nullptr;
-        return false;
-    }
-    return true;
+    return install_hook(kHookItemsOnPickupDone, &items_on_pickup_done_trampoline, g_items_on_pickup_done_cb, on_done,
+                        {nullptr, "items: InstallHook(ItemsOnPickupDone) failed; grant suppression disabled", nullptr});
 }
 
 bool install_pickup_on_pickup_hook(PickupOnPickupFn on_pickup)
 {
-    g_pickup_on_pickup_cb = on_pickup;
-    if (install_named(kHookPickupOnPickup, &pickup_on_pickup_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "locations: InstallHook(PickupOnPickup) failed; pickup redirect disabled");
-        g_pickup_on_pickup_cb = nullptr;
-        return false;
-    }
-    return true;
+    return install_hook(kHookPickupOnPickup, &pickup_on_pickup_trampoline, g_pickup_on_pickup_cb, on_pickup,
+                        {nullptr, "locations: InstallHook(PickupOnPickup) failed; pickup redirect disabled", nullptr});
 }
 
 bool install_shop_item_refresh_hook(ShopItemRefreshFn on_refresh)
 {
-    g_shop_item_refresh_cb = on_refresh;
-    if (install_named(kHookShopItemRefresh, &shop_item_refresh_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "shop: InstallHook(ShopItemRefresh) failed; stock suppression disabled");
-        g_shop_item_refresh_cb = nullptr;
-        return false;
-    }
-    return true;
-}
-
-bool install_area_new_area_hook(AreaNewAreaFn on_new_area)
-{
-    g_area_new_area_cb = on_new_area;
-    if (install_named(kHookAreaManagerNewArea, &area_new_area_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "rooms: InstallHook(AreaManagerNewArea) failed; area tracking disabled");
-        g_area_new_area_cb = nullptr;
-        return false;
-    }
-    return true;
+    return install_hook(kHookShopItemRefresh, &shop_item_refresh_trampoline, g_shop_item_refresh_cb, on_refresh,
+                        {nullptr, "shop: InstallHook(ShopItemRefresh) failed; stock suppression disabled", nullptr});
 }
 
 bool install_chest_construct_hook(ChestConstructFn on_construct)
 {
-    g_chest_construct_cb = on_construct;
-    if (install_named(kHookChestConstruct, &chest_construct_trampoline) == nullptr)
-    {
-        pal::logf(pal::LogLevel::Warn, "chest: InstallHook(ChestConstruct) failed; kear-lock clearing disabled");
-        g_chest_construct_cb = nullptr;
-        return false;
-    }
-    return true;
+    return install_hook(kHookChestConstruct, &chest_construct_trampoline, g_chest_construct_cb, on_construct,
+                        {nullptr, "chest: InstallHook(ChestConstruct) failed; kear-lock clearing disabled", nullptr});
 }
 
 bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb)
@@ -751,47 +692,29 @@ bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb)
     return true;
 }
 
-void remove_named(HookId id)
-{
-    if (g_hook_handles[id] != nullptr && g_mod_api != nullptr && usable(g_mod_api->RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[id]);
-    g_hook_handles[id] = nullptr;
-}
-
 void remove_items_on_pickup_hook()
 {
-    remove_named(kHookItemsOnPickup);
-    g_items_on_pickup_cb = nullptr;
+    remove_hook(kHookItemsOnPickup, g_items_on_pickup_cb);
 }
 
 void remove_items_on_pickup_done_hook()
 {
-    remove_named(kHookItemsOnPickupDone);
-    g_items_on_pickup_done_cb = nullptr;
+    remove_hook(kHookItemsOnPickupDone, g_items_on_pickup_done_cb);
 }
 
 void remove_pickup_on_pickup_hook()
 {
-    remove_named(kHookPickupOnPickup);
-    g_pickup_on_pickup_cb = nullptr;
+    remove_hook(kHookPickupOnPickup, g_pickup_on_pickup_cb);
 }
 
 void remove_shop_item_refresh_hook()
 {
-    remove_named(kHookShopItemRefresh);
-    g_shop_item_refresh_cb = nullptr;
-}
-
-void remove_area_new_area_hook()
-{
-    remove_named(kHookAreaManagerNewArea);
-    g_area_new_area_cb = nullptr;
+    remove_hook(kHookShopItemRefresh, g_shop_item_refresh_cb);
 }
 
 void remove_chest_construct_hook()
 {
-    remove_named(kHookChestConstruct);
-    g_chest_construct_cb = nullptr;
+    remove_hook(kHookChestConstruct, g_chest_construct_cb);
 }
 
 bool install_input_suppress_hooks()
@@ -827,9 +750,8 @@ void remove_all_hooks()
     g_items_on_pickup_done_cb = nullptr;
     g_pickup_on_pickup_cb = nullptr;
     g_shop_item_refresh_cb = nullptr;
-    g_area_new_area_cb = nullptr;
     g_chest_construct_cb = nullptr;
-    if (g_mod_api == nullptr || !usable(g_mod_api->RemoveHook))
+    if (!has(&MinaModAPI::RemoveHook))
         return;
     for (void *&h : g_hook_handles)
     {
@@ -850,7 +772,7 @@ std::vector<const char *> unfired_hooks()
 
 bool queue_destroy_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->WorldQueueDestroyEntity);
+    return has_appended(&MinaModAPI::WorldQueueDestroyEntity);
 }
 
 bool queue_destroy_entity(void *world, void *entity, bool depth_first)
@@ -863,7 +785,7 @@ bool queue_destroy_entity(void *world, void *entity, bool depth_first)
 
 bool set_item_collected_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->ItemsSetItemCollected);
+    return has_appended(&MinaModAPI::ItemsSetItemCollected);
 }
 
 bool set_item_collected(int index, bool collected, void *collection, void *slot)
@@ -876,7 +798,7 @@ bool set_item_collected(int index, bool collected, void *collection, void *slot)
 
 bool text_color_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->TextComponentSetColor);
+    return has_appended(&MinaModAPI::TextComponentSetColor);
 }
 
 namespace
@@ -906,8 +828,8 @@ bool set_text_color(void *text_component, std::uint32_t rgba)
 
 bool palette_api_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->ClonePalette) && usable_appended(g_mod_api->PaletteSetGroup) &&
-           usable_appended(g_mod_api->PaletteWriteIndex) && usable_appended(g_mod_api->PaletteGetIndex) && usable_appended(g_mod_api->PaletteGetWidth);
+    return has_appended(&MinaModAPI::ClonePalette) && has_appended(&MinaModAPI::PaletteSetGroup) && has_appended(&MinaModAPI::PaletteWriteIndex) &&
+           has_appended(&MinaModAPI::PaletteGetIndex) && has_appended(&MinaModAPI::PaletteGetWidth);
 }
 
 void *clone_palette(void *source)
@@ -947,7 +869,7 @@ std::uint32_t palette_get_width(void *palette)
 
 bool set_text(void *text_component, const char *utf8)
 {
-    if (text_component == nullptr || utf8 == nullptr || !appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->TextComponentSetText))
+    if (text_component == nullptr || utf8 == nullptr || !has_appended(&MinaModAPI::TextComponentSetText))
         return false;
     g_mod_api->TextComponentSetText(static_cast<ycComponent *>(text_component), utf8);
     return true;
@@ -955,14 +877,14 @@ bool set_text(void *text_component, const char *utf8)
 
 const char *text_of(void *text_component)
 {
-    if (text_component == nullptr || !appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->TextComponentGetText))
+    if (text_component == nullptr || !has_appended(&MinaModAPI::TextComponentGetText))
         return nullptr;
     return g_mod_api->TextComponentGetText(static_cast<ycComponent *>(text_component));
 }
 
 bool water_api_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->WaterListenerIsInDeepWater);
+    return has_appended(&MinaModAPI::WaterListenerIsInDeepWater);
 }
 
 bool water_is_in_deep_water(void *water_listener, bool ignore_enabled)
@@ -974,8 +896,7 @@ bool water_is_in_deep_water(void *water_listener, bool ignore_enabled)
 
 bool physics_get_aabb(void *physics_component, float out_aabb[6], bool local, unsigned shape_flags)
 {
-    if (physics_component == nullptr || out_aabb == nullptr || !appended_api_possible() || g_mod_api == nullptr ||
-        !usable_appended(g_mod_api->PhysicsComponentGetAABB))
+    if (physics_component == nullptr || out_aabb == nullptr || !has_appended(&MinaModAPI::PhysicsComponentGetAABB))
         return false;
     MM_AABB box{};
     g_mod_api->PhysicsComponentGetAABB(static_cast<PhysicsComponent *>(physics_component), &box, local, shape_flags);
@@ -985,8 +906,7 @@ bool physics_get_aabb(void *physics_component, float out_aabb[6], bool local, un
 
 void *closest_carryable(void *carry_manager, const float box[6], int collision_layer, float max_dist, int *out_overlap_count, std::uint64_t collide_mask_ignore)
 {
-    if (carry_manager == nullptr || box == nullptr || !appended_api_possible() || g_mod_api == nullptr ||
-        !usable_appended(g_mod_api->CarryManagerGetClosestCarryableObject))
+    if (carry_manager == nullptr || box == nullptr || !has_appended(&MinaModAPI::CarryManagerGetClosestCarryableObject))
         return nullptr;
     MM_AABB b{};
     std::memcpy(&b, box, sizeof(b));
@@ -996,7 +916,7 @@ void *closest_carryable(void *carry_manager, const float box[6], int collision_l
 
 bool player_stats_api_available()
 {
-    return appended_api_possible() && g_mod_api != nullptr && usable_appended(g_mod_api->PlayerUpdateStats);
+    return has_appended(&MinaModAPI::PlayerUpdateStats);
 }
 
 bool player_update_stats()
@@ -1009,38 +929,33 @@ bool player_update_stats()
 
 void *sym_addr(const char *name)
 {
-    if (!appended_api_possible() || g_mod_api == nullptr || name == nullptr || !usable_appended(g_mod_api->GetSymAddr))
+    if (name == nullptr || !has_appended(&MinaModAPI::GetSymAddr))
         return nullptr;
     // Not range-checked: the supported names include data symbols that do not live in .text.
     return g_mod_api->GetSymAddr(name);
 }
 
-bool room_index_api_available()
-{
-    return g_mod_api != nullptr && usable(g_mod_api->GetRoomIndex);
-}
-
 int room_index()
 {
     // The field is signed and negative means "no room bound"; the API returns it as uint32_t.
-    return room_index_api_available() ? static_cast<int>(static_cast<std::int32_t>(g_mod_api->GetRoomIndex())) : -1;
+    return has(&MinaModAPI::GetRoomIndex) ? static_cast<int>(static_cast<std::int32_t>(g_mod_api->GetRoomIndex())) : -1;
 }
 
 bool world_menu_root_api_available()
 {
-    return g_mod_api != nullptr && usable(g_mod_api->WorldGetMenuRootEntity);
+    return has(&MinaModAPI::WorldGetMenuRootEntity);
 }
 
 void *world_menu_root_entity(void *world)
 {
-    if (world == nullptr || g_mod_api == nullptr || !usable(g_mod_api->WorldGetMenuRootEntity))
+    if (world == nullptr || !has(&MinaModAPI::WorldGetMenuRootEntity))
         return nullptr;
     return g_mod_api->WorldGetMenuRootEntity(static_cast<World *>(world));
 }
 
 bool cheat_manager_activate_save_cheats()
 {
-    if (!appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->CheatManagerActivateSaveCheats))
+    if (!has_appended(&MinaModAPI::CheatManagerActivateSaveCheats))
         return false;
     g_mod_api->CheatManagerActivateSaveCheats();
     return true;
@@ -1050,7 +965,7 @@ bool cheat_manager_set_cheat_applied(int cheat, bool active)
 {
     if (cheat < 0 || cheat > 0xfd)
         return false;
-    if (!appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->CheatManagerSetCheatApplied))
+    if (!has_appended(&MinaModAPI::CheatManagerSetCheatApplied))
         return false;
     g_mod_api->CheatManagerSetCheatApplied(cheat, active, static_cast<std::uint32_t>(-1));
     return true;
@@ -1060,20 +975,20 @@ bool cheat_manager_is_cheat_applied(int cheat)
 {
     if (cheat < 0 || cheat > 0xfd)
         return false;
-    if (!appended_api_possible() || g_mod_api == nullptr || !usable_appended(g_mod_api->CheatManagerIsCheatApplied))
+    if (!has_appended(&MinaModAPI::CheatManagerIsCheatApplied))
         return false;
     return g_mod_api->CheatManagerIsCheatApplied(cheat, static_cast<std::uint32_t>(-1));
 }
 
 void set_save_write_enabled(bool on)
 {
-    if (g_mod_api != nullptr && usable(g_mod_api->SetSaveWriteEnabled))
+    if (has(&MinaModAPI::SetSaveWriteEnabled))
         g_mod_api->SetSaveWriteEnabled(on);
 }
 
 bool save_write_enabled()
 {
-    return (g_mod_api != nullptr && usable(g_mod_api->IsSaveWriteEnabled)) ? g_mod_api->IsSaveWriteEnabled() : false;
+    return (has(&MinaModAPI::IsSaveWriteEnabled)) ? g_mod_api->IsSaveWriteEnabled() : false;
 }
 
 } // namespace mod

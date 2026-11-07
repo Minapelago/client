@@ -1,15 +1,61 @@
-#include "mth/features/boss_tracker.hpp"
+#include "mth/features/save_pollers.hpp"
 
 #include <bit>
+#include <cstdio>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/ap_state.hpp"
+#include "mth/core/data/game_layout.hpp"
+#include "mth/core/goal_state.hpp"
+#include "mth/core/kear_completion.hpp"
 #include "mth/core/rando_bridge.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
+#include "pal/pal_mem.hpp"
 
 namespace mth
 {
+
+GoalTracker::GoalTracker(RandoBridge &bridge) : bridge_(bridge)
+{
+}
+
+void GoalTracker::evaluate(const ApState &state)
+{
+    if (disabled_)
+        return;
+    void *slot = pal::active_save_slot();
+    if (slot == nullptr)
+        return;
+
+    const unsigned char clear_flag = pal::at<unsigned char>(slot, layout::kSaveGameClearOff);
+    if (!game_clear_flag_in_domain(clear_flag))
+    {
+        disabled_ = true;
+        pal::logf(pal::LogLevel::Error, "goal: kSaveGameClearOff read=0x%x is not a boolean; offset may have shifted, goal tracking DISABLED", clear_flag);
+        return;
+    }
+
+    config_ = state.goal_config();
+    gens_needed_ = state.goal_generators();
+    bosses_needed_ = state.goal_bosses();
+    game_cleared_ = clear_flag != 0;
+    broken_mask_ = state.broken_generator_mask();
+    gens_done_ = generators_done(pal::at<std::uint64_t>(slot, layout::kSaveGeneratorBitsOff), broken_mask_);
+    bosses_done_ = std::popcount(mod::player_bosses_defeated());
+
+    if (goal_met(config_, gens_needed_, bosses_needed_, game_cleared_, gens_done_, bosses_done_))
+        bridge_.send_goal(); // one-shot + authenticated-gated in the bridge
+}
+
+std::vector<std::string> GoalTracker::status_lines() const
+{
+    char mask[24] = {};
+    std::snprintf(mask, sizeof(mask), "0x%llx", static_cast<unsigned long long>(broken_mask_));
+    return {"goal: config=" + std::to_string(config_) + " cleared=" + std::to_string(game_cleared_) + " generators=" + std::to_string(gens_done_) + "/" +
+            std::to_string(gens_needed_) + " (broken=" + mask + ") bosses=" + std::to_string(bosses_done_) + "/" + std::to_string(bosses_needed_)};
+}
 
 BossTracker::BossTracker(RandoBridge &bridge) : bridge_(bridge)
 {
@@ -89,6 +135,29 @@ void BossTracker::poll()
     const std::uint64_t stray = risen & ~((kMaxBossIndex >= 63) ? ~0ULL : ((1ULL << (kMaxBossIndex + 1)) - 1));
     if (stray != 0)
         pal::logf(pal::LogLevel::Warn, "boss: defeat bits set outside the boss index range: 0x%llx", static_cast<unsigned long long>(stray));
+}
+
+void latch_kear_completion(const ApState &state)
+{
+    if (!state.authenticated())
+        return;
+    // A seed that does not carry the completion location must never get a stray latch.
+    if (!state.is_valid_location(ap_loc_id(kKearCompletionLocIdx)))
+        return;
+    void *slot = pal::active_save_slot();
+    if (slot == nullptr)
+        return; // title/menus: nothing durable to write through
+
+    auto &flags = pal::at<std::uint64_t>(slot, layout::kSaveKeyMiserFlagOff);
+    const std::uint64_t bit = std::uint64_t{1} << layout::kSaveKeyMiserTradeBit;
+    if ((flags & bit) != 0)
+        return; // already traded, natively or by an earlier tick
+
+    if (!have_all_kears(state.kear_mode(), state.received_items()))
+        return;
+
+    flags |= bit;
+    pal::logf(pal::LogLevel::Info, "kear: all kears held; latched the KeyMiser trade flag (the reward spawns on the next entry to the Kear Institute)");
 }
 
 } // namespace mth

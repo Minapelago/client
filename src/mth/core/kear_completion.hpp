@@ -39,7 +39,7 @@ namespace detail
 }
 } // namespace detail
 
-// twin: mth/features/kear_completion_tracker.hpp latches the save flag off this.
+// twin: latch_kear_completion in mth/features/save_pollers.hpp latches the save flag off this.
 // True once the run holds the kears the active mode demands (#174). The apworld gates location 150 on
 // the same condition, so this must track HasAllKears() in its data/rules/state_rules.py.
 [[nodiscard]] inline bool have_all_kears(KearMode mode, const std::vector<ReceivedItem> &received) noexcept

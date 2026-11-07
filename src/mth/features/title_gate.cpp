@@ -138,12 +138,6 @@ bool install_title_gate_hook(std::function<bool()> connected)
     return true;
 }
 
-void remove_title_gate_hook()
-{
-    g_title_gate_hook.reset();
-    g_title_gate_fn = nullptr;
-}
-
 // Sets the "Start Game" option's label. Applied from the UpdateState detour rather than once at
 // init, because the game's localization refresh unconditionally re-sets all three option strings.
 // An empty/null text restores the original (cached on first sight, never an English literal).
@@ -194,7 +188,7 @@ bool install_start_game_suppress_hook(std::function<bool()> suppress)
 namespace mth
 {
 
-TitleGate::TitleGate(std::function<bool()> connected, std::function<bool()> claim_start)
+void install_title_gate(std::function<bool()> connected, std::function<bool()> claim_start)
 {
     // Copied, not moved: the cursor hook below takes it too.
     auto suppress = [connected, claim_start = std::move(claim_start)]()
@@ -217,11 +211,12 @@ TitleGate::TitleGate(std::function<bool()> connected, std::function<bool()> clai
         pal::logf(pal::LogLevel::Warn, "title: start-game backstop inactive; Start Game not blocked if reached");
 }
 
-TitleGate::~TitleGate()
+void remove_title_gate()
 {
     g_start_game_hook.reset();
     g_start_game_suppress_fn = nullptr;
-    remove_title_gate_hook();
+    g_title_gate_hook.reset();
+    g_title_gate_fn = nullptr;
 }
 
 } // namespace mth

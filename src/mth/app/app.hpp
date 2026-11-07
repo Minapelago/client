@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -10,32 +11,55 @@
 #include "mth/core/ap/ap_save_state.hpp"
 #include "mth/core/ap/ap_state.hpp"
 #include "mth/core/ap_gate.hpp"
-#include "mth/core/command_sink.hpp"
+#include "mth/core/broadcast.hpp"
 #include "mth/core/connect_resend_gate.hpp"
 #include "mth/core/data/ability_ids.hpp"
+#include "mth/core/inbound_granter.hpp"
 #include "mth/core/login_prefs.hpp"
 #include "mth/core/save/ap_save_bundle.hpp"
 #include "mth/core/scout_registry.hpp"
 #include "mth/core/session_policy.hpp"
 #include "mth/core/upgrade_state.hpp"
 #include "mth/core/wallet_cap_state.hpp"
+#include "mth/features/item_granter.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace mth
 {
 
-struct IGameEvents;
 class HookManager;
-class ApSession;
-class PlayerTracker;
-class RoomTracker;
+class IApLink;
+class ApCoordinator;
+class AreaReporter;
+class RandoBridge;
 class OverlayRoot;
-class GrantPipeline;
 class TrapHooks;
 
+struct ConnectionStatus
+{
+    ConnectionPhase phase{ConnectionPhase::Disconnected};
+    std::string detail; // error/status text for display
+};
+
+// Last connection target that authenticated successfully; empty if there is none.
+// Password is never persisted.
+struct SavedLogin
+{
+    std::string server;
+    std::string slot;
+};
+
+// Snapshot of the AP safety gate, copied by value: the UI reads it from the render thread
+// while the gate is written on the game thread.
+struct GateStatus
+{
+    GateVerdict verdict{GateVerdict::Pending};
+    bool enforcing{false};
+    std::string reason; // empty unless refused
+};
+
 // Composition root. Logger and hook engine are PAL globals; App owns everything else.
-// Implements ICommandSink unconditionally (the dev console is the only caller today,
-// but the sink itself has no overlay dependency).
-class App : public ICommandSink
+class App
 {
   public:
     App();
@@ -44,72 +68,80 @@ class App : public ICommandSink
     App(const App &) = delete;
     App &operator=(const App &) = delete;
 
-    void run();
-
-    // False until the ctor finishes wiring every member. The tick sink checks this before forwarding any
-    // game-thread event, so a hook that goes live mid-construction can't reach a half-built App.
+    // False until the ctor finishes wiring every member. The tick trampolines check this before forwarding
+    // any game-thread event, so a hook that goes live mid-construction can't reach a half-built App.
     [[nodiscard]] bool ready() const noexcept
     {
         return ready_.load();
     }
 
-    // Scouted shop-location info (item/player), filled from ApScoutInfo events on the game thread.
-    [[nodiscard]] mth::ScoutRegistry &scout_registry()
-    {
-        return scout_registry_;
-    }
+    void drive_tick();                     // called each fixed update (only once ready())
+    void drain_grants();                   // called from the World::Update pre-hook (only once ready())
+    void on_world_update_end(void *world); // called after World::Update (only once ready())
+    void on_world_destroy();               // called on World teardown (only once ready()); drops the cached Player*
+    void gate_note_worldupdate();          // called on the native WorldUpdate; proves the mod-hook path is live
 
-    void drive_tick();                     // called by tick sink each fixed update (only once ready())
-    void drain_grants();                   // called by tick sink from World::Update pre-hook (only once ready())
-    void on_world_update_end(void *world); // called by tick sink after World::Update (only once ready())
-    void on_world_destroy();               // called by tick sink on World teardown (only once ready()); drops the cached Player*
-    void gate_note_worldupdate();          // called by tick sink on the native WorldUpdate; proves the mod-hook path is live
-
-    void connect(const std::string &server, const std::string &slot, const std::string &password) override;
-    void disconnect() override;
-    [[nodiscard]] ConnectionStatus connection_status() const override;
-    [[nodiscard]] SavedLogin saved_login() const override;
-    [[nodiscard]] std::vector<std::string> status_lines() const override;
-    [[nodiscard]] std::vector<std::string> item_lines() const override;
-    [[nodiscard]] GateStatus gate_status() const override;
-    void set_gate_enforcing(bool on) override;
-    void give_item(std::int64_t ap_item_id) override;
-    void remove_lock(int slot) override;
-    void set_modifier(int idx, bool on) override;
-    void lock_modifiers(bool armed) override;
-    void set_stat_caps(int attack, int defense, int sidearm) override;
-    void set_ability_randomized(Ability ability, bool randomized) override;
-    void enable_deathlink(bool on) override;
-    void set_lit_lamps(std::uint32_t lamp_mask) override;
-    void save_test(const std::string &op) override;
-    void fire_trap(int modifier_index, float seconds) override;
-    void probe_switches() override;
-    void set_mirror_switch_override(bool on) override;
+    // Console and login-window commands. Called on the overlay render thread; must not block.
+    void connect(const std::string &server, const std::string &slot, const std::string &password);
+    void disconnect();
+    [[nodiscard]] ConnectionStatus connection_status() const;
+    [[nodiscard]] SavedLogin saved_login() const;
+    [[nodiscard]] std::vector<std::string> status_lines() const;
+    [[nodiscard]] std::vector<std::string> item_lines() const;
+    [[nodiscard]] GateStatus gate_status() const;
+    void set_gate_enforcing(bool on);                              // dev override: enforcement is on by default, so `off` is the escape hatch
+    void give_item(std::int64_t ap_item_id);                       // manual test path; bypasses dedup
+    void remove_lock(int slot);                                    // pre-open/remove a KeyBlock by slot (AP runtime path)
+    void set_modifier(int idx, bool on);                           // live toggle a continuous modifier
+    void lock_modifiers(bool armed);                               // arm/disarm gameplay-modifier lockdown
+    void set_stat_caps(int attack, int defense, int sidearm);      // force per-stat level caps (offline test)
+    void set_ability_randomized(Ability ability, bool randomized); // offline test: mark randomized + arm enforcement
+    void enable_deathlink(bool on);                                // enable/disable deathlink
+    void set_lit_lamps(std::uint32_t lamp_mask);                   // offline test: force Ossex fountain lamps lit (bit i = lamp i)
+    void save_test(const std::string &op);                         // save-takeover validation; dev only
+    // offline test: queue one AP trap for the next game tick. seconds <= 0 uses the trap table's own
+    // duration, and the outcome goes to the log rather than coming back here.
+    void fire_trap(int modifier_index, float seconds);
+    // dev probe: log every rainbow switch in the room the player is standing in (#28). The findings go
+    // to the log rather than coming back here, because the walk runs on the game thread.
+    void probe_switches();
+    // offline test: drive the Mirrors End switches with no AP session. Bypasses the bound-save gate that
+    // the durable write otherwise waits for, so it is a scratch-save tool.
+    void set_mirror_switch_override(bool on);
 
   private:
     void remember_successful_login(); // persist the attempted target once the server authenticates
     // Drop everything the previous AP session accumulated, so the next one behaves like the first since
     // launch. Game thread; fires only on the link's ApSessionEnded (a different seed/slot authenticated).
     void clear_session_state();
-    void ensure_inbound_ready(); // lazily builds save_state_ + the grant pipeline's inbound granter once connected
+    void ensure_inbound_ready(); // lazily builds save_state_ + inbound_ once connected
     // Drain ApState's server-reported checked locations into the save-state checked set (Collect / coop),
     // once inbound is ready. Never re-sends; persists once per pass. Called each drive_tick.
     void reconcile_server_checked();
     void enforce_vial_capacity(); // re-assert the AP vial count through the offset-free mod-API accessors (#171)
     void enforce_wallet_cap();    // clamp live bones to the AP wallet cap (#112); no-op unless authed + wallet_cap
-    // Destruction order: overlay first, then hooks_ (game hooks stop first inside the manager),
-    // grants_, tracker_/room_tracker_, events_ (AppTickSink, after hooks_), net_ (stops net thread last).
+    // Destruction order: overlay first, then the tick hooks, hooks_, inbound_/granter_, then the AP
+    // session members rando_ -> area_reporter_ -> coordinator_ -> link_ (stops the net thread last).
     ApState state_;
     // Ahead of hooks_ and save_state_: both hold references into it, and members are destroyed in
     // reverse declaration order.
     ApSaveBundleStore bundle_store_;
-    std::unique_ptr<ApSession> net_;
-    std::unique_ptr<IGameEvents> events_;
-    std::unique_ptr<PlayerTracker> tracker_;
-    std::unique_ptr<RoomTracker> room_tracker_;
+    // AP session. banner_queue_ is the net->render mailbox: the coordinator pushes to it and the overlay
+    // draws from it, so it outlives both coordinator_ and overlay_root_.
+    BannerQueue banner_queue_;
+    std::unique_ptr<IApLink> link_;
+    std::unique_ptr<ApCoordinator> coordinator_;
+    std::unique_ptr<AreaReporter> area_reporter_;
+    std::unique_ptr<RandoBridge> rando_; // net<->hooks bridge for outbound checks
+    // Game::FixedUpdate detour, the tick source. The World::Update/WorldUpdateEnd/WorldDestroy events come
+    // from native mod hooks installed next to it.
+    pal::ScopedHook fixed_update_hook_;
     std::unique_ptr<HookManager> hooks_;
     std::optional<ApSaveState> save_state_;
-    std::unique_ptr<GrantPipeline> grants_;
+    // Received-item grant path. inbound_ references granter_ and save_state_, so it goes first; it is
+    // built lazily once connected and dropped at a session boundary.
+    std::optional<ItemGranter> granter_;
+    std::optional<InboundGranter> inbound_;
     std::unique_ptr<TrapHooks> traps_;
     std::atomic<bool> pending_inbound_death_{false};
     // Attribution line for the death pending_inbound_death_ arms. Written by the coordinator drain and read
@@ -117,7 +149,7 @@ class App : public ICommandSink
     // flag, because it is only ever read when the flag was set, and the next deathlink overwrites it.
     std::string pending_death_text_;
     // Gates the tick entry points until construction finishes. The game-thread tick hooks go live mid-ctor
-    // (GameHooks installs Game::FixedUpdate before hooks_ is even assigned), so on a fast-initializing host
+    // (Game::FixedUpdate is detoured before hooks_ is even assigned), so on a fast-initializing host
     // the first tick can land on a half-built App and deref a null member. Release on the last ctor line,
     // acquire at the top of each tick; cleared first in the dtor so teardown can't be ticked either.
     std::atomic<bool> ready_{false};

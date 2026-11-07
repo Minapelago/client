@@ -14,10 +14,10 @@ bool g_have_screen = false;
 
 } // namespace
 
-namespace mth
+namespace mth::room_tracker
 {
 
-void RoomTracker::poll()
+void poll()
 {
     // Menu worlds (title, profile select, the in-run overlays) tick World::Update too, and GetRoomIndex
     // keeps returning the last room throughout, so the gamestate is what separates "in a room" from
@@ -50,13 +50,7 @@ void RoomTracker::poll()
     pal::logf(pal::LogLevel::Info, "area: gamestate %d room %d -> screen 0x%x", gs, room, screen);
 }
 
-RoomTracker::~RoomTracker()
-{
-    g_screen = 0;
-    g_have_screen = false;
-}
-
-bool RoomTracker::current_screen(std::uint32_t *out) const
+bool current_screen(std::uint32_t *out)
 {
     if (!g_have_screen)
         return false;
@@ -64,4 +58,4 @@ bool RoomTracker::current_screen(std::uint32_t *out) const
     return true;
 }
 
-} // namespace mth
+} // namespace mth::room_tracker

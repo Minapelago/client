@@ -193,7 +193,7 @@ TrapArm TrapHooks::arm(int modifier_index, float seconds_override)
     {
         // runtime_modifier_ready() below is a one-way latch (the game never clears it once a save has
         // been activated), so it cannot tell the title screen from an active run. The gamestate range
-        // can, and RoomTracker already keys the same distinction on it.
+        // can, and room_tracker already keys the same distinction on it.
         if (notready_warned_.insert(modifier_index).second)
             pal::logf(pal::LogLevel::Warn, "traps: \"%s\" (idx=%d) deferred until the player is in a room; retrying", def->label, modifier_index);
         return TrapArm::NotReady;
@@ -354,17 +354,10 @@ void TrapHooks::retry_pending_off()
 // player sits in a menu, and must not lose time to a room transition.
 bool TrapHooks::gameplay_advanced()
 {
-    if (mod::pause_api_available() && mod::world_is_paused())
-        return false;
-    if (!mod::room_time_api_available())
-        return true;
     // Only whether the clock moved matters, not by how much, so sampling it while no trap is running
     // would buy nothing; the first tick after arming compares against a stale reading and can lose
     // that one frame.
-    const float now = mod::room_time();
-    const bool moved = now != last_room_time_;
-    last_room_time_ = now;
-    return moved;
+    return room_clock_.sample() == RoomClock::Tick::Advanced;
 }
 
 float TrapHooks::take_delta()

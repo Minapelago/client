@@ -7,6 +7,7 @@
 
 #include "mod/mod_api.hpp"
 #include "mth/core/data/component_types.hpp"
+#include "mth/core/data/game_layout.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"
@@ -18,6 +19,10 @@ namespace mth
 // ever hands back a cyclic or corrupt one rather than letting the walk hang the game thread.
 inline constexpr std::size_t kSceneMaxNodes = 65536;
 inline constexpr std::size_t kSceneMaxChildren = 8192;
+
+// Ticks between the cadenced walks SceneWalker::due_root hands out: about 1Hz. A traversal costs
+// microseconds, but it is pure waste in every room that does not hold what the walk is looking for.
+inline constexpr int kSceneWalkIntervalTicks = 60;
 
 // ComponentIsa jumps straight through the object's vtable with no validation of its own, so only pass it
 // something shaped like a live polymorphic game object. Note the vtable lives in the module's read-only
@@ -129,9 +134,21 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
     return looks_like_component(p, gm.base, gm.size);
 }
 
-// One scene-polling feature's walking apparatus: the scratch a repeated walk reuses, and the once-only
-// latches its diagnostics need. Choosing a cadence stays with the caller; read the cost note on
-// walk_scene before adding one.
+// Sets an InteractComponent's disable byte, which leaves its entity visible and solid but stops it
+// prompting. True only on the 0->1 write, so a caller logs the one tick that changed something, and
+// would hear about it again if the game ever cleared the byte.
+[[nodiscard]] inline bool disable_interact(void *interact)
+{
+    auto &disabled = pal::at<std::uint8_t>(interact, layout::kInteractDisabledOff);
+    if (disabled != 0)
+        return false;
+    disabled = 1;
+    return true;
+}
+
+// One scene-polling feature's walking apparatus: the scratch a repeated walk reuses, the once-only
+// latches its diagnostics need, and an optional 1Hz cadence (due_root). A feature with another cadence
+// keeps its own; read the cost note on walk_scene before adding one.
 class SceneWalker
 {
   public:
@@ -141,6 +158,34 @@ class SceneWalker
     SceneWalker(const char *tag, const char *noun, const char *suffix = "", const char *walk_name = "scene walk")
         : tag_(tag), noun_(noun), suffix_(suffix), walk_name_(walk_name)
     {
+    }
+
+    // The world's game root when a cadenced walk is due, else null. The cooldown is charged only when a
+    // root is handed out, so the first tick after a room load, which usually has no live player yet,
+    // cannot eat a reset_cadence() and cost a full interval.
+    [[nodiscard]] void *due_root()
+    {
+        if (!mod::entity_walk_api_available())
+            return nullptr;
+        if (cooldown_ > 0)
+        {
+            --cooldown_;
+            return nullptr;
+        }
+        void *world = mod::player_world(); // null until a player is live, which is also when no room exists
+        if (world == nullptr)
+            return nullptr;
+        void *root = mod::world_game_root_entity(world);
+        if (root == nullptr)
+            return nullptr;
+        cooldown_ = kSceneWalkIntervalTicks;
+        return root;
+    }
+
+    // Walk the next room immediately rather than up to a cadence late (call on world destroy).
+    void reset_cadence()
+    {
+        cooldown_ = 0;
     }
 
     template <typename Visit> SceneWalk walk(void *root, Visit &&visit)
@@ -219,6 +264,7 @@ class SceneWalker
     bool warned_capped_{false};
     bool warned_empty_{false};
     bool logged_extent_{false};
+    int cooldown_{0};             // due_root's cadence
     std::vector<void *> pending_; // entities left to descend into (explicit stack, no recursion)
     std::vector<void *> buffer_;  // reused across levels and ticks; no per-node allocation
 };

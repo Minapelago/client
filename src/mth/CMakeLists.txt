@@ -49,7 +49,7 @@ if(NOT MINGW)
     list(REMOVE_ITEM _mthap_pal_sources "${CMAKE_SOURCE_DIR}/src/pal/windows/mingw_crt_shim.cpp")
 endif()
 
-file(GLOB_RECURSE _mthap_module_sources CONFIGURE_DEPENDS app/*.cpp features/*.cpp hooks/*.cpp ui/*.cpp net/*.cpp)
+file(GLOB_RECURSE _mthap_module_sources CONFIGURE_DEPENDS app/*.cpp features/*.cpp ui/*.cpp net/*.cpp)
 
 # MinaMod_Init (pal/native_mod_entry.cpp) is a direct source of the module, so no archive
 # drops it as unreferenced.

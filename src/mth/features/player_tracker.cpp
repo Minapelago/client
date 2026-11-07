@@ -15,10 +15,10 @@ bool g_have_pos = false;
 
 } // namespace
 
-namespace mth
+namespace mth::player_tracker
 {
 
-void PlayerTracker::sample_position()
+void sample_position()
 {
     float p[3];
     if (mod::player_position(p) && std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]))
@@ -30,13 +30,7 @@ void PlayerTracker::sample_position()
     }
 }
 
-PlayerTracker::~PlayerTracker()
-{
-    g_player = nullptr;
-    g_have_pos = false;
-}
-
-void *PlayerTracker::player() const
+void *player()
 {
     // Prefer the game's own live-Player pointer: it is nulled inside Player::~Player, so it goes away with
     // the object. The note_player capture has no matching teardown signal - World::Destroy is the only thing
@@ -60,7 +54,7 @@ void *PlayerTracker::player() const
     return p;
 }
 
-bool PlayerTracker::position(float out[3]) const
+bool position(float out[3])
 {
     if (!g_have_pos)
         return false;
@@ -70,13 +64,13 @@ bool PlayerTracker::position(float out[3]) const
     return true;
 }
 
-void PlayerTracker::note_player(void *player)
+void note_player(void *player)
 {
     if (player != nullptr)
         g_player = player;
 }
 
-void PlayerTracker::invalidate_player()
+void invalidate_player()
 {
     // World teardown frees the Player; a cached pointer past this point is a use-after-free the next time
     // a tick writes through it (apply_upgrades then Player::UpdateStats). Position is per-player, so drop
@@ -85,4 +79,4 @@ void PlayerTracker::invalidate_player()
     g_have_pos = false;
 }
 
-} // namespace mth
+} // namespace mth::player_tracker

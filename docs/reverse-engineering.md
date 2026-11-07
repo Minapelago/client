@@ -19,8 +19,7 @@ The game's mod loader exposes named hook points. Register a callback with
 `mm->InstallHook("<name>", ...)`. It fires wherever the game runs that hook site,
 on both platforms, and from every inlined copy of the target. The client installs
 `IsItemCollected`, `WorldUpdate`, `WorldUpdateEnd`, `WorldDestroy`,
-`ItemsOnPickup`, `ItemsOnPickupDone`, `PickupOnPickup`, `ShopItemRefresh`,
-`AreaManagerNewArea`, and `ChestConstruct`.
+`ItemsOnPickup`, `ItemsOnPickupDone`, `PickupOnPickup`, `ShopItemRefresh`, and `ChestConstruct`.
 
 Prefer a named hook wherever the game exposes one. It is platform-agnostic and
 survives inlining. Confirm a named hook fires in-game before trusting it over a

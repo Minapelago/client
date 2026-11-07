@@ -221,20 +221,8 @@ void set_save_loaded(std::function<void()> cb)
     g_save_loaded_fn = std::move(cb);
 }
 
-ModifierHooks::ModifierHooks(ModifierRequest request)
+ModifierHooks::ModifierHooks()
 {
-    forced_ = std::move(request.forced);
-    for (int idx : request.indices)
-    {
-        if (is_safe(idx) || forced_.count(idx) != 0)
-            enforced_.insert(idx);
-        else
-            pal::logf(pal::LogLevel::Warn, "modifiers: idx=%d is not live-settable (%s); ignored (prefix force: to override)", idx,
-                      class_of(idx) == CheatClass::Grant        ? "grant"
-                      : class_of(idx) == CheatClass::Combo      ? "combo"
-                      : class_of(idx) == CheatClass::Randomizer ? "randomizer"
-                                                                : "invalid");
-    }
     if (!modifiers_available())
     {
         pal::logf(pal::LogLevel::Warn, "modifiers: PAL unavailable; ModifierHooks inert");
@@ -243,7 +231,7 @@ ModifierHooks::ModifierHooks(ModifierRequest request)
     set_new_game_modifier_seed([this](int slot, std::uint32_t *w) { seed(slot, w); });
     set_modifier_lockdown([this](int idx) { return block(idx); });
     installed_ = true;
-    pal::logf(pal::LogLevel::Info, "modifiers: ModifierHooks installed (enforced=%zu armed=%d)", enforced_.size(), static_cast<int>(armed_));
+    pal::logf(pal::LogLevel::Info, "modifiers: ModifierHooks installed (armed=%d)", static_cast<int>(armed_));
 }
 
 ModifierHooks::~ModifierHooks()
@@ -255,7 +243,6 @@ ModifierHooks::~ModifierHooks()
     if (installed_)
         remove_modifier_hooks(); // synchronous removal, same teardown contract as DeathHooks/LocationHooks
     std::lock_guard<std::mutex> lk(mtx_);
-    enforced_.clear();
     pending_live_.clear();
 }
 
@@ -287,9 +274,6 @@ void ModifierHooks::seed(int slot_index, std::uint32_t words[8])
         for (int idx = 0; idx < kCheatCount; ++idx)
             if (is_ap_denied(idx))
                 words[idx >> 5] &= ~(1u << (static_cast<unsigned>(idx) & 31u));
-        // After the clear, so a force: override still wins over the deny list.
-        for (int idx : enforced_)
-            words[idx >> 5] |= 1u << (static_cast<unsigned>(idx) & 31u);
     }
     if (scoped) // additive: force the AP baseline on without disturbing the player's other modifiers
         for (int idx : force_on_)
@@ -325,15 +309,6 @@ void ModifierHooks::set_ossex_start(bool on)
         force_on_.erase(kCheatLandingDone);
 }
 
-void ModifierHooks::set_cheaper_boneups(bool on)
-{
-    std::lock_guard<std::mutex> lk(mtx_);
-    if (on)
-        force_on_.insert(kCheatCheaperBoneUp);
-    else
-        force_on_.erase(kCheatCheaperBoneUp);
-}
-
 void ModifierHooks::set_ap_slot(int slot)
 {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -367,24 +342,6 @@ void ModifierHooks::set_live(int idx, bool on)
     pending_live_.emplace_back(idx, on);
 }
 
-void ModifierHooks::set_enforced(ModifierRequest request)
-{
-    const std::size_t requested = request.indices.size();
-    std::size_t kept = 0;
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        forced_ = std::move(request.forced);
-        enforced_.clear();
-        for (int idx : request.indices)
-            if (is_safe(idx) || forced_.count(idx) != 0)
-                enforced_.insert(idx);
-        kept = enforced_.size();
-    }
-    if (kept != requested)
-        pal::logf(pal::LogLevel::Warn, "modifiers: set_enforced kept %zu of %zu requested (unsafe/duplicate indices dropped)", kept, requested);
-    pal::logf(pal::LogLevel::Info, "modifiers: enforced set replaced (n=%zu)", kept);
-}
-
 void ModifierHooks::drain_live()
 {
     std::vector<std::pair<int, bool>> batch;
@@ -401,10 +358,6 @@ std::vector<std::string> ModifierHooks::status_lines() const
     std::lock_guard<std::mutex> lk(mtx_);
     std::vector<std::string> out;
     out.push_back(std::string("modifiers armed: ") + (armed_ ? "yes" : "no"));
-    std::string list;
-    for (int idx : enforced_)
-        list += std::to_string(idx) + " ";
-    out.push_back("enforced: " + (list.empty() ? std::string("(none)") : list));
     return out;
 }
 

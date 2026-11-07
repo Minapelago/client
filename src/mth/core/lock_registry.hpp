@@ -8,7 +8,7 @@
 namespace mth
 {
 
-// twin: mth/features/lock_hooks.hpp + chest_hooks.hpp consume this registry.
+// twin: mth/features/lock_hooks.hpp consumes this registry (locks and locked chests).
 // Thread-safe set of KeyBlock location slots the mod should pre-open. Negative slots
 // (cosmetic locks with no save index) are never accepted. Written by AP/console seams,
 // read by the game-thread pre-seed pass.

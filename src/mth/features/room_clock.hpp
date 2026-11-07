@@ -1,0 +1,36 @@
+#pragma once
+
+#include "mod/mod_api.hpp"
+
+namespace mth
+{
+
+// Whether the world's gameplay queues ran this tick. Two freezes stop them and neither is visible to the
+// other: a paused world (any menu; World::Update then runs only its pause queue), and a paused game (the
+// whole world queue is skipped, which stalls the room clock). A build whose API has no room clock reads as
+// advancing every tick. Each owner keeps its own instance, since the previous reading is per caller.
+struct RoomClock
+{
+    enum class Tick
+    {
+        Paused,   // the world is paused
+        Stalled,  // unpaused, but the room clock did not move: a transition or a death sequence
+        Advanced, // gameplay ran
+    };
+
+    Tick sample()
+    {
+        if (mod::world_is_paused())
+            return Tick::Paused;
+        if (!mod::room_time_api_available())
+            return Tick::Advanced;
+        const float now = mod::room_time();
+        const bool moved = now != last_;
+        last_ = now;
+        return moved ? Tick::Advanced : Tick::Stalled;
+    }
+
+    float last_{0.0f}; // previous room clock reading
+};
+
+} // namespace mth

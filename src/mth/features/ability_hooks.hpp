@@ -10,6 +10,7 @@
 
 namespace mth
 {
+class ApState;
 
 // twin: mth/core/ability_gate.hpp (pure gate decision).
 // Drives the PAL ability-gate seam from AP state. The block lambda installed in the ctor runs on the
@@ -25,10 +26,10 @@ class AbilityHooks
 
     void set_randomized(Ability a, bool on);
     void set_enforce(bool on); // authed && active save slot is the AP slot
-    // Per-destination train gating (train_rando). When active, enforce_train_tick clamps the SaveSlot
-    // unlocked-lines bitfield to line_mask (AP-granted tickets) instead of running the whole-train ability
-    // gate, so a station visit no longer auto-unlocks its destination (#98).
-    void set_train_gate(bool rando_active, std::uint32_t line_mask);
+    // Per-destination train gating (train_rando). Builds the granted-line mask from the received ticket
+    // itemTypes; when active, enforce_train_tick clamps the SaveSlot unlocked-lines bitfield to it instead
+    // of running the whole-train ability gate, so a station visit no longer auto-unlocks its destination (#98).
+    void set_train_gate(bool rando_active, const ApState &state);
     // The station's donation machine sells the same train unlock the AP Train Pass is (#162), so under
     // train_rando it cannot be left alone. When the apworld carries it as a location it stays usable and
     // becomes a cheap check: progress_seed pre-pays the compiled-in goal down to the configured cost, and

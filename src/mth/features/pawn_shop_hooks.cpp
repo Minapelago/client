@@ -34,10 +34,14 @@ void repl_pawn_npc(void *self, unsigned event, void *info)
         g_orig_pawn_npc(self, event, info);
 }
 
+} // namespace
+
+namespace mth
+{
+
 // When disable() returns true the detour no-ops every event and vetoes the interactable query (no
-// prompt); otherwise it calls through. disable() runs on the game thread, so it must be cheap and
-// thread-safe. Returns false if the chokepoint did not resolve.
-bool install_pawn_shop_hook(std::function<bool()> disable)
+// prompt); otherwise it calls through.
+void install_pawn_shop_hook(std::function<bool()> disable)
 {
     g_pawn_disable = std::move(disable);
     const std::uintptr_t addr = pal::resolve_game_symbol(mth::sym::pawn_shop_on_npc_event);
@@ -45,31 +49,19 @@ bool install_pawn_shop_hook(std::function<bool()> disable)
     {
         pal::logf(pal::LogLevel::Warn, "pawnty: PawnShopNPC::OnNPCEvent not resolved; pawn-shop disable off");
         g_pawn_disable = nullptr;
-        return false;
+        return;
     }
     g_pawn_hook = pal::ScopedHook(addr, &repl_pawn_npc, &g_orig_pawn_npc);
     if (!g_pawn_hook.installed())
     {
         pal::logf(pal::LogLevel::Error, "pawnty: failed to hook PawnShopNPC::OnNPCEvent");
         g_pawn_disable = nullptr;
-        return false;
+        return;
     }
     pal::logf(pal::LogLevel::Info, "pawnty: hooked PawnShopNPC::OnNPCEvent at %p", g_pawn_hook.target());
-    return true;
 }
 
-} // namespace
-
-namespace mth
-{
-
-PawnShopHooks::PawnShopHooks(std::function<bool()> should_disable)
-{
-    if (!install_pawn_shop_hook(std::move(should_disable)))
-        pal::logf(pal::LogLevel::Warn, "PawnShopHooks: pawn-shop chokepoint unresolved; disable inactive");
-}
-
-PawnShopHooks::~PawnShopHooks()
+void remove_pawn_shop_hook()
 {
     g_pawn_hook.reset();
     g_pawn_disable = nullptr;

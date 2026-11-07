@@ -1,30 +1,17 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 
 namespace mth
 {
 
-// Owns the HubFountain::Bulb::Update detour that forces chosen Ossex fountain lamps lit (visual only;
-// never writes SaveSlot+0x290). set_lit_mask publishes the force-lit bitmask (bit i => lamp i). Installs
-// on construction, removes on destruction.
-class FountainLampHooks
-{
-  public:
-    FountainLampHooks();
-    ~FountainLampHooks();
-
-    FountainLampHooks(const FountainLampHooks &) = delete;
-    FountainLampHooks &operator=(const FountainLampHooks &) = delete;
-
-    void set_lit_mask(std::uint32_t mask)
-    {
-        mask_.store(mask, std::memory_order_relaxed);
-    }
-
-  private:
-    std::atomic<std::uint32_t> mask_{0};
-};
+// The HubFountain::Bulb::Update detour that forces chosen Ossex fountain lamps lit (visual only; never
+// writes SaveSlot+0x290). A lamp is forced lit when its bit (bit i => lamp i) is set in either mask: the
+// slot_data mask the game-thread tick publishes, or the dev console override, which is sticky and works
+// offline.
+void install_fountain_lamp_hook();
+void remove_fountain_lamp_hook();
+void set_fountain_slot_mask(std::uint32_t mask);    // game-thread tick
+void set_fountain_console_mask(std::uint32_t mask); // any thread (the console runs on the render thread)
 
 } // namespace mth

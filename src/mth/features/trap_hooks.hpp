@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "mth/core/trap_state.hpp"
+#include "mth/features/room_clock.hpp"
 
 namespace mth
 {
@@ -51,7 +52,7 @@ class TrapHooks
     void retry_pending_off();
 
     TrapState state_;
-    float last_room_time_ = 0.0f;
+    RoomClock room_clock_;
     bool timing_source_logged_ = false;
     // Indices whose lift-write failed (set_runtime_modifier returned false meaning "not right
     // now"); TrapState has already dropped them, and tick() retries these on the next call.

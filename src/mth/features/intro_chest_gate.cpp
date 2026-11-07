@@ -4,17 +4,16 @@
 #include <cstdint>
 
 #include "mod/mod_api.hpp"
+#include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/ap_state.hpp"
 #include "mth/core/data/component_types.hpp"
 #include "mth/core/data/game_layout.hpp"
 #include "mth/features/scene_walk.hpp"
+#include "mth/features/weapon_grants.hpp"
 #include "pal/pal_log.hpp"
 
 namespace
 {
-
-// About 1Hz, matching the other scene walks: a traversal costs microseconds but is waste in every room
-// with no chest in it.
-constexpr int kWalkIntervalTicks = 60;
 
 using mth::looks_like_component;
 
@@ -23,9 +22,26 @@ using mth::looks_like_component;
 namespace mth
 {
 
-void IntroChestGate::set_armed(bool on)
+// The seed precollects the starting weapon, so every weapon reaches the player through the item stream. The
+// game hands one out anyway at the intro (the weapon chest's pick, and the fallback that force-grants the
+// whip), and both write the SaveSlot fields directly rather than going through Items::OnPickupDone, where the
+// vanilla-grant suppression sits. So ownership is clamped to the AP grants each tick instead of hooking
+// either site.
+void IntroChestGate::enforce_weapon_grants(const ApState &state, bool authed, bool slot_ok)
 {
-    armed_ = on;
+    WeaponTally tally;
+    for (const auto &it : state.received_items())
+        tally.add(it.item_id);
+
+    std::uint32_t authorized[kWeaponFamilyCount]{};
+    for (int fam = 0; fam < kWeaponFamilyCount; ++fam)
+        authorized[fam] = tally.owned_mask(fam);
+    enforce_weapon_ownership(authorized, authed, slot_ok);
+    // The clamp corrects the bits after the fact; the chest itself still offers all three starters and still
+    // equips the pick, so it is demoted as well. Both extra conditions are load-bearing: the weapon-change
+    // mode lists owned weapons only, so demoting before a grant lands, or on a save AP does not own, leaves
+    // the player with nothing to arm.
+    armed_ = authed && slot_ok && any_weapon_authorized(authorized);
 }
 
 // Writes only on a real transition, so a demotion costs one log line rather than one per walk, and a re-arm
@@ -57,22 +73,9 @@ void IntroChestGate::tick()
 {
     if (!armed_)
         return;
-    if (!mod::entity_walk_api_available())
-        return;
-    if (cooldown_ > 0)
-    {
-        --cooldown_;
-        return;
-    }
-    void *world = mod::player_world(); // null until a player is live
-    if (world == nullptr)
-        return;
-    void *root = mod::world_game_root_entity(world);
+    void *root = walker_.due_root();
     if (root == nullptr)
         return;
-    // Charged only when a walk runs, so the first tick after a room load (which usually has no live player
-    // yet) cannot eat the on_world_destroy reset and cost a full interval.
-    cooldown_ = kWalkIntervalTicks;
 
     // No early exit: a checkpoint room carries a trinket chest and a weapon chest, and only the one
     // still in starter mode is written, so the rest cost a read each.
@@ -82,7 +85,7 @@ void IntroChestGate::tick()
 
 void IntroChestGate::on_world_destroy()
 {
-    cooldown_ = 0;
+    walker_.reset_cadence();
 }
 
 } // namespace mth

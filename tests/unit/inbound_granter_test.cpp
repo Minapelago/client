@@ -402,7 +402,7 @@ TEST_CASE("InboundGranter re-queues receipts dropped by a session change", "[inb
         inbound.tick();
         REQUIRE(granter.granted == std::vector<int>{5});
     }
-    granter.discard_pending(); // what GrantPipeline::release_inbound does
+    granter.discard_pending(); // what App::clear_session_state does
     granter.granted.clear();
 
     mth::InboundGranter rebuilt(granter, state, save); // the next session, against its own save

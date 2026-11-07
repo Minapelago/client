@@ -22,7 +22,6 @@ struct YcVec3
     float x, y, z;
 };
 
-mth::PlayerTracker *g_tracker = nullptr;
 std::function<bool(int)> g_is_ap_location;   // RandoBridge::is_ap_location, wired by App
 std::function<void(int)> g_report_collected; // RandoBridge::on_location_collected, wired by App
 bool g_train_pass_machine_blocked = false;   // train_rando: the donation machine grants nothing (#162)
@@ -46,8 +45,7 @@ std::vector<PendingGrant> g_pending;
 // Start of Items::OnPickupDone. Returns true to stop the original running.
 bool on_items_pickup_done(int slot, int item_type, void *player)
 {
-    if (g_tracker != nullptr)
-        g_tracker->note_player(player); // refresh the grant-target player for inbound replays
+    mth::player_tracker::note_player(player); // refresh the grant-target player for inbound replays
 
     // These re-seed the vial bitfield behind the AP count (#171); App re-asserts it, so this is a trace
     // of what fired, not a suppression point.
@@ -76,8 +74,7 @@ bool on_items_pickup_done(int slot, int item_type, void *player)
 // still does the per-location suppression for them). Idempotent collect-report mirrors OnPickupDone.
 bool on_items_pickup(int slot, int item_type, void *player)
 {
-    if (g_tracker != nullptr)
-        g_tracker->note_player(player);
+    mth::player_tracker::note_player(player);
 
     // Backstop to TicketMachineGate: the machine should never have been interactible, so reaching here
     // means the prompt suppression missed. Refusing the grant costs the player the donated bones, which
@@ -108,9 +105,8 @@ void set_train_pass_machine_blocked(bool on)
     g_train_pass_machine_blocked = on;
 }
 
-ItemGranter::ItemGranter(PlayerTracker &tracker, std::function<bool(int)> is_ap_location, std::function<void(int)> report_collected)
+ItemGranter::ItemGranter(std::function<bool(int)> is_ap_location, std::function<void(int)> report_collected)
 {
-    g_tracker = &tracker;
     g_is_ap_location = std::move(is_ap_location);
     g_report_collected = std::move(report_collected);
     g_call_on_pickup_done = reinterpret_cast<void (*)(int, int, void *, void *, int, int, unsigned int, bool)>(pal::resolve_game_symbol(sym::on_pickup_done));
@@ -127,7 +123,6 @@ ItemGranter::~ItemGranter()
     g_call_on_pickup_done = nullptr;
     std::lock_guard<std::mutex> lk(g_pending_mtx);
     g_pending.clear();
-    g_tracker = nullptr;
     g_is_ap_location = nullptr;
     g_report_collected = nullptr;
     g_train_pass_machine_blocked = false;
@@ -136,7 +131,7 @@ ItemGranter::~ItemGranter()
 bool ItemGranter::grant(int item_type, int receipt)
 {
     // Require hook + Player* before accepting; return false to retry next tick.
-    if (g_call_on_pickup_done == nullptr || g_tracker == nullptr || g_tracker->player() == nullptr)
+    if (g_call_on_pickup_done == nullptr || player_tracker::player() == nullptr)
         return false;
 
     // itemType 0 = engine "None" sentinel; nothing to apply, so ack straight away.
@@ -184,8 +179,8 @@ void ItemGranter::drain()
     // second-level pointer unconditionally, which is null pre-World::Update (spawn window) and
     // would fault. Requeue until cached.
     float p[3];
-    void *player = g_tracker != nullptr ? g_tracker->player() : nullptr;
-    const bool ready = g_call_on_pickup_done && player != nullptr && g_tracker->position(p);
+    void *player = player_tracker::player();
+    const bool ready = g_call_on_pickup_done && player != nullptr && player_tracker::position(p);
     if (!ready || !std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
     {
         std::lock_guard<std::mutex> lk(g_pending_mtx);

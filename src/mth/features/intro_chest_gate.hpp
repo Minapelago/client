@@ -8,6 +8,7 @@
 
 namespace mth
 {
+class ApState;
 
 // Demotes the intro weapon chest from its starter mode to the ordinary weapon-change mode. Vanilla, the
 // chest offers all three default weapons and its confirm writes the SaveSlot ownership fields directly, so
@@ -25,9 +26,9 @@ namespace mth
 class IntroChestGate
 {
   public:
-    // Bound AP save AND at least one weapon granted; the second half is not optional, since the ordinary
-    // mode has nothing to list until a grant lands.
-    void set_armed(bool on);
+    // Clamps weapon ownership to the tiers AP granted (bound AP save only: it is a durable, destructive
+    // write) and arms the chest demotion behind it. Game thread, per tick.
+    void enforce_weapon_grants(const ApState &state, bool authed, bool slot_ok);
 
     void tick();             // game thread; walks nothing unless armed
     void on_world_destroy(); // walk the next room immediately rather than up to a cadence late
@@ -35,8 +36,7 @@ class IntroChestGate
   private:
     void demote_chest(void *chest);
 
-    bool armed_{false}; // published by the game-thread tick, read by the game-thread drain
-    int cooldown_{0};
+    bool armed_{false};          // published by the game-thread tick, read by the game-thread drain
     bool logged_demoted_{false}; // Info on the first demotion, Debug after: this is a silent write otherwise
     SceneWalker walker_{"intro", "the weapon chest"};
 };

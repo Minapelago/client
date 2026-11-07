@@ -121,9 +121,8 @@ few symbols that would otherwise raise it.
 
 ```
 src/mth/core/     pure logic (test-linked)
-src/mth/app/      composition root: App, HookManager, ApSession, grant pipeline, startup gate probes
+src/mth/app/      composition root: App, HookManager, startup gate probes
 src/mth/features/ per-feature game hooks (pickups/shop, bosses, locks, player tracking, item grants)
-src/mth/hooks/    the shared detour plumbing the feature hooks install through
 src/mth/net/      Archipelago link implementation
 src/mth/ui/       dev console, login window, banners
 src/mod/          wrapper over the game's native mod API

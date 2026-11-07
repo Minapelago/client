@@ -4,25 +4,25 @@
 
 #include <imgui.h>
 
+#include "mth/app/app.hpp"
 #include "mth/core/ap/ap_state.hpp" // ConnectionPhase
-#include "mth/core/command_sink.hpp"
 
 namespace mth
 {
 
-LoginWindow::LoginWindow(ICommandSink &sink) : sink_(sink)
+LoginWindow::LoginWindow(App &app) : app_(app)
 {
 }
 
-// Deferred rather than done in the ctor: the overlay is built during App construction, before the
-// sink can answer. Only fills empty fields, so it can never clobber what the player typed.
+// Deferred rather than done in the ctor: the overlay is built during App construction, before
+// App can answer. Only fills empty fields, so it can never clobber what the player typed.
 void LoginWindow::prefill_once()
 {
     if (prefilled_)
         return;
     prefilled_ = true;
 
-    const SavedLogin saved = sink_.saved_login();
+    const SavedLogin saved = app_.saved_login();
     if (server_[0] == '\0')
         std::snprintf(server_.data(), server_.size(), "%s", saved.server.c_str());
     if (slot_[0] == '\0')
@@ -47,8 +47,8 @@ void LoginWindow::draw(bool login_open)
     ImGui::InputText("Slot", slot_.data(), slot_.size());
     ImGui::InputText("Password", password_.data(), password_.size(), ImGuiInputTextFlags_Password);
 
-    const ConnectionStatus status = sink_.connection_status();
-    const GateStatus gate = sink_.gate_status();
+    const ConnectionStatus status = app_.connection_status();
+    const GateStatus gate = app_.gate_status();
     const bool gate_blocks = should_refuse_connect(gate.enforcing, gate.verdict);
     switch (status.phase)
     {
@@ -59,15 +59,15 @@ void LoginWindow::draw(bool login_open)
         break;
     case ConnectionPhase::Connected:
         if (ImGui::Button("Disconnect"))
-            sink_.disconnect();
+            app_.disconnect();
         break;
     case ConnectionPhase::Disconnected:
     case ConnectionPhase::Error:
-        // The sink refuses the call regardless; disabling the button is what makes that visible
+        // App refuses the call regardless; disabling the button is what makes that visible
         // here, since a gate refusal never reaches ApState and so never becomes an Error phase.
         ImGui::BeginDisabled(gate_blocks);
         if (ImGui::Button("Connect"))
-            sink_.connect(server_.data(), slot_.data(), password_.data());
+            app_.connect(server_.data(), slot_.data(), password_.data());
         ImGui::EndDisabled();
         break;
     }

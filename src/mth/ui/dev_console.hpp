@@ -11,14 +11,14 @@
 namespace mth
 {
 
-class ICommandSink;
+class App;
 class BannerQueue;
 
 // Dev console UI. Registers as pal log observer; output pane mirrors the log stream.
 class DevConsole final
 {
   public:
-    DevConsole(ICommandSink &sink, BannerQueue &banner_queue);
+    DevConsole(App &app, BannerQueue &banner_queue);
     ~DevConsole();
 
     DevConsole(const DevConsole &) = delete;
@@ -33,7 +33,7 @@ class DevConsole final
     void run_input();
     void println(const std::string &line);
 
-    ICommandSink &sink_;
+    App &app_;
     BroadcastBanner banner_; // always-on PrintJSON banner, drawn regardless of console_open
     LogRing log_;
     std::array<char, 512> input_{};

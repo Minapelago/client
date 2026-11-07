@@ -33,7 +33,6 @@ class SewerCatGate
     void disable_vendor(void *behavior, void *sibling_interact, bool sibling_unique);
 
     std::function<bool()> should_disable_;
-    int cooldown_{0};
     bool warned_no_interact_{false}; // found him, could not attribute an interact component to him
     SceneWalker walker_{"panino", "the fetch vendor", " (#88)"};
 };

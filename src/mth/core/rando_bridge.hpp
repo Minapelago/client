@@ -13,7 +13,7 @@ namespace mth
 
 class ApSaveState; // defined in ap_save_state.hpp (same core lib)
 
-// twin: mth/features/{location,boss,goal_tracker}_hooks.hpp drive outbound checks through this.
+// twin: mth/features/location_hooks.hpp and save_pollers.hpp drive outbound checks through this.
 // Outbound: maps a collected slot to a deduplicated server check. Game-thread-only.
 class RandoBridge
 {

@@ -28,7 +28,6 @@ class TicketMachineGate
     void on_world_destroy(); // walk the next room immediately rather than up to a cadence late
 
   private:
-    int cooldown_{0};
     SceneWalker walker_{"train", "the donation machine", " (#162)"};
 };
 

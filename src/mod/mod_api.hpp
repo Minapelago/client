@@ -136,11 +136,6 @@ using ShopItemRefreshFn = void (*)(void *shop_item);
 bool install_shop_item_refresh_hook(ShopItemRefreshFn on_refresh);
 void remove_shop_item_refresh_hook();
 
-// AreaManager::NewArea: records the area index that combines with the room index into a screen id.
-using AreaNewAreaFn = void (*)(int old_area, int new_area);
-bool install_area_new_area_hook(AreaNewAreaFn on_new_area);
-void remove_area_new_area_hook();
-
 // Chest ctor tail, carrying the real Chest*. The only notification that a chest exists, so the
 // kear-lock clear rides a registry of these rather than a per-frame detour.
 using ChestConstructFn = void (*)(void *chest);
@@ -240,7 +235,6 @@ void *sym_addr(const char *name);
 
 // Live room index off the game's own RoomManager global, the same field the room detour read.
 // Negative means no room is bound (also returned when the entry is unavailable).
-bool room_index_api_available();
 int room_index();
 
 // Menu-world scene root. Null when unavailable or world is null.
@@ -321,7 +315,6 @@ void weak_ptr_destroy(void *weak);
 // True while the live world is paused, which is any menu that pauses gameplay. World::Update then runs only
 // the pause queue, so nothing the game has already queued can progress. false when there is no live world or
 // the build's API lacks the accessors.
-bool pause_api_available();
 bool world_is_paused();
 
 // Seconds the current room has been running: a time-scaled accumulator driven from the world's update queues,
