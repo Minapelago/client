@@ -25,18 +25,9 @@
 #   include(FridaGum)   # Linux only; include(MinHook) on Windows.
 #   target_link_libraries(my_target PRIVATE frida::gum)
 
-if(TARGET frida::gum)
-    return()
-endif()
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "FridaGum.cmake is Linux-only; use MinHook.cmake on Windows")
-endif()
-
-set(FRIDA_GUM_VERSION "16.5.9" CACHE STRING "Frida-gum version (git tag)")
+set(FRIDA_GUM_VERSION "16.5.9")
 # Pin to the exact commit the tag points at, for immutability.
-set(FRIDA_GUM_GIT_TAG "e49e63c8dd1961d1490d11b44e86166a6e776c14"
-    CACHE STRING "Frida-gum git commit (== tag ${FRIDA_GUM_VERSION})")
+set(FRIDA_GUM_GIT_TAG "e49e63c8dd1961d1490d11b44e86166a6e776c14") # == tag ${FRIDA_GUM_VERSION}
 
 include(FetchContent)
 FetchContent_Declare(

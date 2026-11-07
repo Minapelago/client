@@ -4,9 +4,7 @@
 # are header-only and were previously vendored as git submodules under external/.
 # We fetch them here instead so:
 #   * the patched websocketpp copy lives in the build dir (build/_deps), never
-#     dirtying a tracked worktree the way an in-place `git apply` on a submodule did;
-#   * the local fixes are a normal PATCH_COMMAND against the pinned tag, applied once
-#     at populate (no idempotent reverse-check dance);
+#     dirtying a tracked worktree;
 #   * external/ holds only vcpkg.
 #
 # Pins are the exact commits the submodules recorded. asio/OpenSSL/ZLIB/json come
@@ -17,28 +15,15 @@
 include_guard(GLOBAL)
 include(FetchContent)
 
-# CMP0097 NEW: GIT_SUBMODULES "" means *no* submodules (old behavior was "all").
-# Needed so wswrap's subprojects/wsjs (emscripten backend) is not cloned.
-cmake_policy(SET CMP0097 NEW)
-
-# SOURCE_SUBDIR points at a path with no CMakeLists.txt so MakeAvailable populates
-# (and runs PATCH_COMMAND) but does NOT add_subdirectory - these are header-only and
-# their own CMake builds (examples/tests/install) are not wanted.
+# SOURCE_SUBDIR points at a path with no CMakeLists.txt, so MakeAvailable populates
+# each dependency without calling add_subdirectory. They are header-only and their
+# own CMake builds (examples, tests, install) are not wanted.
 set(_apclient_no_build "_headers_only")
-
-# FetchContent's stamps record the patch COMMAND, not the patch CONTENT, so editing the patch
-# would otherwise leave the old one applied with no reconfigure and no warning.
-set(_apclient_ws_patch "${CMAKE_CURRENT_LIST_DIR}/patches/websocketpp-0.8.2-local.patch")
-set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_apclient_ws_patch}")
 
 FetchContent_Declare(
     websocketpp
     GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
     GIT_TAG        56123c87598f8b1dd471be83ca841ceae07f95ba # 0.8.2
-    PATCH_COMMAND  ${CMAKE_COMMAND}
-                       -DPATCH=${_apclient_ws_patch}
-                       -DWORKDIR=<SOURCE_DIR>
-                       -P ${CMAKE_CURRENT_LIST_DIR}/apply_patch.cmake
     SOURCE_SUBDIR  ${_apclient_no_build}
 )
 
@@ -58,6 +43,22 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(websocketpp wswrap apclientpp)
+
+# Upstream replaces the asio error with a generic tls_handshake_failed, which collapses a certificate
+# rejection, a version mismatch and a reset mid-handshake into one message. The asio code carries the
+# OpenSSL reason and nothing in this stack matches on the generic one. Rewriting the fetched copy in
+# place is idempotent, and it fails the configure if a different websocketpp makes neither text match.
+set(_ws_tls "${websocketpp_SOURCE_DIR}/websocketpp/transport/asio/security/tls.hpp")
+set(_ws_tls_old "m_ec = socket::make_error_code(socket::error::tls_handshake_failed);")
+set(_ws_tls_new "m_ec = ec;")
+file(READ "${_ws_tls}" _ws_tls_text)
+string(FIND "${_ws_tls_text}" "${_ws_tls_old}" _ws_tls_at)
+if(NOT _ws_tls_at EQUAL -1)
+    string(REPLACE "${_ws_tls_old}" "${_ws_tls_new}" _ws_tls_text "${_ws_tls_text}")
+    file(WRITE "${_ws_tls}" "${_ws_tls_text}")
+elseif(NOT _ws_tls_text MATCHES "if \\(ec\\) \\{\n *m_ec = ec;\n *\\} else \\{")
+    message(FATAL_ERROR "websocketpp tls.hpp matches neither the original nor the patched handle_init text")
+endif()
 
 add_library(mthap_apclient INTERFACE)
 add_library(mthap::apclient ALIAS mthap_apclient)

@@ -7,8 +7,8 @@
 # drop-in through Notices.cmake like every other dependency's.
 #
 # The TTF becomes a byte array at configure time (no host tool, so the cross builds need
-# nothing extra). Sets MTHAP_OVERLAY_FONT_SOURCE, which src/pal compiles into mthap_pal,
-# so this must be included before that subdirectory is added.
+# nothing extra). Sets MTHAP_OVERLAY_FONT_SOURCE, which src/mth/CMakeLists.txt compiles into
+# the module, so this must be included before that subdirectory is added.
 
 include_guard(GLOBAL)
 include(FetchContent)

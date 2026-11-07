@@ -19,7 +19,7 @@ fi
 
 mapfile -d '' -t files < <(
     git ls-files -z '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' '*.hxx' \
-        | grep -zvE '^(external|build)/|^src/pal/windows/win_signatures_generated\.cpp$'
+        | grep -zvE '^(external|build)/|^src/pal/windows/win_signatures\.cpp$'
 )
 
 if [ "${#files[@]}" -eq 0 ]; then

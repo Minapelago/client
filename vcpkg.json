@@ -1,28 +1,10 @@
 {
   "name": "mth-apclient",
-  "version-string": "1.2.2-beta.1",
   "builtin-baseline": "eae1680538b86f962455c27abca2aad0dc304a4d",
   "dependencies": [
+    "asio",
     "nlohmann-json",
+    "openssl",
     "zlib"
-  ],
-  "features": {
-    "net": {
-      "description": "Archipelago networking (apclientpp transport + TLS)",
-      "dependencies": [
-        "asio",
-        "openssl"
-      ]
-    },
-    "overlay": {
-      "description": "In-game Dear ImGui dev overlay (Vulkan + SDL2 input)",
-      "dependencies": [
-        "vulkan-headers",
-        {
-          "name": "sdl2",
-          "default-features": false
-        }
-      ]
-    }
-  }
+  ]
 }

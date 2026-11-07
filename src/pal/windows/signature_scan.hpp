@@ -8,7 +8,7 @@
 namespace pal
 {
 
-// Defined in win_signatures_generated.cpp (generated).
+// Defined in win_signatures.cpp.
 std::span<const mth::sig::Entry> sig_table();
 
 // Defined in signature_scan.cpp. Resolves a mangled name by scanning the loaded

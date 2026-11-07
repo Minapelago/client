@@ -16,22 +16,20 @@
 #include "mth/core/ap/ap_link.hpp"
 #include "mth/core/broadcast.hpp"
 #include "mth/core/data/ability_ids.hpp"
+#include "mth/core/data/game_symbols.hpp"
 #include "mth/core/game_events.hpp"
 #include "mth/core/rando_bridge.hpp"
 #include "mth/features/mirror_switches.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "mth/features/room_tracker.hpp"
 #include "mth/features/trap_hooks.hpp"
+#include "mth/ui/overlay_root.hpp"
 #include "mth_version.h"
 #include "pal/pal_game.hpp"
 #include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
-#ifdef MTHAP_HAS_OVERLAY
-#include "mth/core/data/game_symbols.hpp"
-#include "mth/ui/overlay_root.hpp"
 #include "pal/pal_overlay.hpp"
-#endif
 
 namespace
 {
@@ -179,24 +177,20 @@ App::App() : bundle_store_(pal::mod_save_dir(), {pal::log_dir(), pal::mod_save_d
     hooks_ = std::make_unique<HookManager>(
         *events_, net_->rando(), scout_registry_, state_, bundle_store_, [this](const std::string &detail) { net_->link().send_death(detail); },
         [this]() -> void * { return tracker_->player(); });
-#ifdef MTHAP_HAS_OVERLAY
     {
         overlay_root_ = std::make_unique<OverlayRoot>(*this, net_->banner_queue());
         overlay_ = pal::make_overlay();
         overlay_->set_ui(overlay_root_.get());
         pal::logf(pal::LogLevel::Info, "overlay: dev console attached"); // overlay logs the resolved toggle key
     }
-#endif
     ready_.store(true); // everything wired: allow the game-thread tick hooks to run (they may already be firing)
 }
 
 App::~App()
 {
-    ready_.store(false); // stop ticking before any member is torn down
-#ifdef MTHAP_HAS_OVERLAY
+    ready_.store(false);   // stop ticking before any member is torn down
     overlay_.reset();      // removes render/input hooks + stops drawing first
     overlay_root_.reset(); // then unregister the log observer
-#endif
     pal::remove_newfile_kit_suppressor();
     hooks_.reset(); // GameHooks (tick source) stops first inside the manager, then feature hooks
     grants_.reset();
@@ -259,10 +253,8 @@ void App::drive_tick()
         // it logs either outcome itself. The banner is best-effort by comparison, and can name a sender for
         // a death kill() went on to decline.
         hooks_->kill_player();
-#ifdef MTHAP_HAS_OVERLAY
         // Salmon is the AP palette's trap color, which is what a deathlink is from the receiver's side.
         net_->banner_queue().push({{pending_death_text_, banner_color("", "salmon", 0, 0, false)}});
-#endif
     }
     ensure_inbound_ready();
     reconcile_server_checked();

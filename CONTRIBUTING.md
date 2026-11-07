@@ -7,10 +7,10 @@ conventions the project follows.
 
 - CMake >= 3.25, Ninja, and a C++23 compiler (the presets use `clang`/`clang++` (`clang-cl` / `clang++-cl` on Windows)).
 - Dependencies are pulled automatically:
-  - **vcpkg**: the only git submodule (`external/vcpkg`). It provides nlohmann-json, the
-    networking deps (asio, OpenSSL, zlib), and, on Linux only, the overlay deps (Vulkan headers,
-    SDL2 headers). The Windows overlay needs no vcpkg packages: its Dear ImGui backends build
-    against the D3D12/Win32 headers the platform SDK already ships.
+  - **vcpkg**: the only git submodule (`external/vcpkg`). It provides nlohmann-json and the
+    networking deps (asio, OpenSSL, zlib). The Linux overlay's Vulkan and SDL2 headers are
+    fetched by CMake, and the Windows overlay's Dear ImGui backends build against the
+    D3D12/Win32 headers the platform SDK already ships.
   - **Dear ImGui** (overlay), **Frida-Gum** (Linux hook backend), **MinHook** (Windows hook
     backend), **Catch2** (tests), and the Archipelago client headers (apclientpp / wswrap /
     websocketpp) are fetched at configure time via CMake `FetchContent`.
@@ -108,13 +108,9 @@ The codebase is split into these targets (see [docs/architecture.md](docs/archit
 
 - `mthap_core`: pure, cross-platform logic. **It must not include platform, OS, or hook-backend
   headers**, because the unit tests link it without the module or a backend. Portable third-party
-  libraries are allowed provided they resolve with no vcpkg feature selected, since the tests lane
-  requests none.
-- `mthap_mod`: the wrapper over the game's own mod API, under `src/mod/`. Also test-linked.
-- `mthap_net`: the Archipelago link, built only when networking is enabled.
-- `mthap_pal`: the platform abstraction layer (process entry points and hook backend) under
-  `src/pal/{linux,windows}/`.
-- `mthap`: the final module that composes them.
+  libraries are allowed. It also holds the wrapper over the game's own mod API, under `src/mod/`.
+- `mthap`: the final module. It composes core with the platform abstraction layer (process entry
+  points and hook backend, under `src/pal/{linux,windows}/`), the Archipelago link and the overlay.
 
 When you add platform-specific behavior, put it behind a PAL interface rather than `#ifdef`-ing it
 into the core or the higher-level logic.

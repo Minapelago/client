@@ -36,14 +36,12 @@ class ApSession
 
     [[nodiscard]] IApLink &link();
     [[nodiscard]] RandoBridge &rando();
-#ifdef MTHAP_HAS_OVERLAY
     [[nodiscard]] BannerQueue &banner_queue();
-#endif
 
     void tick(ApState &state, std::optional<std::uint32_t> screen);
 
   private:
-    std::unique_ptr<BannerQueue> banner_queue_; // outlives coordinator_; overlay builds only
+    std::unique_ptr<BannerQueue> banner_queue_; // outlives coordinator_
     std::unique_ptr<IApLink> link_;
     std::unique_ptr<ApCoordinator> coordinator_;
     std::unique_ptr<AreaReporter> area_reporter_;

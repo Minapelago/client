@@ -84,28 +84,21 @@ byte pattern that matches the target function exactly once in `.text`.
    offset of the `disp32` within it (`disp_off`) and the instruction's length
    (`next_insn`), so the scanner can follow the RIP-relative reference.
 
-### The signature files
+### The signature table
 
-Two git-tracked files drive the Windows scan.
-
-- `scripts/win_signatures.json` is the source of truth. Each entry has a `name`,
-  a `kind` (`Code` or `DataRef`), a `pattern` (the byte array), a `mask` (1 for a
-  fixed byte, 0 for a wildcard), and for a `DataRef` the `disp_off` and
-  `next_insn`.
-- `src/pal/windows/win_signatures_generated.cpp` is generated from that JSON and
-  holds `pal::sig_table()`. It is excluded from `format.sh`.
+`src/pal/windows/win_signatures.cpp` is the only copy of the table and is edited
+by hand. It holds one `kPatN` byte array and one `kMaskN` array (1 for a fixed
+byte, 0 for a wildcard) per entry, plus the `kEntries` rows with the symbol
+`name`, the kind (`Code` or `DataRef`), and for a `DataRef` the `disp_off` and
+`next_insn`. `format.sh` and CI skip this file, so
+formatting is not checked; running `clang-format -i` on it is optional.
 
 `scripts/sig_mapping.json` records per-symbol RVAs and `DataRef` reference sites.
 It is a carving and validation input, not a runtime dependency.
 
-To add or change a signature, edit `win_signatures.json`, then regenerate the
-`.cpp` from it. Run this from `scripts/`:
-
-```bash
-python3 -c 'import json,sigtool; sigtool.emit_cpp("../src/pal/windows/win_signatures_generated.cpp","sig_table",json.load(open("win_signatures.json")))'
-```
-
-Then `clang-format -i` the `.cpp` to match the committed wrapping.
+To add or change a signature, edit `win_signatures.cpp` by hand: add a `kPatN` and
+`kMaskN` pair and a `kEntries` row (or change the bytes of an existing pair),
+then run `validate_signatures.py` against the game exe.
 
 ### Validating uniqueness
 
@@ -115,7 +108,7 @@ gate is uniqueness. Every fingerprint must match exactly once in `.text`. A
 
 ```bash
 python3 scripts/validate_signatures.py --binary <MinaTheHollower.exe> \
-  --arch pe --table scripts/win_signatures.json \
+  --arch pe --table src/pal/windows/win_signatures.cpp \
   --mapping scripts/sig_mapping.json --expect-map windows
 ```
 
@@ -136,10 +129,23 @@ pip install --user iced-x86 pefile pyelftools
 The disassembler is `iced-x86`. Capstone's detail mode is broken on the current
 Python wheel, so it is not used.
 
-An automated carver, `scripts/gen_win_signatures.py`, can generate the whole
-table from the RVAs in `sig_mapping.json`. It is non-deterministic across the
-table, so it is not used to add a single symbol. Hand-editing
-`win_signatures.json` is the normal path.
+`scripts/sigtool.py` carves signatures from a binary. Run directly, it carves
+every symbol listed in `sig_mapping.json` and prints the arrays and `kEntries`
+rows in the exact format used in `win_signatures.cpp`:
+
+```bash
+python3 scripts/sigtool.py --binary <MinaTheHollower.exe> \
+  --mapping scripts/sig_mapping.json --arch pe --rva-map windows
+```
+
+This is a whole-table re-carve, for moving every signature to a new build. It
+exits on the first symbol it cannot carve uniquely. The RVAs in `sig_mapping.json`
+belong to the build they were recorded from, so refresh them for the target build
+first. Each entry under `symbols` needs a `name` and a `kind`. The per-build map
+(`windows` or `linux`) then needs, for a `Code` symbol, an `rva`, or for a
+`DataRef` symbol, `ref_site_rva` (the referencing instruction) plus `disp_off` and
+`next_insn`. Paste the printed output over the arrays and `kEntries` in
+`win_signatures.cpp`.
 
 Why addresses go stale: function addresses move between builds even at the same
 semantic version. Data tables have stayed byte-identical across a revision bump

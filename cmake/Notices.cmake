@@ -23,7 +23,7 @@ function(mthap_stage_notices dropin out_var)
     set(_staged "")
     set(_missing "")
 
-    # FetchContent checkouts: <name>-src/{LICENSE*,COPYING*}.
+    # FetchContent checkouts: <name>-src/{LICENSE*,COPYING*,LICENSES/*}.
     file(GLOB _dep_dirs "${FETCHCONTENT_BASE_DIR}/*-src")
     foreach(_dep_dir IN LISTS _dep_dirs)
         get_filename_component(_dep "${_dep_dir}" NAME)
@@ -32,7 +32,7 @@ function(mthap_stage_notices dropin out_var)
             continue()
         endif()
 
-        file(GLOB _files "${_dep_dir}/LICENSE*" "${_dep_dir}/COPYING*")
+        file(GLOB _files LIST_DIRECTORIES false "${_dep_dir}/LICENSE*" "${_dep_dir}/COPYING*" "${_dep_dir}/LICENSES/*")
         if(NOT _files)
             list(APPEND _missing "${_dep}")
             continue()

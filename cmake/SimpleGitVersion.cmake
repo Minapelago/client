@@ -25,7 +25,6 @@ function(add_git_version_info target)
   if(NOT GIT_FOUND)
     set(VERSION_STRING "0.0.0-unknown")
     set(VERSION_HASH "unknown")
-    set(VERSION_BRANCH "unknown")
     set(VERSION_MAJOR 0)
     set(VERSION_MINOR 0)
     set(VERSION_PATCH 0)
@@ -41,13 +40,6 @@ function(add_git_version_info target)
       COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       OUTPUT_VARIABLE GIT_HASH
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-    )
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-      OUTPUT_VARIABLE GIT_BRANCH
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET
     )
@@ -82,22 +74,10 @@ function(add_git_version_info target)
         set(VERSION_STRING "${BASE_VERSION}")
       endif()
     else()
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE COMMIT_COUNT
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-      )
-      if(NOT COMMIT_COUNT)
-        set(COMMIT_COUNT 0)
-      endif()
-      set(VERSION_STRING "0.0.${COMMIT_COUNT}-dev")
-      set(VERSION_PATCH ${COMMIT_COUNT})
+      set(VERSION_STRING "0.0.0-dev")
     endif()
 
     set(VERSION_HASH ${GIT_HASH})
-    set(VERSION_BRANCH ${GIT_BRANCH})
   endif()
 
   # Pack semver into one monotonic integer for the mod manifest (uint32-safe;
@@ -117,11 +97,7 @@ function(add_git_version_info target)
 #include <string_view>
 namespace mth::version {
     inline constexpr std::string_view string{\"${VERSION_STRING}\"};
-    inline constexpr int major{${VERSION_MAJOR}};
-    inline constexpr int minor{${VERSION_MINOR}};
-    inline constexpr int patch{${VERSION_PATCH}};
     inline constexpr std::string_view hash{\"${VERSION_HASH}\"};
-    inline constexpr std::string_view branch{\"${VERSION_BRANCH}\"};
 }
 ")
   configure_file("${VERSION_HEADER}.in" "${VERSION_HEADER}" COPYONLY)

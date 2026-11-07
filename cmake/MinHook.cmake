@@ -4,15 +4,7 @@
 # Upstream: https://github.com/TsudaKageyu/minhook - has its own CMakeLists.txt
 # so FetchContent_MakeAvailable gives us a usable static library directly.
 
-if(TARGET minhook::minhook)
-    return()
-endif()
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    message(FATAL_ERROR "MinHook.cmake is Windows-only; use FridaGum.cmake on Linux")
-endif()
-
-set(MINHOOK_VERSION "v1.3.4" CACHE STRING "MinHook release tag")
+set(MINHOOK_VERSION "v1.3.4")
 
 include(FetchContent)
 FetchContent_Declare(
@@ -25,8 +17,6 @@ FetchContent_MakeAvailable(minhook)
 
 # Upstream's target is just `minhook`; re-expose with a namespaced alias so
 # consumer code can use minhook::minhook consistently.
-if(NOT TARGET minhook::minhook)
-    add_library(minhook::minhook ALIAS minhook)
-endif()
+add_library(minhook::minhook ALIAS minhook)
 
 message(STATUS "MinHook: ${MINHOOK_VERSION} -> target 'minhook'")

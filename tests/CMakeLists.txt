@@ -1,4 +1,4 @@
-# Catch2 via FetchContent - keeps the test lane off the vcpkg bootstrap.
+# Catch2 is fetched at configure time with FetchContent.
 include(FetchContent)
 
 set(CATCH2_VERSION "v3.5.4")
@@ -14,88 +14,26 @@ FetchContent_MakeAvailable(Catch2)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 
-add_executable(mthap_unit_tests
-    unit/burrow_boundary_test.cpp
-    unit/log_test.cpp
-    unit/ap_state_test.cpp
-    unit/ap_gate_test.cpp
-    unit/ap_coordinator_test.cpp
-    unit/broadcast_test.cpp
-    unit/rando_bridge_test.cpp
-    unit/cert_test.cpp
-    unit/dev_commands_test.cpp
-    unit/log_ring_test.cpp
-    unit/login_prefs_test.cpp
-    unit/ap_ids_test.cpp
-    unit/ap_save_state_test.cpp
-    unit/slot_data_test.cpp
-    unit/inbound_granter_test.cpp
-    unit/sig_scan_test.cpp
-    unit/native_sym_names_test.cpp
-    unit/hook_hash_test.cpp
-    unit/riprel_test.cpp
-    unit/lock_registry_test.cpp
-    unit/modifier_table_test.cpp
-    unit/stat_cap_state_test.cpp
-    unit/status_menu_caps_test.cpp
-    unit/upgrade_state_test.cpp
-    unit/wallet_cap_state_test.cpp
-    unit/shop_flatten_test.cpp
-    unit/shop_boxes_test.cpp
-    unit/scout_registry_test.cpp
-    unit/session_policy_test.cpp
-    unit/area_reporter_test.cpp
-    unit/ability_gate_test.cpp
-    unit/game_tables_test.cpp
-    unit/name_key_test.cpp
-    unit/goal_state_test.cpp
-    unit/kear_completion_test.cpp
-    unit/mod_api_test.cpp
-    unit/pal_text_range_test.cpp
-    unit/connect_resend_gate_test.cpp
-    unit/death_broadcast_gate_test.cpp
-    unit/death_hooks_test.cpp
-    unit/scene_walk_test.cpp
-    unit/fountain_lamps_test.cpp
-    unit/ap_save_store_test.cpp
-    unit/zip_archive_test.cpp
-    unit/ap_save_bundle_test.cpp
-    unit/takeover_state_test.cpp
-    unit/trap_state_test.cpp
-    unit/trap_table_test.cpp
-    unit/game_state_ids_test.cpp
-    unit/cheat_mask_test.cpp
-    unit/title_menu_test.cpp
-    unit/palette_index_test.cpp
-    unit/deathlink_payload_test.cpp
-    unit/connect_target_test.cpp
-)
+file(GLOB _mthap_test_sources CONFIGURE_DEPENDS unit/*.cpp)
+add_executable(mthap_unit_tests ${_mthap_test_sources})
 
-target_include_directories(mthap_unit_tests PRIVATE
-    "${CMAKE_SOURCE_DIR}/src"
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-)
+target_include_directories(mthap_unit_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(mthap_unit_tests PRIVATE
     Catch2::Catch2WithMain
     mthap_core
-    mthap_mod
     mthap::minamodapi
 )
-target_compile_features(mthap_unit_tests PRIVATE cxx_std_23)
-
-# Exercise the real Linux file-log backend's pure entry points (ILog seam,
-# set_default_log, logf) without Frida or the module.
+# PAL pieces the tests exercise without Frida or the module: the file-log backend (ILog seam,
+# set_default_log, logf) and the cert store.
 target_sources(mthap_unit_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/pal/log.cpp"
     "${CMAKE_SOURCE_DIR}/src/pal/linux/log_linux.cpp"
     "${CMAKE_SOURCE_DIR}/src/pal/linux/cert_linux.cpp"
     # DeathHooks lives in the mthap module (not linked by tests); compile it in directly so its
-    # sparkless-demise gating can be unit-tested against mthap_mod (mod::) + mthap_core (the gate).
+    # sparkless-demise gating can be unit-tested against mthap_core (mod:: and the gate).
     "${CMAKE_SOURCE_DIR}/src/mth/features/death_hooks.cpp"
-    # Same trick for the deathlink payload codec: it lives in mthap_net, which the test lane does not
-    # link, but it only needs nlohmann (already exposed by mthap_core).
+    # Same trick for the deathlink payload codec: it lives in the module, which the tests do not link,
+    # but it only needs nlohmann (already exposed by mthap_core).
     "${CMAKE_SOURCE_DIR}/src/mth/net/deathlink.cpp")
-
-enable_strict_warnings(mthap_unit_tests)
 
 catch_discover_tests(mthap_unit_tests)

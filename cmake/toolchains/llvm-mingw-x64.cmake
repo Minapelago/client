@@ -34,4 +34,4 @@ set(CMAKE_MODULE_LINKER_FLAGS_INIT "-static -static-libgcc")
 
 # Net lane (apclientpp + OpenSSL/asio/zlib) builds via vcpkg's x64-mingw-static
 # triplet, which uses this same llvm-mingw driver (it exposes an
-# x86_64-w64-mingw32-gcc wrapper), so MTHAP_ENABLE_NET keeps its default (ON).
+# x86_64-w64-mingw32-gcc wrapper), so the net stack builds too.

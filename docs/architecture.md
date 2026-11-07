@@ -8,20 +8,17 @@ The game runs on a custom engine (`yc`), rendering with Vulkan on Linux and Dire
 
 ## Targets
 
-The build has a strict dependency direction (`core` <- `pal` <- `mthap`):
+The build has a strict dependency direction (`core` <- `pal` <- `mthap`). Two targets hold our code; the PAL, the net link and the ImGui overlay sources are compiled straight into the module:
 
 | Target       | Kind       | Contents                                                                                                                                                                                                                       |
 | ------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mthap_core` | static lib | Pure, cross-platform logic: AP state/coordinator, the location/item bridge, inbound granter, save state, ID mapping, startup config, enforcement policy, and the signature matcher. No OS/backend headers that require linking. |
-| `mthap_mod`  | static lib | The wrapper over the game's own mod API (`src/mod/`): named hook installation, symbol lookup, and the save/item entry points. Cross-platform; the live `MinaModAPI*` is injected, so tests can substitute a fake.               |
-| `mthap_net`  | static lib | The Archipelago link (apclientpp / wswrap / websocketpp over OpenSSL) and deathlink. Built only when `MTHAP_ENABLE_NET` is on.                                                                                                 |
-| `mthap_pal`  | object lib | The Platform Abstraction Layer: process entry points and the hook backend, under `src/pal/{linux,windows}/`. Built as an OBJECT library so loader-injected entry points are never dropped by the linker.                       |
+| `mthap_core` | static lib | Pure, cross-platform logic: the wrapper over the game's mod API (`src/mod/`, with the live `MinaModAPI*` injected so tests can substitute a fake), AP state/coordinator, the location/item bridge, inbound granter, save state, ID mapping, startup config, enforcement policy, and the signature matcher. No OS/backend headers that require linking. |
 | `mthap`      | module     | The final shared object (`mod.so` / `mod.dll`). The composition root (`mth::App`) wires it all together, and owns the per-feature hooks under `src/mth/features/`.                                                             |
 
 `mth::App` owns the runtime. The logger and the hook engine are PAL globals exposed through
 interfaces with injectable seams, so the core can be unit-tested without a real platform.
 
-The unit tests link `mthap_core` and `mthap_mod`, and additionally compile in the Linux file-log
+The unit tests link `mthap_core`, and additionally compile in the Linux file-log
 and certificate-store PAL sources plus `features/death_hooks.cpp` to exercise them directly. That
 makes the test lane Linux-only: it does not build on Windows.
 
