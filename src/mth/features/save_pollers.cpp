@@ -37,11 +37,11 @@ void GoalTracker::evaluate(const ApState &state)
         return;
     }
 
-    config_ = state.goal_config();
-    gens_needed_ = state.goal_generators();
-    bosses_needed_ = state.goal_bosses();
+    config_ = state.config().goal_config;
+    gens_needed_ = state.config().goal_generators;
+    bosses_needed_ = state.config().goal_bosses;
     game_cleared_ = clear_flag != 0;
-    broken_mask_ = state.broken_generator_mask();
+    broken_mask_ = state.config().broken_generator_mask;
     gens_done_ = generators_done(pal::at<std::uint64_t>(slot, layout::kSaveGeneratorBitsOff), broken_mask_);
     bosses_done_ = std::popcount(mod::player_bosses_defeated());
 
@@ -153,7 +153,7 @@ void latch_kear_completion(const ApState &state)
     if ((flags & bit) != 0)
         return; // already traded, natively or by an earlier tick
 
-    if (!have_all_kears(state.kear_mode(), state.received_items()))
+    if (!have_all_kears(state.config().kear_mode, state.received_items()))
         return;
 
     flags |= bit;

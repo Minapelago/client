@@ -58,9 +58,7 @@ void settle(mth::DeathHooks &hooks, FakePlayer &player)
 // that. This test fails against the old read-at-the-edge implementation.
 TEST_CASE("deathlink: a death with sparks banked while alive is not broadcast", "[deathlink][sparkless]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -86,9 +84,7 @@ TEST_CASE("deathlink: a death with sparks banked while alive is not broadcast", 
 
 TEST_CASE("deathlink: an inbound death during an area enter waits for it to finish", "[deathlink]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -107,9 +103,7 @@ TEST_CASE("deathlink: an inbound death during an area enter waits for it to fini
 
 TEST_CASE("deathlink: a long area change does not expore a latched inbound death", "[deathlink]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -130,9 +124,7 @@ TEST_CASE("deathlink: a long area change does not expore a latched inbound death
 
 TEST_CASE("deathlink: a genuine sparkless death is broadcast", "[deathlink][sparkless]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -166,9 +158,7 @@ TEST_CASE("deathlink: a genuine sparkless death is broadcast", "[deathlink][spar
 // sent a deathlink for every one of them.
 TEST_CASE("deathlink: a death the player is revived from is not broadcast", "[deathlink][sparkless]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -201,9 +191,7 @@ TEST_CASE("deathlink: a death the player is revived from is not broadcast", "[de
 
 TEST_CASE("deathlink: the broadcast carries a detail for the outbound cause", "[deathlink][sparkless]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     std::string detail;
@@ -232,9 +220,7 @@ TEST_CASE("deathlink: the broadcast carries a detail for the outbound cause", "[
 // count as a settled respawn, or they lift the suppression armed for this very death and we broadcast it back.
 TEST_CASE("deathlink: a death taken from an inbound deathlink is never echoed back", "[deathlink][echo]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -267,9 +253,7 @@ TEST_CASE("deathlink: a death taken from an inbound deathlink is never echoed ba
 
 TEST_CASE("deathlink: respawn re-arms; a mid-death guard-byte pulse does not overwrite the held spark", "[deathlink][sparkless]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -303,9 +287,7 @@ TEST_CASE("deathlink: respawn re-arms; a mid-death guard-byte pulse does not ove
 // death teardown on a player already in it. Suspected cause of the camera losing the player.
 TEST_CASE("deathlink: a second inbound death arriving during the first is deferred", "[deathlink][echo]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -331,9 +313,7 @@ TEST_CASE("deathlink: a second inbound death arriving during the first is deferr
 // a stalled room clock with the world unpaused is a screen transition, where PlayerDie lands unpredictably.
 TEST_CASE("deathlink: an inbound death during a screen transition is deferred", "[deathlink][echo]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -351,9 +331,7 @@ TEST_CASE("deathlink: an inbound death during a screen transition is deferred", 
 
 TEST_CASE("deathlink: an inbound death during a menu is still applied", "[deathlink][echo]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -373,9 +351,7 @@ TEST_CASE("deathlink: an inbound death during a menu is still applied", "[deathl
 // update queue instead, which that flag cannot see, but it stalls the room clock.
 TEST_CASE("deathlink: a death queued behind a game-level pause is not echoed", "[deathlink][echo]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -410,9 +386,7 @@ TEST_CASE("deathlink: a death queued behind a game-level pause is not echoed", "
 // second time for one exchange, after the respawn, reads as a bug to the player.
 TEST_CASE("deathlink: a bounce arriving during our own death does not kill us again", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -449,9 +423,7 @@ TEST_CASE("deathlink: a bounce arriving during our own death does not kill us ag
 // "transitioning screens can avoid deathlinks" half of the report.
 TEST_CASE("deathlink: an inbound death arriving during a transition is applied when the player returns", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr; // mid-transition: no player captured
@@ -477,9 +449,7 @@ TEST_CASE("deathlink: an inbound death arriving during a transition is applied w
 // kill the player at some unrelated moment much later.
 TEST_CASE("deathlink: a latched inbound death expires if the player never settles", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -506,9 +476,7 @@ TEST_CASE("deathlink: a latched inbound death expires if the player never settle
 // the player through several respawns.
 TEST_CASE("deathlink: several inbound deaths arriving before the player settles apply once", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -543,9 +511,7 @@ TEST_CASE("deathlink: several inbound deaths arriving before the player settles 
 // game still, so it must not burn the window and drop the death the player is about to take.
 TEST_CASE("deathlink: a menu does not burn the pending-death retry window", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -576,9 +542,7 @@ TEST_CASE("deathlink: a menu does not burn the pending-death retry window", "[de
 // though the player settled immediately. It must land off the ordinary settle debounce.
 TEST_CASE("deathlink: a latched death lands as soon as the player settles, not a grace later", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -604,9 +568,7 @@ TEST_CASE("deathlink: a latched death lands as soon as the player settles, not a
 // taking deathlinks for as long as the storm lasts.
 TEST_CASE("deathlink: a steady stream of bounces still lands a death", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -636,9 +598,7 @@ TEST_CASE("deathlink: a steady stream of bounces still lands a death", "[deathli
 // the deadline out indefinitely and the bound would never fire.
 TEST_CASE("deathlink: a stream of bounces does not extend the retry window", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     void *live = nullptr;
@@ -670,9 +630,7 @@ TEST_CASE("deathlink: a stream of bounces does not extend the retry window", "[d
 // after the respawn and chain-kills.
 TEST_CASE("deathlink: a bounce that applies at once clears an already-latched death", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     int broadcasts = 0;
@@ -708,9 +666,7 @@ TEST_CASE("deathlink: a bounce that applies at once clears an already-latched de
 // bounce is latched while death_in_progress() is still false.
 TEST_CASE("deathlink: a death in progress cancels a latched bounce instead of killing again", "[deathlink][retry]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([](const std::string &) {}, [&] { return player.base(); });
@@ -749,9 +705,7 @@ TEST_CASE("deathlink: a death in progress cancels a latched bounce instead of ki
 // 58 inbound deathlinks had already applied cleanly that session; the 59th arrived during the credits).
 TEST_CASE("deathlink: an inbound death is not applied while the world has no area bound", "[deathlink][ending]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
@@ -771,9 +725,7 @@ TEST_CASE("deathlink: an inbound death is not applied while the world has no are
 // meant for. It must be consumed on arrival, not latched for the retry window.
 TEST_CASE("deathlink: a bounce received with no area bound is dropped, not retried later", "[deathlink][ending]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
@@ -798,10 +750,8 @@ TEST_CASE("deathlink: a bounce received with no area bound is dropped, not retri
 // by construction, so what it guards is someone making an absent world refuse the kill instead of allow it.
 TEST_CASE("deathlink: the area check fails open when the build has no world accessor", "[deathlink][ending]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    fake.PlayerGetWorld = nullptr; // older game build: the entry is absent
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
+    scoped.api.PlayerGetWorld = nullptr; // older game build: the entry is absent
 
     FakePlayer player;
     mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });
@@ -819,9 +769,7 @@ TEST_CASE("deathlink: the area check fails open when the build has no world acce
 // checks would turn every such room change into a permanent silent drop, so the area check must come last.
 TEST_CASE("deathlink: an area-less bounce mid-transition is latched and lands, not dropped", "[deathlink][ending]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     FakePlayer player;
     mth::DeathHooks hooks([&](const std::string &) {}, [&] { return player.base(); });

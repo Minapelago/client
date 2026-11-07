@@ -10,7 +10,7 @@ TEST_CASE("ap_state: starts idle, unauthenticated", "[mth][ap_state]")
 {
     mth::ApState s;
     REQUIRE_FALSE(s.authenticated());
-    REQUIRE(s.last_item_index() == -1);
+    REQUIRE(s.received_items().empty());
     REQUIRE_FALSE(s.is_valid_location(42));
 }
 
@@ -20,7 +20,6 @@ TEST_CASE("ap_state: ApConnected populates slot/locations and authenticates", "[
     s.apply(mth::ApConnected{{}, R"({"x":1})", 3, {10, 11}, {12}});
     REQUIRE(s.authenticated());
     REQUIRE(s.player_slot() == 3);
-    REQUIRE(s.slot_data() == R"({"x":1})");
     REQUIRE(s.is_valid_location(10));
     REQUIRE(s.is_valid_location(12));
     REQUIRE_FALSE(s.is_valid_location(99));
@@ -32,9 +31,9 @@ TEST_CASE("ap_state: ApConnected copies the parsed slot config through", "[mth][
     // slot_data key parses to is parse_slot_data's contract, covered in slot_data_test.
     mth::ApState s;
     s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.ossex_start = true, .deathlink = true, .lit_generator_lamp_mask = 0x2Au}});
-    REQUIRE(s.ossex_start());
-    REQUIRE(s.deathlink());
-    REQUIRE(s.lit_generator_lamp_mask() == 0x2Au);
+    REQUIRE(s.config().ossex_start);
+    REQUIRE(s.config().deathlink);
+    REQUIRE(s.config().lit_generator_lamp_mask == 0x2Au);
 }
 
 // slot_data "kear_rando" is an int mode, not a flag: 0 = vanilla (the pool carries Universal Kear items,
@@ -45,7 +44,7 @@ TEST_CASE("ap_state: vanilla kear mode does not suppress usable keys", "[mth][ap
 {
     mth::ApState s;
     s.apply(mth::ApConnected{.slot_data = "{}", .player_slot = 1, .config = {.kear_mode = mth::KearMode::Vanilla}});
-    REQUIRE(s.kear_mode() == mth::KearMode::Vanilla);
+    REQUIRE(s.config().kear_mode == mth::KearMode::Vanilla);
     REQUIRE_FALSE(s.kear_keys_suppressed());
 }
 
@@ -67,7 +66,6 @@ TEST_CASE("ap_state: items dedup by index", "[mth][ap_state]")
     s.apply(mth::ApItemReceived{{1002, 1, 1, 0b010}});
     s.apply(mth::ApItemReceived{{1001, 0, 1, 0b001}}); // duplicate index 0
     REQUIRE(s.received_items().size() == 2);
-    REQUIRE(s.last_item_index() == 1);
     REQUIRE(s.received_items()[1].item_id == 1002);
 }
 
@@ -89,48 +87,32 @@ TEST_CASE("ap_state: disconnect clears auth; status reflects events", "[mth][ap_
     s.apply(mth::ApStatusChanged{"Connecting..."});
     REQUIRE(s.status() == "Connecting...");
     s.apply(mth::ApConnectionRefused{{"InvalidSlot", "InvalidGame"}});
-    REQUIRE(s.status().find("InvalidSlot") != std::string::npos);
+    REQUIRE(s.status() == "Refused: InvalidSlot, InvalidGame");
 }
 
-TEST_CASE("ap_state: phase starts Disconnected", "[mth][ap_state]")
+TEST_CASE("ap_state: each connection event maps to its phase", "[mth][ap_state]")
 {
+    using mth::ConnectionPhase;
     mth::ApState s;
-    REQUIRE(s.phase() == mth::ConnectionPhase::Disconnected);
+    REQUIRE(s.phase() == ConnectionPhase::Disconnected);
     REQUIRE(s.detail().empty());
-}
 
-TEST_CASE("ap_state: ApConnecting -> Connecting phase", "[mth][ap_state]")
-{
-    mth::ApState s;
     s.apply(mth::ApConnecting{});
-    REQUIRE(s.phase() == mth::ConnectionPhase::Connecting);
+    REQUIRE(s.phase() == ConnectionPhase::Connecting);
     REQUIRE(s.detail().empty());
-}
 
-TEST_CASE("ap_state: ApConnected -> Connected phase", "[mth][ap_state]")
-{
-    mth::ApState s;
     s.apply(mth::ApConnected{{}, "{}", 1, {}, {}});
-    REQUIRE(s.phase() == mth::ConnectionPhase::Connected);
-}
+    REQUIRE(s.phase() == ConnectionPhase::Connected);
 
-TEST_CASE("ap_state: ApConnectionRefused -> Error phase keeping every server error", "[mth][ap_state]")
-{
+    s.apply(mth::ApDisconnected{});
+    REQUIRE(s.phase() == ConnectionPhase::Disconnected);
+
     // The login window shows detail() verbatim, so an error the join drops is a refusal the player
     // never gets an explanation for.
-    mth::ApState s;
     s.apply(mth::ApConnectionRefused{{"bad slot", "bad pw"}});
-    REQUIRE(s.phase() == mth::ConnectionPhase::Error);
+    REQUIRE(s.phase() == ConnectionPhase::Error);
     REQUIRE(s.detail().find("bad slot") != std::string::npos);
     REQUIRE(s.detail().find("bad pw") != std::string::npos);
-}
-
-TEST_CASE("ap_state: ApDisconnected -> Disconnected phase", "[mth][ap_state]")
-{
-    mth::ApState s;
-    s.apply(mth::ApConnected{{}, "{}", 1, {}, {}});
-    s.apply(mth::ApDisconnected{});
-    REQUIRE(s.phase() == mth::ConnectionPhase::Disconnected);
 }
 
 TEST_CASE("ap_state: ApLocationsChecked accumulates and drains once", "[mth][ap_state]")
@@ -156,12 +138,10 @@ TEST_CASE("ap_state: reset_session drops the session stream but keeps the connec
     s.apply(mth::ApItemReceived{mth::ReceivedItem{42, 0, 1, 0}});
     s.apply(mth::ApLocationsChecked{{10}});
     REQUIRE(s.received_items().size() == 1);
-    REQUIRE(s.last_item_index() == 0);
 
     s.reset_session();
 
     REQUIRE(s.received_items().empty());
-    REQUIRE(s.last_item_index() == -1);
     REQUIRE(s.take_server_checked_pending().empty());
     // Deauthenticated, so nothing keyed off the previous seed can be rebuilt before the next ApConnected.
     REQUIRE_FALSE(s.authenticated());
@@ -170,7 +150,6 @@ TEST_CASE("ap_state: reset_session drops the session stream but keeps the connec
     s.apply(mth::ApConnected{{}, R"({"b":2})", 4, {}, {mth::ap_loc_id(6)}});
     REQUIRE(s.authenticated());
     REQUIRE(s.player_slot() == 4);
-    REQUIRE(s.slot_data() == R"({"b":2})");
 }
 
 TEST_CASE("ap_state: an item index reused by the next server is not swallowed as a duplicate", "[mth][ap_state]")

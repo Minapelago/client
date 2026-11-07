@@ -47,32 +47,23 @@ TEST_CASE("wallet_cap_for: negative count clamps to base", "[wallet_cap]")
     REQUIRE(mth::wallet_cap_for(-1) == 750);
 }
 
-TEST_CASE("WalletCapState counts received wallet items", "[wallet_cap]")
+TEST_CASE("wallet_cap counts received wallet items", "[wallet_cap]")
 {
     mth::ApState s;
     make_state(s, {mth::kProgWalletId, mth::kProgWalletId, mth::kProgWalletId});
-    mth::WalletCapState w;
-    w.recompute(s);
-    REQUIRE(w.received() == 3);
-    REQUIRE(w.enforced_cap() == 2250); // 750 + 500*3
+    REQUIRE(mth::wallet_cap(s) == 2250); // 750 + 500*3
 }
 
-TEST_CASE("WalletCapState ignores non-wallet items", "[wallet_cap]")
+TEST_CASE("wallet_cap ignores non-wallet items", "[wallet_cap]")
 {
     mth::ApState s;
     make_state(s, {mth::ap_item_id(5), mth::kProgFishingRodId, mth::kMapItem});
-    mth::WalletCapState w;
-    w.recompute(s);
-    REQUIRE(w.received() == 0);
-    REQUIRE(w.enforced_cap() == 750);
+    REQUIRE(mth::wallet_cap(s) == 750);
 }
 
-TEST_CASE("WalletCapState uncapped once 8 items received", "[wallet_cap]")
+TEST_CASE("wallet_cap is uncapped once 8 items received", "[wallet_cap]")
 {
     mth::ApState s;
     make_state(s, std::vector<std::int64_t>(8, mth::kProgWalletId));
-    mth::WalletCapState w;
-    w.recompute(s);
-    REQUIRE(w.received() == 8);
-    REQUIRE_FALSE(w.enforced_cap().has_value());
+    REQUIRE_FALSE(mth::wallet_cap(s).has_value());
 }

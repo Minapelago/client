@@ -102,18 +102,6 @@ std::string ap_bundle_filename(std::string_view seed, std::string_view slot)
 
 ApSaveBundleStore::ApSaveBundleStore(std::filesystem::path dir, LegacyDirs legacy) : dir_(std::move(dir)), legacy_(std::move(legacy))
 {
-    writer_ = std::thread([this] { writer_loop(); });
-}
-
-ApSaveBundleStore::~ApSaveBundleStore()
-{
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stop_ = true;
-    }
-    queued_cv_.notify_all();
-    if (writer_.joinable())
-        writer_.join(); // drains what is queued first
 }
 
 std::filesystem::path ApSaveBundleStore::path_for(std::string_view seed, std::string_view slot) const
@@ -125,11 +113,6 @@ void ApSaveBundleStore::ensure_loaded(std::string_view seed, std::string_view sl
 {
     if (cache_.loaded && cache_.seed == seed && cache_.slot == slot)
         return;
-
-    // Reading a session we may still owe a write to would see stale bytes and then persist them
-    // back over the newer ones, so settle the queue before switching keys.
-    if (cache_.loaded)
-        flush();
 
     state_staged_.store(false, std::memory_order_relaxed);
     cache_ = Cache{};
@@ -198,66 +181,9 @@ void ApSaveBundleStore::ensure_loaded(std::string_view seed, std::string_view sl
     }
 }
 
-void ApSaveBundleStore::post() const
+bool ApSaveBundleStore::write_snapshot()
 {
-    Snapshot snap{cache_.seed, cache_.slot, cache_.game_save, cache_.ap_state};
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push_back(std::move(snap));
-    }
-    queued_cv_.notify_one();
-}
-
-bool ApSaveBundleStore::flush() const
-{
-    std::unique_lock<std::mutex> lock(mutex_);
-    drained_cv_.wait(lock, [this] { return queue_.empty() && !writing_; });
-    return last_write_ok_;
-}
-
-void ApSaveBundleStore::writer_loop()
-{
-    for (;;)
-    {
-        Snapshot snap;
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            queued_cv_.wait(lock, [this] { return !queue_.empty() || stop_; });
-            if (queue_.empty())
-                return; // stopping, and nothing left owed
-            snap = std::move(queue_.front());
-            queue_.erase(queue_.begin());
-            writing_ = true;
-        }
-
-        // An escaping exception here would terminate the game and strand every flush() waiter, so
-        // a failed write stays a failed write.
-        bool ok = false;
-        try
-        {
-            ok = write_snapshot(snap);
-        }
-        catch (const std::exception &e)
-        {
-            pal::logf(pal::LogLevel::Error, "save: writing the container threw: %s", e.what());
-        }
-        catch (...)
-        {
-            pal::logf(pal::LogLevel::Error, "save: writing the container threw");
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            writing_ = false;
-            last_write_ok_ = ok;
-        }
-        drained_cv_.notify_all();
-    }
-}
-
-bool ApSaveBundleStore::write_snapshot(const Snapshot &snap)
-{
-    const std::string key = snap.seed + '\0' + snap.slot;
+    const std::string key = cache_.seed + '\0' + cache_.slot;
     if (key != writer_key_)
     {
         writer_key_ = key;
@@ -279,8 +205,8 @@ bool ApSaveBundleStore::write_snapshot(const Snapshot &snap)
 
     nlohmann::json manifest;
     manifest["format"] = kFormatVersion;
-    manifest["seed"] = snap.seed;
-    manifest["slot"] = snap.slot;
+    manifest["seed"] = cache_.seed;
+    manifest["slot"] = cache_.slot;
 
     std::vector<zip::Blob> blobs;
     blobs.push_back(zip::compress(kEntryManifest, manifest.dump()));
@@ -303,11 +229,11 @@ bool ApSaveBundleStore::write_snapshot(const Snapshot &snap)
         writer_blobs_[name] = CachedBlob{value, blob};
         blobs.push_back(std::move(blob));
     };
-    emit(kEntrySave, snap.game_save);
-    emit(kEntryState, snap.ap_state);
+    emit(kEntrySave, cache_.game_save);
+    emit(kEntryState, cache_.ap_state);
 
     // Dropping a payload we are holding is always a bug, never an intended state.
-    const std::size_t expected = 1 + (snap.game_save ? 1u : 0u) + (snap.ap_state ? 1u : 0u);
+    const std::size_t expected = 1 + (cache_.game_save ? 1u : 0u) + (cache_.ap_state ? 1u : 0u);
     if (blobs.size() != expected)
     {
         pal::logf(pal::LogLevel::Error, "save: refusing to write a container with %zu of %zu entries", blobs.size(), expected);
@@ -315,7 +241,7 @@ bool ApSaveBundleStore::write_snapshot(const Snapshot &snap)
     }
 
     const std::string image = zip::write(blobs);
-    const auto final_path = path_for(snap.seed, snap.slot);
+    const auto final_path = path_for(cache_.seed, cache_.slot);
     auto tmp_path = final_path;
     tmp_path += ".tmp";
     auto bak_path = final_path;
@@ -403,10 +329,22 @@ bool ApSaveBundleStore::store(std::string_view seed, std::string_view slot, std:
     }
     cache_.game_save = std::make_shared<const std::string>(blob);
     state_staged_.store(false, std::memory_order_relaxed);
-    post();
     // The game saving is the durability point: the mod never runs its destructor, so this is the
-    // moment that has to be on disk rather than merely queued.
-    return flush();
+    // moment that has to be on disk. This runs under a native game hook with no catch between here
+    // and the game's C ABI, so a throwing write is reported as a failed one.
+    try
+    {
+        return write_snapshot();
+    }
+    catch (const std::exception &e)
+    {
+        pal::logf(pal::LogLevel::Error, "save: writing the container threw: %s", e.what());
+    }
+    catch (...)
+    {
+        pal::logf(pal::LogLevel::Error, "save: writing the container threw");
+    }
+    return false;
 }
 
 std::optional<std::string> ApSaveBundleStore::load_state(std::string_view seed, std::string_view slot) const
@@ -430,7 +368,7 @@ bool ApSaveBundleStore::stage_state(std::string_view seed, std::string_view slot
         pal::logf(pal::LogLevel::Error, "save: refusing to overwrite %s, which belongs to a different seed/slot", path_for(seed, slot).string().c_str());
         return false;
     }
-    // Deliberately no post(). The container is published by store(), so the AP state that lands is
+    // Deliberately no write. The container is published by store(), so the AP state that lands is
     // the one that was true when the game captured its save blob.
     cache_.ap_state = std::make_shared<const std::string>(text);
     state_staged_.store(true, std::memory_order_relaxed);

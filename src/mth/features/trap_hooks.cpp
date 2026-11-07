@@ -7,9 +7,8 @@
 #include <mutex>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/cheat_mask.hpp"
 #include "mth/core/data/game_state_ids.hpp"
-#include "mth/core/data/trap_table.hpp"
+#include "mth/core/data/modifiers.hpp"
 #include "mth/core/death_broadcast_gate.hpp" // kMaxFixedUpdateHz, for the no-delta fallback
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
@@ -279,7 +278,7 @@ void TrapHooks::drain_pending_arm()
 void TrapHooks::publish_active()
 {
     std::lock_guard<std::mutex> lk(mtx_);
-    snapshot_ = state_.active_with_remaining();
+    snapshot_ = state_.traps();
 }
 
 void TrapHooks::advance_frame()
@@ -306,8 +305,8 @@ void TrapHooks::advance_frame()
         return;
     // ActivateSaveCheats rebuilds the runtime mask from the save, so a load, a profile select, or
     // the player opening the options menu would otherwise cancel a trap that is still running.
-    for (int idx : state_.active())
-        set_runtime_modifier(idx, true);
+    for (const ActiveTrap &t : state_.traps())
+        set_runtime_modifier(t.index, true);
 }
 
 void TrapHooks::clear()

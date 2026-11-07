@@ -29,6 +29,18 @@ inline constexpr int kGeneratorCount = static_cast<int>(sizeof(kGeneratorSaveBit
     return mask;
 }
 
+// Fold slot_data lamp indices into an Ossex fountain mask (bit i => force lamp i lit). Lamp indices
+// 0..kGeneratorCount-1 are the generators by apworld index; index 6 is the Radiant Manor prime lamp
+// (always lit, never forced). Anything outside [0, kGeneratorCount) is ignored.
+[[nodiscard]] inline std::uint32_t lit_mask_from_indices(const std::vector<int> &indices)
+{
+    std::uint32_t mask = 0;
+    for (int i : indices)
+        if (i >= 0 && i < kGeneratorCount)
+            mask |= (1u << static_cast<unsigned>(i));
+    return mask;
+}
+
 // Only generators the seed started broken count (#141): the rest are already flagged fixed in the same
 // bitfield, so an unmasked popcount meets the threshold on a fresh save.
 [[nodiscard]] inline int generators_done(std::uint64_t generator_bits, std::uint64_t broken_mask) noexcept

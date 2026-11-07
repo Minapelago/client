@@ -2,7 +2,6 @@
 
 #include <mutex>
 #include <set>
-#include <string>
 #include <vector>
 
 namespace mth
@@ -15,11 +14,33 @@ namespace mth
 class LockRegistry
 {
   public:
-    void set_removed(int slot);                 // no-op for slot < 0
-    void add_from_list(const std::string &csv); // "3,7,20"
-    void clear();                               // session boundary: removals are seeded from the received items of one connection
-    [[nodiscard]] bool is_removed(int slot) const;
-    [[nodiscard]] std::vector<int> removed_slots() const; // copy under lock, for the seed pass
+    void set_removed(int slot) // no-op for slot < 0
+    {
+        if (slot < 0)
+            return;
+        std::lock_guard<std::mutex> lk(mtx_);
+        removed_.insert(slot);
+    }
+
+    void clear() // session boundary: removals are seeded from the received items of one connection
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        removed_.clear();
+    }
+
+    [[nodiscard]] bool is_removed(int slot) const
+    {
+        if (slot < 0)
+            return false;
+        std::lock_guard<std::mutex> lk(mtx_);
+        return removed_.count(slot) != 0;
+    }
+
+    [[nodiscard]] std::vector<int> removed_slots() const // copy under lock, for the seed pass
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return std::vector<int>(removed_.begin(), removed_.end());
+    }
 
   private:
     mutable std::mutex mtx_;

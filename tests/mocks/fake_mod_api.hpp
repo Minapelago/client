@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "MinaModAPI.h"
+#include "mod/mod_api.hpp"
 #include "mth/core/data/game_layout.hpp"
 
 namespace mth::test
@@ -56,18 +57,8 @@ struct ModApiRecorder
     void *text_color_target = nullptr;
     std::uint8_t text_color[4]{}; // r,g,b,a as the API delivered them
     int text_set_calls = 0;       // TextComponentSetText
-    void *text_set_target = nullptr;
-    std::string text_value;      // the widget's live string, served back by TextComponentGetText
-    int clone_palette_calls = 0; // ClonePalette
-    void *clone_palette_source = nullptr;
-    void *clone_palette_result = nullptr; // the clone the fake reports; null models allocation failure
-    std::int32_t palette_set_group_value = 0;
-    void *palette_write_index_target = nullptr;
-    std::int32_t palette_write_index_index = 0;
-    std::uint8_t palette_write_index_color[4]{};
-    std::int32_t palette_get_index_result = 0;
-    std::uint32_t palette_get_width_result = 0;
-    int water_calls = 0; // WaterListenerIsInDeepWater
+    int clone_palette_calls = 0;  // ClonePalette
+    int water_calls = 0;          // WaterListenerIsInDeepWater
     void *water_target = nullptr;
     bool water_ignore_enabled = false;
     bool in_deep_water = false; // the answer the fake serves
@@ -155,44 +146,35 @@ inline void fake_text_set_color(ycComponent *component, MM_Color color)
     recorder().text_color[3] = color.a;
 }
 
-// SetText stores the widget's string and GetText serves it back, so a test can round-trip one widget.
-inline void fake_text_set_text(ycComponent *component, const char *const text)
+// The text and palette entries only need to exist, since mod_api gates on their presence; no test reads
+// what they were given.
+inline void fake_text_set_text(ycComponent * /*component*/, const char *const /*text*/)
 {
     ++recorder().text_set_calls;
-    recorder().text_set_target = component;
-    recorder().text_value = (text != nullptr) ? text : "";
 }
 inline const char *fake_text_get_text(ycComponent * /*component*/)
 {
-    return recorder().text_value.c_str();
+    return "";
 }
 
-inline ycPaletteTexture *fake_clone_palette(ycPaletteTexture *pal)
+inline ycPaletteTexture *fake_clone_palette(ycPaletteTexture * /*pal*/)
 {
     ++recorder().clone_palette_calls;
-    recorder().clone_palette_source = pal;
-    return static_cast<ycPaletteTexture *>(recorder().clone_palette_result);
+    return nullptr;
 }
-inline void fake_palette_set_group(ycPaletteTexture * /*pal*/, std::int32_t group)
+inline void fake_palette_set_group(ycPaletteTexture * /*pal*/, std::int32_t /*group*/)
 {
-    recorder().palette_set_group_value = group;
 }
-inline void fake_palette_write_index(ycPaletteTexture *pal, std::int32_t index, MM_Color color)
+inline void fake_palette_write_index(ycPaletteTexture * /*pal*/, std::int32_t /*index*/, MM_Color /*color*/)
 {
-    recorder().palette_write_index_target = pal;
-    recorder().palette_write_index_index = index;
-    recorder().palette_write_index_color[0] = color.r;
-    recorder().palette_write_index_color[1] = color.g;
-    recorder().palette_write_index_color[2] = color.b;
-    recorder().palette_write_index_color[3] = color.a;
 }
 inline std::int32_t fake_palette_get_index(ycPaletteTexture * /*pal*/, MM_Color /*color*/)
 {
-    return recorder().palette_get_index_result;
+    return 0;
 }
 inline std::uint32_t fake_palette_get_width(ycPaletteTexture * /*pal*/)
 {
-    return recorder().palette_get_width_result;
+    return 0;
 }
 
 inline bool fake_water_is_in_deep_water(WaterListener *listener, bool ignore_enabled)
@@ -502,5 +484,23 @@ inline MinaModAPI make_fake_api()
     mm.IsSaveWriteEnabled = [] { return fake_save_state().write_enabled; };
     return mm;
 }
+
+// Resets the recorder, installs a fake api for the scope and puts the previous api back on exit. Needs
+// mod/mod_api.hpp from the including TU.
+struct ScopedFakeApi
+{
+    MinaModAPI api;
+    MinaModAPI *previous;
+
+    ScopedFakeApi() : api((recorder().reset(), make_fake_api())), previous(mod::set_api(&api))
+    {
+    }
+    ~ScopedFakeApi()
+    {
+        mod::set_api(previous);
+    }
+    ScopedFakeApi(const ScopedFakeApi &) = delete;
+    ScopedFakeApi &operator=(const ScopedFakeApi &) = delete;
+};
 
 } // namespace mth::test

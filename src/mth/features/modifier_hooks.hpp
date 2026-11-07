@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "mth/core/modifier_config.hpp"
+#include "mth/core/data/modifiers.hpp"
 
 namespace mth
 {

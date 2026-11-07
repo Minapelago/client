@@ -21,20 +21,11 @@ TEST_CASE("LockRegistry ignores negative/cosmetic slots", "[locks]")
     REQUIRE_FALSE(reg.is_removed(-1));
 }
 
-TEST_CASE("LockRegistry parses a comma-separated slot list", "[locks]")
-{
-    mth::LockRegistry reg;
-    reg.add_from_list("3, 7,  20");
-    REQUIRE(reg.is_removed(3));
-    REQUIRE(reg.is_removed(7));
-    REQUIRE(reg.is_removed(20));
-    REQUIRE_FALSE(reg.is_removed(4));
-}
-
 TEST_CASE("LockRegistry::removed_slots returns all inserted slots", "[locks]")
 {
     mth::LockRegistry reg;
-    reg.add_from_list("7,3,7");
+    for (int slot : {7, 3, 7})
+        reg.set_removed(slot);
     auto v = reg.removed_slots();
     std::sort(v.begin(), v.end());
     REQUIRE(v == std::vector<int>{3, 7});
@@ -43,7 +34,8 @@ TEST_CASE("LockRegistry::removed_slots returns all inserted slots", "[locks]")
 TEST_CASE("LockRegistry::clear drops every removal", "[locks]")
 {
     mth::LockRegistry reg;
-    reg.add_from_list("3,7,20");
+    for (int slot : {3, 7, 20})
+        reg.set_removed(slot);
     reg.clear();
     REQUIRE_FALSE(reg.is_removed(3));
     REQUIRE_FALSE(reg.is_removed(7));

@@ -3,6 +3,7 @@
 #include "mod/mod_api.hpp"
 #include "mth/core/data/component_types.hpp"
 #include "mth/core/data/game_layout.hpp"
+#include "mth/core/data/game_state_ids.hpp"
 #include "mth/core/data/game_symbols.hpp"
 #include "mth/features/scene_walk.hpp"
 #include "pal/pal_game.hpp"
@@ -91,7 +92,7 @@ bool in_gameplay()
     const int gs = mod::current_game_state();
     // -1 = accessor unavailable, must not read as "in gameplay". Profile-select is its own gamestate, so
     // excluding only the title screen would read the menu opening as gameplay.
-    return gs >= 0 && gs != layout::kTitleGameState && gs != layout::kProfileSelectGameState;
+    return gs >= 0 && gs != kGameStateTitleScreen && gs != kGameStateProfileSelect;
 }
 
 // Requests the state rather than writing it, so the menu's own state machine still runs its
@@ -227,7 +228,7 @@ void SaveTakeover::update_input_block()
     // Only the Failed bounce reads this, so the accessor stays off every other tick. An unavailable
     // accessor reads as "menu gone" and releases, the opposite of in_gameplay() above: holding a dead
     // controller on a build that cannot answer is worse than the narrow window it would cover.
-    const bool on_profile_select = step_ == TakeoverStep::Failed && mod::current_game_state() == layout::kProfileSelectGameState;
+    const bool on_profile_select = step_ == TakeoverStep::Failed && mod::current_game_state() == kGameStateProfileSelect;
 
     const bool was_blocked = input_block_.blocked();
     const bool block = input_block_.advance(step_, on_profile_select);

@@ -133,16 +133,16 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         },
         // on_broadcast: hand PrintJSON banners to the render thread.
         [this](const std::vector<mth::BannerSegment> &segs) { banner_queue_.push(segs); },
-        // on_scout: fill the registry on the game thread (coordinator tick runs there).
+        // on_scout: fill the scout map on the game thread (coordinator tick runs there).
         [this](const std::vector<mth::ScoutInfo> &locs)
         {
             for (const auto &s : locs)
-                scout_registry_.record(s);
+                scouts_[s.collection_slot] = s;
         },
         // on_session_reset: fires on the game thread (coordinator tick) for a fresh ApConnected or
-        // ApDisconnected. The registry is lock-free game-thread-only data; disconnect() itself runs on
+        // ApDisconnected. The scout map is lock-free game-thread-only data; disconnect() itself runs on
         // the overlay render thread, so clearing it there would race a concurrent
-        // lookup()/record() here. Also covers connect-to-a-new-server-without-disconnecting, which would
+        // read or write here. Also covers connect-to-a-new-server-without-disconnecting, which would
         // otherwise leave stale entries under reused slot numbers.
         [this]
         {
@@ -154,7 +154,7 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             mod::set_save_write_enabled(false);
             pal::logf(pal::LogLevel::Info, "save: vanilla save writes suppressed (save api=%s, enabled=%d)", mod::save_api_available() ? "ok" : "MISSING",
                       mod::save_write_enabled() ? 1 : 0);
-            scout_registry_.clear();
+            scouts_.clear();
             // A disconnect reaches here but NOT on_session_end, so a deathlink still latched for retry would
             // otherwise land seconds after the player left the multiworld.
             pending_inbound_death_.store(false);
@@ -187,7 +187,7 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
     mod::install_world_update_end_hook(&world_update_end_notify);
     mod::install_world_destroy_hook(&world_destroy_notify);
     hooks_ = std::make_unique<HookManager>(
-        *rando_, scout_registry_, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
+        *rando_, scouts_, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
     {
         overlay_root_ = std::make_unique<OverlayRoot>(*this, banner_queue_);
         pal::overlay_start(overlay_root_.get());
@@ -329,10 +329,9 @@ void App::enforce_wallet_cap()
     // slot_data "wallet_cap": cap the bone wallet at 750 + 500 per received wallet item, uncapped at 8+.
     // The game's own cap field drifts between builds, so clamp current bones through the offset-free mod API
     // each frame instead. Inert unless AP-authenticated and the flag is set; vanilla play is untouched.
-    if (!state_.authenticated() || !state_.wallet_cap())
+    if (!state_.authenticated() || !state_.config().wallet_cap)
         return;
-    wallet_.recompute(state_);
-    const std::optional<int> cap = wallet_.enforced_cap();
+    const std::optional<int> cap = wallet_cap(state_);
     if (!cap || !mod::bones_api_available())
         return;
     if (mod::player_bones() > *cap)
@@ -416,12 +415,11 @@ void App::clear_session_state()
     inbound_.reset();
     save_state_.reset();
     state_.reset_session();
-    scout_registry_.clear();
+    scouts_.clear();
     hooks_->clear_session_state();
     // Must reset alongside the received stream: UpgradeState::applied_ goes back to zero with it, so the
     // next recompute is not dirty and cannot write a downgrade into the live save.
     upgrades_ = UpgradeState{};
-    wallet_ = WalletCapState{};
     traps_->clear();                    // a running trap must not leak into the next seed
     resend_gate_ = ConnectResendGate{}; // re-arm so the next connection flushes its own checked-set
     pending_inbound_death_.store(false);
@@ -504,9 +502,9 @@ void App::remember_successful_login()
 
 void App::disconnect()
 {
-    // Runs on the overlay render thread, not the game thread. The registry is
+    // Runs on the overlay render thread, not the game thread. The scout map is
     // cleared from the coordinator's on_session_reset callback instead (game thread; see ctor), since
-    // clearing the lock-free map here would race a concurrent game-thread lookup()/record().
+    // clearing the lock-free map here would race a concurrent game-thread read or write.
     link_->disconnect();
 }
 
@@ -604,7 +602,7 @@ void App::remove_lock(int slot)
 
 void App::set_modifier(int idx, bool on)
 {
-    policy_.arm_console_modifiers();
+    policy_.console_modifiers = true;
     hooks_->modifier_hooks_.set_live(idx, on);
     pal::logf(pal::LogLevel::Info, "console: modifier %d %s", idx, on ? "on" : "off");
 }
@@ -636,21 +634,21 @@ void App::set_mirror_switch_override(bool on)
 
 void App::lock_modifiers(bool armed)
 {
-    policy_.arm_console_modifiers();
+    policy_.console_modifiers = true;
     hooks_->modifier_hooks_.set_armed(armed);
     pal::logf(pal::LogLevel::Info, "console: modifiers %s", armed ? "locked" : "unlocked");
 }
 
 void App::set_stat_caps(int attack, int defense, int sidearm)
 {
-    policy_.arm_forced_caps();
+    policy_.forced_caps = true;
     hooks_->level_cap_hooks_.set_counts(attack, defense, sidearm);
     pal::logf(pal::LogLevel::Info, "console: stat caps attack=%d defense=%d sidearm=%d", attack, defense, sidearm);
 }
 
 void App::set_ability_randomized(Ability a, bool on)
 {
-    policy_.arm_console_abilities();
+    policy_.console_abilities = true;
     hooks_->ability_hooks_.set_randomized(a, on);
     pal::logf(pal::LogLevel::Info, "console: ability %d randomized %s", static_cast<int>(a), on ? "on" : "off");
 }

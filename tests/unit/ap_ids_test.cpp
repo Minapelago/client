@@ -154,8 +154,6 @@ TEST_CASE("item-space segments are 1000-wide and ordered", "[ap_ids]")
     REQUIRE(mth::kBlockerItemBase == 4000);
     REQUIRE(mth::kTrapItemBase == 5000);
     // Progressive sub-layout stays within segment 1.
-    REQUIRE(mth::is_progressive_item(mth::kProgWeaponBase));
-    REQUIRE(mth::is_progressive_item(mth::kProgStatCapAllId));
     REQUIRE(mth::kProgStatCapAllId < mth::kKearBlockItemBase);
 }
 
@@ -188,15 +186,6 @@ TEST_CASE("boss_location_slot maps index into the reserved range", "[boss]")
     REQUIRE(mth::boss_location_slot(0) == mth::kBossLocBase);
     REQUIRE(mth::boss_location_slot(5) == mth::kBossLocBase + 5);
     REQUIRE(mth::kBossLocBase >= 361);
-}
-
-TEST_CASE("is_boss_index rejects out-of-range indices", "[boss]")
-{
-    REQUIRE(mth::is_boss_index(0));
-    REQUIRE(mth::is_boss_index(mth::kMaxBossIndex));
-    REQUIRE_FALSE(mth::is_boss_index(-1));
-    REQUIRE_FALSE(mth::is_boss_index(mth::kMaxBossIndex + 1));
-    REQUIRE_FALSE(mth::is_boss_index(64));
 }
 
 TEST_CASE("is_legovich_location matches only the WeaponMerchant shop slots", "[legovich]")

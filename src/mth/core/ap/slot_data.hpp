@@ -27,7 +27,7 @@ enum class KearMode : int
 }
 
 // Everything the client derives from the server's slot_data blob. The parse below fills it; the ApConnected
-// payload and ApState's accessors hand back these fields directly.
+// payload carries it and ApState::config() hands it back.
 struct SlotDataConfig
 {
     bool ossex_start{false};               // "ossex_start": force the Landing Done modifier (start at Ossex hub)

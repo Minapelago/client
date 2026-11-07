@@ -5,12 +5,23 @@
 
 #include "mth/core/trap_state.hpp"
 
+namespace
+{
+std::vector<int> indices(const mth::TrapState &s)
+{
+    std::vector<int> out;
+    for (const mth::ActiveTrap &t : s.traps())
+        out.push_back(t.index);
+    return out;
+}
+} // namespace
+
 TEST_CASE("TrapState: arming makes a trap active", "[trap]")
 {
     mth::TrapState s;
     s.arm(204, 30.0f);
-    REQUIRE(s.active() == std::vector<int>{204});
-    REQUIRE(s.size() == 1);
+    REQUIRE(indices(s) == std::vector<int>{204});
+    REQUIRE(s.traps().size() == 1);
     REQUIRE_FALSE(s.empty());
 }
 
@@ -19,7 +30,7 @@ TEST_CASE("TrapState: a partial advance does not expire a trap", "[trap]")
     mth::TrapState s;
     s.arm(204, 30.0f);
     REQUIRE(s.advance(10.0f).empty());
-    REQUIRE(s.active() == std::vector<int>{204});
+    REQUIRE(indices(s) == std::vector<int>{204});
 }
 
 TEST_CASE("TrapState: advancing past the duration expires it once", "[trap]")
@@ -45,7 +56,7 @@ TEST_CASE("TrapState: re-arming refreshes and never shortens", "[trap]")
     s.arm(204, 30.0f);
     s.advance(25.0f);  // 5s left
     s.arm(204, 30.0f); // refreshed to 30
-    REQUIRE(s.size() == 1);
+    REQUIRE(s.traps().size() == 1);
     REQUIRE(s.advance(10.0f).empty());
 
     s.arm(204, 2.0f); // shorter than what remains: must not cut it short
@@ -58,10 +69,10 @@ TEST_CASE("TrapState: traps stack and expire independently in order", "[trap]")
     s.arm(204, 10.0f);
     s.arm(197, 20.0f);
     s.arm(202, 30.0f);
-    REQUIRE(s.active() == std::vector<int>{204, 197, 202});
+    REQUIRE(indices(s) == std::vector<int>{204, 197, 202});
 
     REQUIRE(s.advance(10.0f) == std::vector<int>{204});
-    REQUIRE(s.active() == std::vector<int>{197, 202});
+    REQUIRE(indices(s) == std::vector<int>{197, 202});
     REQUIRE(s.advance(10.0f) == std::vector<int>{197});
     REQUIRE(s.advance(10.0f) == std::vector<int>{202});
     REQUIRE(s.empty());
@@ -102,16 +113,16 @@ TEST_CASE("TrapState: clear returns what was running and empties", "[trap]")
     REQUIRE(s.clear().empty());
 }
 
-TEST_CASE("TrapState: active_with_remaining carries the seconds left", "[trap]")
+TEST_CASE("TrapState: traps() carries the seconds left", "[trap]")
 {
     mth::TrapState s;
-    REQUIRE(s.active_with_remaining().empty());
+    REQUIRE(s.traps().empty());
 
     s.arm(204, 30.0f);
     s.arm(197, 20.0f);
     s.advance(5.0f);
 
-    const std::vector<mth::ActiveTrap> running = s.active_with_remaining();
+    const std::vector<mth::ActiveTrap> &running = s.traps();
     REQUIRE(running.size() == 2);
     REQUIRE(running[0].index == 204);
     REQUIRE(running[0].remaining == Catch::Approx(25.0f));

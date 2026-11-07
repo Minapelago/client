@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <vector>
 
 namespace mth
@@ -39,12 +38,11 @@ class TrapState
     // A non-positive dt ages nothing, which is how a paused or loading frame is spent.
     std::vector<int> advance(float dt);
 
-    [[nodiscard]] std::vector<int> active() const;
-
-    // Same traps as active(), in the same order, with the seconds each has left. A separate
-    // accessor rather than a wider active(), since the three callers of active() want the indices
-    // alone; only the console's status readout needs the remaining time.
-    [[nodiscard]] std::vector<ActiveTrap> active_with_remaining() const;
+    // The running traps in arming order, with the seconds each has left.
+    [[nodiscard]] const std::vector<ActiveTrap> &traps() const
+    {
+        return traps_;
+    }
 
     // Empties the state and returns what was running, so the owner can lift those modifiers.
     [[nodiscard]] std::vector<int> clear();
@@ -52,11 +50,6 @@ class TrapState
     [[nodiscard]] bool empty() const
     {
         return traps_.empty();
-    }
-
-    [[nodiscard]] std::size_t size() const
-    {
-        return traps_.size();
     }
 
   private:

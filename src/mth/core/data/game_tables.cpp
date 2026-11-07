@@ -14,6 +14,24 @@ std::uintptr_t g_s_r_item_collection = 0;
 bool g_resolved = false;
 bool g_dummy_patched = false;
 
+std::uintptr_t item_row(int item_type)
+{
+    return g_s_r_items + static_cast<std::uintptr_t>(item_type) * mth::layout::kItemEntryStride;
+}
+
+std::uintptr_t coll_row(int idx)
+{
+    return g_s_r_item_collection + static_cast<std::uintptr_t>(idx) * mth::layout::kCollectionEntryStride;
+}
+
+// Item type placed at a collection slot, or -1 when out of range or unresolved.
+int location_item_type(int loc_idx)
+{
+    if (loc_idx < 0 || loc_idx >= mth::layout::kLocationCount || g_s_r_item_collection == 0)
+        return -1;
+    return *reinterpret_cast<const int *>(coll_row(loc_idx) + mth::layout::kCollectionItemTypeOff);
+}
+
 } // namespace
 
 namespace mth::tables
@@ -41,16 +59,12 @@ int storage_kind(int item_type)
 {
     if (item_type < 0 || item_type >= layout::kItemTypeCount || g_s_r_items == 0)
         return -1; // out of range or unclassifiable
-    return *reinterpret_cast<const int *>(g_s_r_items + static_cast<std::uintptr_t>(item_type) * layout::kItemEntryStride + layout::kItemKindOff);
+    return *reinterpret_cast<const int *>(item_row(item_type) + layout::kItemKindOff);
 }
 
 int native_location_kind(int loc_idx)
 {
-    if (loc_idx < 0 || loc_idx >= layout::kLocationCount || g_s_r_item_collection == 0)
-        return -1;
-    const int item_type = *reinterpret_cast<const int *>(g_s_r_item_collection + static_cast<std::uintptr_t>(loc_idx) * layout::kCollectionEntryStride +
-                                                         layout::kCollectionItemTypeOff);
-    return storage_kind(item_type);
+    return storage_kind(location_item_type(loc_idx)); // storage_kind(-1) is -1
 }
 
 bool is_durable_bit_kind(int kind)
@@ -60,10 +74,7 @@ bool is_durable_bit_kind(int kind)
 
 bool is_capacity_upgrade_location(int loc_idx)
 {
-    if (loc_idx < 0 || loc_idx >= layout::kLocationCount || g_s_r_item_collection == 0)
-        return false;
-    const int item_type = *reinterpret_cast<const int *>(g_s_r_item_collection + static_cast<std::uintptr_t>(loc_idx) * layout::kCollectionEntryStride +
-                                                         layout::kCollectionItemTypeOff);
+    const int item_type = location_item_type(loc_idx);
     return item_type >= 0x44 && item_type <= 0x48; // Magic/Health/Spark/Vial/Trinket upgrade pieces
 }
 
@@ -72,16 +83,14 @@ std::uint64_t collection_name_key(int idx)
 {
     if (idx < 0 || idx >= layout::kCollectionScanCap || g_s_r_item_collection == 0)
         return 0;
-    return *reinterpret_cast<const std::uint64_t *>(g_s_r_item_collection + static_cast<std::uintptr_t>(idx) * layout::kCollectionEntryStride +
-                                                    layout::kCollectionNameKeyOff);
+    return *reinterpret_cast<const std::uint64_t *>(coll_row(idx) + layout::kCollectionNameKeyOff);
 }
 
 int collection_warp_remap(int idx)
 {
     if (idx < 0 || idx >= layout::kCollectionScanCap || g_s_r_item_collection == 0)
         return -1;
-    return *reinterpret_cast<const int *>(g_s_r_item_collection + static_cast<std::uintptr_t>(idx) * layout::kCollectionEntryStride +
-                                          layout::kCollectionWarpRemapOff);
+    return *reinterpret_cast<const int *>(coll_row(idx) + layout::kCollectionWarpRemapOff);
 }
 
 int collection_slot_for_name_key(std::uint64_t name_key)
@@ -102,8 +111,7 @@ std::uint8_t collection_bit_index(int slot)
 {
     if (slot < 0 || slot >= layout::kLocationCount || g_s_r_item_collection == 0)
         return 0;
-    return *reinterpret_cast<const std::uint8_t *>(g_s_r_item_collection + static_cast<std::uintptr_t>(slot) * layout::kCollectionEntryStride +
-                                                   layout::kCollectionBitIdxOff);
+    return *reinterpret_cast<const std::uint8_t *>(coll_row(slot) + layout::kCollectionBitIdxOff);
 }
 
 void repurpose_dummy_item()
@@ -115,8 +123,8 @@ void repurpose_dummy_item()
         pal::logf(pal::LogLevel::Warn, "dummy: s_rItems unresolved, AP pickups keep vanilla visual");
         return;
     }
-    const std::uintptr_t dst = g_s_r_items + static_cast<std::uintptr_t>(layout::kApDummyItemType) * layout::kItemEntryStride;
-    const std::uintptr_t src = g_s_r_items + static_cast<std::uintptr_t>(layout::kDummyAssetDonor) * layout::kItemEntryStride;
+    const std::uintptr_t dst = item_row(layout::kApDummyItemType);
+    const std::uintptr_t src = item_row(layout::kDummyAssetDonor);
 
     if (!pal::make_writable(reinterpret_cast<void *>(dst), static_cast<std::size_t>(layout::kItemEntryStride)))
     {
@@ -139,7 +147,7 @@ bool item_row_shape_ok(int item_type)
     if (g_s_r_items == 0 || item_type < 0 || item_type >= layout::kItemTypeCount)
         return false;
 
-    const std::uintptr_t row = g_s_r_items + static_cast<std::uintptr_t>(item_type) * layout::kItemEntryStride;
+    const std::uintptr_t row = item_row(item_type);
     const int kind = *reinterpret_cast<const int *>(row + layout::kItemKindOff);
     if (kind < 0 || kind > 64) // storage kinds are small ints; a drifted read is usually a pointer half
         return false;
@@ -174,7 +182,7 @@ bool collection_shape_ok(int sample_count)
     const int n = sample_count < layout::kLocationCount ? sample_count : layout::kLocationCount;
     for (int i = 0; i < n; ++i)
     {
-        const std::uintptr_t row = g_s_r_item_collection + static_cast<std::uintptr_t>(i) * layout::kCollectionEntryStride;
+        const std::uintptr_t row = coll_row(i);
         const int item_type = *reinterpret_cast<const int *>(row + layout::kCollectionItemTypeOff);
         const auto bit = *reinterpret_cast<const unsigned char *>(row + layout::kCollectionBitIdxOff);
         if (item_type < 0 || item_type >= layout::kItemTypeCount)

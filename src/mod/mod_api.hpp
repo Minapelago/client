@@ -10,8 +10,8 @@ struct MinaModAPI; // forward decl; MinaModAPI.h is included only in mod_api.cpp
 namespace mod
 {
 
-// Store the live MinaModAPI* (from MinaMod_Init) or a fake (in tests). nullptr clears it.
-void set_api(MinaModAPI *api);
+// Store the live MinaModAPI* (from MinaMod_Init) or a fake (in tests). nullptr clears it. Returns the pointer it replaced.
+MinaModAPI *set_api(MinaModAPI *api);
 
 // Is the game's mod API usable at all? False means InstallHook is unreachable, so every named
 // mod hook (grants, the collection redirect) is inert.

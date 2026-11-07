@@ -101,39 +101,38 @@ TEST_CASE("frames spent unblocked do not eat the budget", "[takeover]")
 
 TEST_CASE("input is blocked while the menu is being waited for and driven", "[takeover]")
 {
-    mth::InputBlockInputs in;
-    REQUIRE(mth::block_game_input(TakeoverStep::AwaitingMenu, in));
-    REQUIRE(mth::block_game_input(TakeoverStep::Launching, in));
+    mth::InputBlockState block;
+    REQUIRE(block.advance(TakeoverStep::AwaitingMenu, false));
+    REQUIRE(block.advance(TakeoverStep::Launching, false));
+    REQUIRE(block.blocked());
 }
 
 TEST_CASE("input reaches the game again once the takeover is running", "[takeover]")
 {
-    mth::InputBlockInputs in;
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::Running, in));
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::Idle, in));
+    mth::InputBlockState block;
+    REQUIRE(block.advance(TakeoverStep::Launching, true));
+    REQUIRE_FALSE(block.advance(TakeoverStep::Running, true));
+    REQUIRE_FALSE(block.blocked());
+    REQUIRE_FALSE(block.advance(TakeoverStep::Idle, true));
 }
 
 TEST_CASE("a failed takeover keeps swallowing input while the menu is the live gamestate", "[takeover]")
 {
-    mth::InputBlockInputs in;
-    in.on_profile_select = true;
-    REQUIRE(mth::block_game_input(TakeoverStep::Failed, in));
-    in.on_profile_select = false;
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::Failed, in));
+    mth::InputBlockState block;
+    REQUIRE(block.advance(TakeoverStep::Failed, true));
+    REQUIRE_FALSE(block.advance(TakeoverStep::Failed, false));
 }
 
-TEST_CASE("the ceiling releases a step that still wants the block", "[takeover]")
+TEST_CASE("the ceiling releases every step that still wants the block", "[takeover]")
 {
-    mth::InputBlockInputs in;
-    in.on_profile_select = true;
-    in.frames_blocked = mth::kMaxInputBlockFrames;
-    REQUIRE(mth::block_game_input(TakeoverStep::AwaitingMenu, in));
-    REQUIRE(mth::block_game_input(TakeoverStep::Failed, in));
+    mth::InputBlockState block;
+    for (int i = 0; i < mth::kMaxInputBlockFrames; ++i)
+        REQUIRE(block.advance(TakeoverStep::Launching, false));
+    REQUIRE(block.advance(TakeoverStep::Failed, true)); // the last frame inside the budget
 
-    in.frames_blocked = mth::kMaxInputBlockFrames + 1;
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::AwaitingMenu, in));
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::Launching, in));
-    REQUIRE_FALSE(mth::block_game_input(TakeoverStep::Failed, in));
+    REQUIRE_FALSE(block.advance(TakeoverStep::AwaitingMenu, true));
+    REQUIRE_FALSE(block.advance(TakeoverStep::Launching, true));
+    REQUIRE_FALSE(block.advance(TakeoverStep::Failed, true));
 }
 
 TEST_CASE("flush_refusal: a commit needs all three conditions, and each one alone can stop it", "[takeover]")

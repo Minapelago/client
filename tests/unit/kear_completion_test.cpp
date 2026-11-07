@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <set>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -21,10 +22,11 @@ std::vector<std::int64_t> all_single_kears()
     return std::vector<std::int64_t>(std::begin(mth::kSingleKearItemIds), std::end(mth::kSingleKearItemIds));
 }
 
+// AreaKears in the apworld, contiguous from its area kear base.
 std::vector<std::int64_t> all_area_kears()
 {
     std::vector<std::int64_t> v;
-    for (std::int64_t id = mth::kAreaKearFirstItemId; id <= mth::kAreaKearLastItemId; ++id)
+    for (std::int64_t id = 2500; id <= 2516; ++id)
         v.push_back(id);
     return v;
 }
@@ -70,7 +72,24 @@ TEST_CASE("kear set sizes match the apworld pools", "[kear]")
 {
     REQUIRE(mth::kSingleKearCount == 39);
     REQUIRE(mth::kSingleKearRequired == 30);
-    REQUIRE(mth::kAreaKearCount == 17);
+}
+
+// Both kear sets are derived from kAreaLocks. These are the apworld's SingleKears and AreaKears ids,
+// so a table edit that changes either set fails here.
+TEST_CASE("kear sets derived from kAreaLocks match the apworld ids", "[kear]")
+{
+    const std::set<std::int64_t> single_expected = {2019, 2020, 2021, 2022, 2033, 2055, 2069, 2096, 2109, 2115, 2127, 2141, 2151,
+                                                    2152, 2157, 2222, 2224, 2225, 2227, 2244, 2246, 2247, 2260, 2262, 2277, 2278,
+                                                    2283, 2284, 2285, 2304, 2307, 2318, 2320, 2321, 2336, 2337, 2338, 2358, 2359};
+    const std::set<std::int64_t> single(std::begin(mth::kSingleKearItemIds), std::end(mth::kSingleKearItemIds));
+    REQUIRE(single.size() == mth::kSingleKearItemIds.size()); // no duplicates
+    REQUIRE(single == single_expected);
+
+    std::set<std::int64_t> area;
+    for (const mth::AreaLock &lock : mth::kAreaLocks)
+        area.insert(lock.area_item_id);
+    const auto area_ids = all_area_kears();
+    REQUIRE(area == std::set<std::int64_t>(area_ids.begin(), area_ids.end()));
 }
 
 // HasAllKears() clears at 30 of the 39 single kears, so the gate must fire short of the full set.

@@ -84,3 +84,34 @@ TEST_CASE("an absent broken_generators key counts every generator", "[goal]")
     REQUIRE(mth::generators_done(0b110001u, mth::kAllGeneratorsMask) == 3);
     REQUIRE(mth::generators_done(0u, mth::kAllGeneratorsMask) == 0);
 }
+
+TEST_CASE("lit_mask_from_indices: empty -> 0", "[fountain]")
+{
+    REQUIRE(mth::lit_mask_from_indices({}) == 0u);
+}
+
+TEST_CASE("lit_mask_from_indices: each index sets its single bit", "[fountain]")
+{
+    REQUIRE(mth::lit_mask_from_indices({0}) == 0x01u);
+    REQUIRE(mth::lit_mask_from_indices({1}) == 0x02u);
+    REQUIRE(mth::lit_mask_from_indices({5}) == 0x20u);
+}
+
+TEST_CASE("lit_mask_from_indices: all six -> 0x3F", "[fountain]")
+{
+    REQUIRE(mth::lit_mask_from_indices({0, 1, 2, 3, 4, 5}) == 0x3Fu);
+}
+
+TEST_CASE("lit_mask_from_indices: out-of-range ignored (prime, over, negative)", "[fountain]")
+{
+    REQUIRE(mth::lit_mask_from_indices({6}) == 0u); // prime lamp index, never forced
+    REQUIRE(mth::lit_mask_from_indices({7}) == 0u);
+    REQUIRE(mth::lit_mask_from_indices({99}) == 0u);
+    REQUIRE(mth::lit_mask_from_indices({-1}) == 0u);
+    REQUIRE(mth::lit_mask_from_indices({2, 6, -3, 4}) == ((1u << 2) | (1u << 4)));
+}
+
+TEST_CASE("lit_mask_from_indices: duplicates idempotent", "[fountain]")
+{
+    REQUIRE(mth::lit_mask_from_indices({3, 3, 3}) == (1u << 3));
+}

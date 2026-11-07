@@ -1,6 +1,7 @@
 #include "mth/core/sig_scan.hpp"
 
 #include <algorithm>
+#include <vector>
 
 namespace mth::sig
 {
@@ -70,9 +71,7 @@ std::uintptr_t resolve(std::span<const std::uint8_t> region, std::uintptr_t regi
 
 std::uintptr_t read_riprel_target(const std::uint8_t *insn, std::uintptr_t insn_addr, int disp_off, int insn_len)
 {
-    std::int32_t disp =
-        static_cast<std::int32_t>(static_cast<std::uint32_t>(insn[disp_off]) | (static_cast<std::uint32_t>(insn[disp_off + 1]) << 8) |
-                                  (static_cast<std::uint32_t>(insn[disp_off + 2]) << 16) | (static_cast<std::uint32_t>(insn[disp_off + 3]) << 24));
+    const std::int32_t disp = read_i32le(insn + disp_off);
     return insn_addr + static_cast<std::uintptr_t>(insn_len) + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(disp));
 }
 
@@ -82,25 +81,12 @@ std::uintptr_t find_riprel_load(std::span<const std::uint8_t> region, std::uintp
     const std::size_t need = std::max(static_cast<std::size_t>(insn_len), op_len);
     if (region.size() < need)
         return 0;
-    bool found = false;
-    std::size_t at = 0;
-    for (std::size_t i = 0; i + need <= region.size(); ++i)
-    {
-        bool hit = true;
-        for (std::size_t j = 0; j < op_len; ++j)
-            if (region[i + j] != op[j])
-            {
-                hit = false;
-                break;
-            }
-        if (!hit)
-            continue;
-        if (found)
-            return 0; // a second hit is enough to know it isn't unique
-        found = true;
-        at = i;
-    }
-    return found ? read_riprel_target(region.data() + at, region_base + at, disp_off, insn_len) : 0;
+    // Only opcode sites with room for the whole instruction count, so trim the tail before scanning.
+    const std::vector<std::uint8_t> mask(op_len, 1);
+    const Match m = find_masked(region.first(region.size() - (need - op_len)), op, mask.data(), op_len);
+    if (!m.found || !m.unique)
+        return 0;
+    return read_riprel_target(region.data() + m.offset, region_base + m.offset, disp_off, insn_len);
 }
 
 } // namespace mth::sig

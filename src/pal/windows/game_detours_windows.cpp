@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "mth/core/data/game_symbols.hpp"
-#include "mth/core/shop_flatten.hpp"
+#include "mth/core/shop_ui.hpp"
 #include "mth/core/stat_cap_state.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"

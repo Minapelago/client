@@ -2,9 +2,11 @@
 
 #include <optional>
 
+#include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/ap_state.hpp"
+
 namespace mth
 {
-class ApState;
 
 // slot_data "wallet_cap": the bone wallet is capped by the number of received wallet items
 // (kProgWalletId). Base 750, +500 per item, and uncapped once kWalletFreeAt items are held.
@@ -24,24 +26,14 @@ inline constexpr int kWalletFreeAt = 8;
 }
 
 // twin: App::enforce_wallet_cap clamps live bones to this each frame.
-// Derived state from received AP wallet items. Pure logic, no platform deps.
-class WalletCapState
+// The bone cap the received wallet items allow, or nullopt for "uncapped".
+[[nodiscard]] inline std::optional<int> wallet_cap(const ApState &state)
 {
-  public:
-    // Recount received wallet items from the AP received-items list. Idempotent; safe every tick.
-    void recompute(const ApState &state);
-
-    // The bone cap to enforce, or nullopt for "uncapped".
-    [[nodiscard]] std::optional<int> enforced_cap() const;
-
-    // Raw received count (diagnostics).
-    [[nodiscard]] int received() const
-    {
-        return count_;
-    }
-
-  private:
-    int count_{0};
-};
+    int count = 0;
+    for (const auto &it : state.received_items())
+        if (is_wallet_item(it.item_id))
+            ++count;
+    return wallet_cap_for(count);
+}
 
 } // namespace mth

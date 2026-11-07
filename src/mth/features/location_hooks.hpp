@@ -1,14 +1,15 @@
 #pragma once
 
 #include <functional>
+#include <map>
 
+#include "mth/core/ap/ap_events.hpp"
 #include "pal/scoped_hook.hpp"
 
 namespace mth
 {
 
 class RandoBridge;
-class ScoutRegistry;
 
 // Outbound location checks from world pickups and shop buys: Pickup::Init (AP-dummy
 // redirect + checked-location despawn), Pickup::OnPickup (collect detect), and the
@@ -19,7 +20,7 @@ class LocationHooks
     // `scout` is optional (nullable): when present, shop box selection is rewritten from scouted
     // AP data (name/desc/color); when null, the shop text hook is not installed and shop text stays
     // vanilla.
-    explicit LocationHooks(RandoBridge &bridge, ScoutRegistry *scout = nullptr);
+    explicit LocationHooks(RandoBridge &bridge, const std::map<int, ScoutInfo> *scout = nullptr);
     ~LocationHooks();
     LocationHooks(const LocationHooks &) = delete;
     LocationHooks &operator=(const LocationHooks &) = delete;

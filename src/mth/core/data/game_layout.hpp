@@ -37,6 +37,9 @@ inline constexpr std::ptrdiff_t kStatusPanelStride = 0x40;
 {
     return (stat >= 0 && stat < 3) ? kStatusPanelBase + kStatusPanelStride * stat : -1;
 }
+// Setup builds the three panels in one loop; the level label is the first pointer in each block.
+static_assert(status_lvl_widget_offset(0) == 0x128 && status_lvl_widget_offset(1) == 0x168 && status_lvl_widget_offset(2) == 0x1a8);
+static_assert(status_lvl_widget_offset(-1) < 0 && status_lvl_widget_offset(3) < 0);
 
 // LevelUpMenu (the bone-up panel on the pause screen) and the display it owns. The cursor index is
 // uninitialised until the state machine reaches the interactive state, so reads of it must be gated.
@@ -52,8 +55,7 @@ inline constexpr std::ptrdiff_t kEntityWorldOff = 0x50;
 // ycWorld -> AreaManager*. Null through the ending sequence and in the window between area teardown and
 // AreaManagerNewArea. The title and profile-select worlds also bind no area, but they carry no live player,
 // so a player-rooted walk never reaches them. Player::InitDeath is the one engine site that dereferences
-// this without a null check, so a death requested while it is null faults when the state machine flushes. Player::InitDeath is the one engine site that
-// dereferences it without a null check, so a death requested while it is null faults on the tick the state machine flushes.
+// this without a null check, so a death requested while it is null faults on the tick the state machine flushes.
 inline constexpr std::ptrdiff_t kWorldAreaManagerOff = 0x1758;
 
 // Pickup entity (verified by the startup self-check in the Pickup::Init hook).
@@ -83,7 +85,6 @@ inline constexpr std::ptrdiff_t kSaveKearSpentOff = 0x1f8;    // int spent-count
 // - SaveSlot+0x1f8; the spend gate then SNAPS SaveSlot+0x1f8 = Player+0x11b0+1, so any edit to the key count
 // must move BOTH SaveSlot+0x1f8 and Player+0x11b0 together. (Player+0x119c/+0x11a0 are the money
 // current/cap fields; Player+0x1190 is the vial capacity bitmask.)
-inline constexpr std::ptrdiff_t kPlayerKearBitsOff = 0x11a8;  // u64 kear-collected bitfield mirror in Player
 inline constexpr std::ptrdiff_t kPlayerKearSpentOff = 0x11b0; // int spent-counter mirror in Player (runtime source of truth)
 
 // KeyMiser (Kear Institute) trade latch, set by NPCBehavior_KeyMiser on a successful trade. KeyReward's
@@ -130,8 +131,6 @@ inline constexpr std::ptrdiff_t kChestLockedFlagOff = 0x265; // u8 (0x101 word):
 inline constexpr std::ptrdiff_t kPlayerDeathGuardOff = 0x1380; // once-per-death guard byte (0 = fresh)
 inline constexpr std::ptrdiff_t kPlayerStateOff = 0x254;       // StateMachine current state (Player+0x340 + 0x14)
 
-// Player (ability gating).
-
 // HubFountain::Bulb (Ossex fountain lamp pre-light).
 inline constexpr std::ptrdiff_t kBulbIndexOff = 0x10; // HubFountain::Bulb+0x10: u32 lamp index (0..6)
 
@@ -160,11 +159,6 @@ inline constexpr int kProfileMenuBrowseState = 3;
 // Bounds both dispatch tables accept (UpdateState state-1 <= 9, InitState state-2 <= 8).
 inline constexpr int kProfileMenuStateMin = 1;
 inline constexpr int kProfileMenuStateMax = 10;
-
-// Gamestate ids. Profile-select is a real gamestate the cinematic sets on the way in, so "gameplay
-// started" must exclude it as well as the title screen.
-inline constexpr int kTitleGameState = 0x54;
-inline constexpr int kProfileSelectGameState = 0x69;
 
 // Vanilla SaveSlot array: the files profile-select lists, and what its launch copies into the live
 // working slot. The base pointer offset diverges per platform; these two do not.

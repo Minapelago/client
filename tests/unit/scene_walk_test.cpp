@@ -32,8 +32,7 @@ struct Walker
 
 TEST_CASE("scene walk: descends entities and reports leaves to the visitor", "[scene]")
 {
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
     auto &s = mth::test::fake_scene();
 
@@ -66,8 +65,7 @@ TEST_CASE("scene walk: descends entities and reports leaves to the visitor", "[s
 
 TEST_CASE("scene walk: a visitor returning false stops the walk", "[scene]")
 {
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
     auto &s = mth::test::fake_scene();
 
@@ -96,8 +94,7 @@ TEST_CASE("scene walk: a visitor returning false stops the walk", "[scene]")
 // silently misses a hit that sits on an entity.
 TEST_CASE("scene walk: a node that is also an entity is descended into and withheld from the visitor", "[scene]")
 {
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
     auto &s = mth::test::fake_scene();
 
@@ -121,8 +118,7 @@ TEST_CASE("scene walk: a node that is also an entity is descended into and withh
 
 TEST_CASE("scene walk: a childless or null root walks nothing", "[scene]")
 {
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
     void *root = mth::test::fake_scene().add(mth::rtti::kYcEntity, nullptr);
 
@@ -141,8 +137,7 @@ TEST_CASE("scene walk: a childless or null root walks nothing", "[scene]")
 
 TEST_CASE("scene walk: a node wider than the child cap is walked as a prefix and reported", "[scene]")
 {
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     mth::test::fake_scene().reset();
     auto &s = mth::test::fake_scene();
 

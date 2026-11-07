@@ -328,9 +328,11 @@ void fixed_update_trampoline(void *pctx)
 namespace mod
 {
 
-void set_api(MinaModAPI *api)
+MinaModAPI *set_api(MinaModAPI *api)
 {
+    MinaModAPI *const previous = g_mod_api;
     g_mod_api = api;
+    return previous;
 }
 
 bool api_available()

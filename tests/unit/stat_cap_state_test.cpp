@@ -81,8 +81,7 @@ TEST_CASE("console-injected cap-up counts like a socket item and leaves the curs
     caps.recompute(s);
     REQUIRE(caps.granted(0) == 2);
 
-    // The injection must not advance last_item_index_, so a later server item (index 1) still applies.
-    REQUIRE(s.last_item_index() == 0);
+    // The injection must not advance the server's item cursor, so a later server item (index 1) still applies.
     s.apply(mth::ApItemReceived{{mth::kProgStatCapBase + 1, 1, 1, 0}});
     caps.recompute(s);
     REQUIRE(caps.granted(0) == 2);

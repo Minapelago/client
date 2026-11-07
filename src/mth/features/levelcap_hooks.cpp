@@ -111,7 +111,7 @@ LevelCapHooks::~LevelCapHooks()
 void LevelCapHooks::recompute(const ApState &state)
 {
     caps_.recompute(state);
-    max_stat_level_ = state.max_stat_level();
+    max_stat_level_ = state.config().max_stat_level;
 }
 
 void LevelCapHooks::set_counts(int attack, int defense, int sidearm)

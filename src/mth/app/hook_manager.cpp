@@ -5,7 +5,6 @@
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
 #include "mth/core/rando_bridge.hpp"
-#include "mth/core/scout_registry.hpp"
 #include "mth/core/session_policy.hpp"
 #include "mth/features/ability_hooks.hpp"
 #include "mth/features/death_hooks.hpp"
@@ -30,7 +29,7 @@
 namespace mth
 {
 
-HookManager::HookManager(RandoBridge &rando, ScoutRegistry &scout, ApState &state, ApSaveBundleStore &bundle,
+HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
                          std::function<void(const std::string &)> send_death, std::function<void *()> get_player)
     : rando_(rando), get_player_(get_player), location_hooks_(rando, &scout), boss_tracker_(rando), goal_tracker_(rando),
       death_hooks_(std::move(send_death), std::move(get_player)), ability_hooks_([&state](std::int64_t id) { return state.has_received(id); }),
@@ -75,18 +74,18 @@ bool HookManager::vendor_locked(const ApState &state)
     return vendor_lockout_.load(std::memory_order_relaxed);
 }
 
-void HookManager::tick(ApState &state, SessionPolicy &policy, int save_game_slot)
+void HookManager::tick(ApState &state, const SessionPolicy &policy, int save_game_slot)
 {
     const bool authed = state.authenticated();
     // Enforce (seed + lockdown) only in an AP session, offline test mode, or once the console
     // drove modifiers; ap_scoped (authed only) restricts the seed to the captured AP-game slot.
-    modifier_hooks_.set_enforce_live(policy.enforce_modifiers(authed));
+    modifier_hooks_.set_enforce_live(authed || policy.console_modifiers);
     modifier_hooks_.set_ap_scoped(authed);
-    modifier_hooks_.set_ossex_start(state.ossex_start()); // force Landing Done when slot_data requests it
+    modifier_hooks_.set_ossex_start(state.config().ossex_start); // force Landing Done when slot_data requests it
     modifier_hooks_.drain_live();
 
-    level_cap_hooks_.set_enforce_live(policy.enforce_caps(authed));
-    if (!policy.caps_fixed())
+    level_cap_hooks_.set_enforce_live(authed || policy.forced_caps);
+    if (!policy.forced_caps)
         level_cap_hooks_.recompute(state);
 
     // Neutralize the world-kear collect grant in every AP mode; pin usable keys to 0 only in the AP-item
@@ -96,7 +95,7 @@ void HookManager::tick(ApState &state, SessionPolicy &policy, int save_game_slot
     location_hooks_.enforce_native_bits(); // native collected-bit for server-collected durable-bit chests (Collect/coop)
 
     // slot_data lamps, 0 when not authed. The detour ORs the sticky console override over them.
-    set_fountain_slot_mask(authed ? state.lit_generator_lamp_mask() : 0);
+    set_fountain_slot_mask(authed ? state.config().lit_generator_lamp_mask : 0);
 
     // Unconditional: the bridge persists and queues checks while disconnected, so a kill during an
     // outage is still recorded rather than lost.
@@ -110,12 +109,12 @@ void HookManager::tick(ApState &state, SessionPolicy &policy, int save_game_slot
 
     if (authed)
     {
-        ability_hooks_.set_randomized(Ability::Burrow, state.burrow_rando());
-        ability_hooks_.set_randomized(Ability::Swim, state.swim_rando());
-        ability_hooks_.set_randomized(Ability::RopeClimb, state.rope_rando());
-        ability_hooks_.set_randomized(Ability::BouncePuff, state.puff_rando());
-        ability_hooks_.set_randomized(Ability::BounceSpring, state.spring_rando());
-        ability_hooks_.set_randomized(Ability::Carry, state.carry_rando());
+        ability_hooks_.set_randomized(Ability::Burrow, state.config().burrow_rando);
+        ability_hooks_.set_randomized(Ability::Swim, state.config().swim_rando);
+        ability_hooks_.set_randomized(Ability::RopeClimb, state.config().rope_rando);
+        ability_hooks_.set_randomized(Ability::BouncePuff, state.config().puff_rando);
+        ability_hooks_.set_randomized(Ability::BounceSpring, state.config().spring_rando);
+        ability_hooks_.set_randomized(Ability::Carry, state.config().carry_rando);
     }
     // offline: leave randomized as the `ability` console command set it.
 
@@ -123,15 +122,15 @@ void HookManager::tick(ApState &state, SessionPolicy &policy, int save_game_slot
     // right - it completes, OnPickupDone suppresses the pass and sends the check - so all it needs is a
     // cheaper goal. When the seed does not, nothing would refuse the grant, so the machine is made inert
     // and the OnPickup backstop arms behind it.
-    const bool train_gated = authed && state.train_rando();
+    const bool train_gated = authed && state.config().train_rando;
     // Through the bridge, not ApState, so a seed that prunes the donation location is seen here too.
     const bool machine_is_check = rando_.is_ap_location(kTrainPassLocIdx);
     // Train fast-travel (train_rando): gate each destination on its AP ticket rather than the whole-train
     // ability, so visiting a station no longer unlocks it (#98).
     ability_hooks_.set_train_gate(train_gated, state);
-    ability_hooks_.set_ticket_machine(machine_is_check, rando_.is_checked(kTrainPassLocIdx), ticket_machine_seed(state.train_pass_cost()));
+    ability_hooks_.set_ticket_machine(machine_is_check, rando_.is_checked(kTrainPassLocIdx), ticket_machine_seed(state.config().train_pass_cost));
     set_train_pass_machine_blocked(train_gated && !machine_is_check);
-    const bool armed = policy.enforce_abilities(authed);
+    const bool armed = authed || policy.console_abilities;
     const bool slot_ok = !authed ? true : (save_game_slot >= 0 && modifier_hooks_.captured_ap_slot() == save_game_slot);
     ability_hooks_.set_enforce(armed && slot_ok);
     // Both calls write durable save fields, so both take authed as well: slot_ok on its own is true while

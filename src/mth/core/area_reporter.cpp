@@ -13,14 +13,8 @@ void AreaReporter::tick(bool connected, std::optional<std::uint32_t> screen_id)
 {
     if (!connected)
     {
-        was_connected_ = false;
-        last_sent_.reset();
+        last_sent_.reset(); // the first readable state after a (re)connect always publishes
         return;
-    }
-    if (!was_connected_)
-    {
-        was_connected_ = true;
-        last_sent_.reset(); // fresh (re)connect: force the next readable state to publish
     }
     if (!screen_id)
         return;

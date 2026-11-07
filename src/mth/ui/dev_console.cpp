@@ -12,7 +12,7 @@
 #include "mth/core/ap_gate.hpp"
 #include "mth/core/data/ability_ids.hpp"
 #include "mth/core/dev_commands.hpp"
-#include "mth/core/fountain_lamps.hpp"
+#include "mth/core/goal_state.hpp"
 #include "mth_version.h"
 #include "pal/pal_log.hpp"
 

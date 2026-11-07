@@ -167,5 +167,4 @@ TEST_CASE("ap_coordinator: a reconnect with no ApSessionEnded keeps the session 
 
     REQUIRE(end_calls == 0);
     REQUIRE(state.received_items().size() == 1);
-    REQUIRE(state.last_item_index() == 0);
 }

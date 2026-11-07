@@ -62,26 +62,30 @@ inline constexpr HookAnchor kHookAnchors[] = {
     {game_fixed_update, "FixedUpdate"},
 };
 
-// Returns the hook name anchoring a mangled symbol, or nullptr when there is none.
-[[nodiscard]] inline const char *hook_anchor_for(const char *mangled) noexcept
+namespace detail
+{
+// The `value` field of the row whose mangled name matches, or nullptr.
+template <typename Row, std::size_t N> [[nodiscard]] const char *find_by_mangled(const Row (&table)[N], const char *Row::*value, const char *mangled) noexcept
 {
     if (mangled == nullptr)
         return nullptr;
-    for (const HookAnchor &a : kHookAnchors)
-        if (std::strcmp(a.mangled, mangled) == 0)
-            return a.hook_name;
+    for (const Row &row : table)
+        if (std::strcmp(row.mangled, mangled) == 0)
+            return row.*value;
     return nullptr;
+}
+} // namespace detail
+
+// Returns the hook name anchoring a mangled symbol, or nullptr when there is none.
+[[nodiscard]] inline const char *hook_anchor_for(const char *mangled) noexcept
+{
+    return detail::find_by_mangled(kHookAnchors, &HookAnchor::hook_name, mangled);
 }
 
 // Returns the GetSymAddr name for a mangled symbol, or nullptr when the API does not expose it.
 [[nodiscard]] inline const char *native_sym_name(const char *mangled) noexcept
 {
-    if (mangled == nullptr)
-        return nullptr;
-    for (const NativeSymName &n : kNativeSymNames)
-        if (std::strcmp(n.mangled, mangled) == 0)
-            return n.plain;
-    return nullptr;
+    return detail::find_by_mangled(kNativeSymNames, &NativeSymName::plain, mangled);
 }
 
 } // namespace mth::sym

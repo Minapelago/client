@@ -113,7 +113,7 @@ namespace mth
 
 AbilityHooks::AbilityHooks(std::function<bool(std::int64_t item_id)> is_granted) : is_granted_(std::move(is_granted))
 {
-    const bool installed = install_ability_hooks([this](Ability a) { return gate_.blocked(a, AbilityGate::GrantQuery{enforce_, is_granted_}); });
+    const bool installed = install_ability_hooks([this](Ability a) { return gate_.blocked(a, enforce_, is_granted_); });
     if (!installed)
         pal::logf(pal::LogLevel::Warn, "AbilityHooks: no ability chokepoints resolved; gating disabled");
 
@@ -193,7 +193,7 @@ void AbilityHooks::enforce_train_tick()
     }
     else
     {
-        enforce_train_presence(gate_.blocked(Ability::Train, AbilityGate::GrantQuery{enforce_, is_granted_}));
+        enforce_train_presence(gate_.blocked(Ability::Train, enforce_, is_granted_));
     }
 }
 
@@ -220,8 +220,7 @@ void AbilityHooks::enforce_burrow_tick(void *player)
         return;
     }
 
-    const AbilityGate::GrantQuery q{enforce_, is_granted_};
-    switch (burrow_.observe(water == 1, gate_.blocked(Ability::Burrow, q), gate_.blocked(Ability::Swim, q)))
+    switch (burrow_.observe(water == 1, gate_.blocked(Ability::Burrow, enforce_, is_granted_), gate_.blocked(Ability::Swim, enforce_, is_granted_)))
     {
     case BoundaryAction::FallIn:
         pal::logf(pal::LogLevel::Info, "abilities: burrowed into deep water without Swim -> falling in (%d)", request_deep_water_fall(player) ? 1 : 0);

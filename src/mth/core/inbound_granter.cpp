@@ -1,5 +1,7 @@
 #include "mth/core/inbound_granter.hpp"
 
+#include <cstdio>
+
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_save_state.hpp"
 #include "mth/core/ap/ap_state.hpp"
@@ -36,7 +38,12 @@ InboundGranter::~InboundGranter()
 void InboundGranter::on_applied(int receipt)
 {
     in_flight_.erase(receipt);
-    save_.mark_granted(receipt);
+    consume(receipt);
+}
+
+void InboundGranter::consume(int index)
+{
+    save_.mark_granted(index);
     save_.stage();
 }
 
@@ -61,10 +68,37 @@ void InboundGranter::tick()
     int map_tier = 0;
     bool trap_stalled = false; // a trap returned NotReady this tick; drives the stall warning below
 
-    const bool vanilla_kear = state_.kear_mode() == KearMode::Vanilla;
+    const bool vanilla_kear = state_.config().kear_mode == KearMode::Vanilla;
 
     int n_handled = 0;     // skipped: already recorded or in flight
     int n_ungrantable = 0; // skipped: this path does not grant that category
+
+    // One progressive receipt at the given tier. A tier past the top is consumed so it does not retry
+    // forever. False when the granter is not ready, which ends the pass; the tiers are recomputed from
+    // scratch next tick. A negative family is left out of the log.
+    auto offer_tier = [&](int index, int game_type, int tier, const char *label, int family = -1)
+    {
+        if (handled(index))
+        {
+            ++n_handled;
+            return true;
+        }
+        char what[48];
+        if (family < 0)
+            std::snprintf(what, sizeof(what), "%s tier=%d", label, tier);
+        else
+            std::snprintf(what, sizeof(what), "%s family=%d tier=%d", label, family, tier);
+        if (game_type < 0)
+        {
+            pal::logf(pal::LogLevel::Warn, "inbound_granter: %s exceeds max; ignored (index=%d)", what, index);
+            consume(index);
+            return true;
+        }
+        if (!offer(game_type, index))
+            return false;
+        pal::logf(pal::LogLevel::Info, "inbound_granter: %s -> itemType=%d (index=%d) queued", what, game_type, index);
+        return true;
+    };
 
     for (const auto &it : state_.received_items())
     {
@@ -81,81 +115,33 @@ void InboundGranter::tick()
             if (!credit_kear_key_ || !credit_kear_key_())
                 break; // no live save/player yet; retry next tick (do not mark)
             // Applies inline rather than through the granter's queue, so it is recorded right away.
-            save_.mark_granted(it.index);
-            save_.stage();
+            consume(it.index);
             pal::logf(pal::LogLevel::Info, "inbound_granter: credited vanilla kear key (index=%d)", it.index);
             continue;
         }
 
-        // Progressive fishing rod: the Nth receipt grants the Nth upgrade itemType (87/88/89). Count every
-        // receipt (already-granted too) so the tier survives reloads; grant only the new ones. Mirrors weapons.
+        // Progressive items: the Nth receipt grants the Nth tier's itemType (per family for weapons). Count
+        // every receipt (already-granted ones too) so the tier survives reloads; grant only the new ones.
         if (is_fishing_rod_item(it.item_id))
         {
             const int tier = ++fishing_tier;
-            if (handled(it.index))
-            {
-                ++n_handled;
-                continue;
-            }
-            const int game_type = fishing_rod_itemtype(tier);
-            if (game_type < 0) // beyond the top tier: consume so it does not retry forever
-            {
-                pal::logf(pal::LogLevel::Warn, "inbound_granter: fishing rod tier=%d exceeds max; ignored (index=%d)", tier, it.index);
-                save_.mark_granted(it.index);
-                save_.stage();
-                continue;
-            }
-            if (!offer(game_type, it.index))
-                break; // not ready; retry next tick (tier is recomputed from scratch)
-            pal::logf(pal::LogLevel::Info, "inbound_granter: fishing rod tier=%d -> itemType=%d (index=%d) queued", tier, game_type, it.index);
+            if (!offer_tier(it.index, fishing_rod_itemtype(tier), tier, "fishing rod"))
+                break;
             continue;
         }
-
-        // Progressive weapon: the Nth receipt of a family grants its tier-N itemType. Count every
-        // receipt (already-granted ones too) so the tier survives reloads; grant only the new ones.
         if (is_weapon_item(it.item_id))
         {
             const int fam = weapon_family(it.item_id);
             const int tier = weapon_tally.add(it.item_id);
-            if (handled(it.index))
-            {
-                ++n_handled;
-                continue;
-            }
-            const int game_type = weapon_itemtype(fam, tier);
-            if (game_type < 0) // beyond the family's top tier: consume so it does not retry forever
-            {
-                pal::logf(pal::LogLevel::Warn, "inbound_granter: weapon family=%d tier=%d exceeds max; ignored (index=%d)", fam, tier, it.index);
-                save_.mark_granted(it.index);
-                save_.stage();
-                continue;
-            }
-            if (!offer(game_type, it.index))
-                break; // not ready; retry next tick (tier is recomputed from scratch)
-            pal::logf(pal::LogLevel::Info, "inbound_granter: weapon family=%d tier=%d -> itemType=%d (index=%d) queued", fam, tier, game_type, it.index);
+            if (!offer_tier(it.index, weapon_itemtype(fam, tier), tier, "weapon", fam))
+                break;
             continue;
         }
-
         if (is_map_item(it.item_id))
         {
             const int tier = ++map_tier;
-
-            if (handled(it.index))
-            {
-                ++n_handled;
-                continue;
-            }
-            const int game_type = map_itemtype(tier);
-            if (game_type < 0) // beyond the top tier: consume so it does not retry forever
-            {
-                pal::logf(pal::LogLevel::Warn, "inbound_granter: map tier=%d exceeds max; ignored (index=%d)", tier, it.index);
-                save_.mark_granted(it.index);
-                save_.stage();
-                continue;
-            }
-            if (!offer(game_type, it.index))
-                break; // not ready; retry next tick (tier is recomputed from scratch)
-            pal::logf(pal::LogLevel::Info, "inbound_granter: map tier=%d -> itemType=%d (index=%d) queued", tier, game_type, it.index);
+            if (!offer_tier(it.index, map_itemtype(tier), tier, "map"))
+                break;
             continue;
         }
 
@@ -187,8 +173,7 @@ void InboundGranter::tick()
             // Consumed at arm time, not at expiry. Staging is not a commit, so a crash before the next
             // game save replays the trap, which fires a prank twice; marking at expiry would instead
             // consume the item on a crash and never deliver it.
-            save_.mark_granted(it.index);
-            save_.stage();
+            consume(it.index);
             continue;
         }
 

@@ -12,7 +12,6 @@
 
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/slot_data.hpp"
-#include "mth/core/fountain_lamps.hpp"
 #include "mth/core/goal_state.hpp"
 #include "pal/pal_log.hpp"
 

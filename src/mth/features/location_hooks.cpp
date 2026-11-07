@@ -13,7 +13,6 @@
 #include "mth/core/data/game_symbols.hpp"
 #include "mth/core/data/game_tables.hpp"
 #include "mth/core/rando_bridge.hpp"
-#include "mth/core/scout_registry.hpp"
 #include "mth/features/shop_menu.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
@@ -23,7 +22,7 @@ namespace
 {
 
 mth::RandoBridge *g_bridge = nullptr;
-mth::ScoutRegistry *g_scout = nullptr;
+const std::map<int, mth::ScoutInfo> *g_scout = nullptr;
 
 // Kear key gating (slot_data "kear_rando" mode), game-thread only. Neutralize runs in every AP mode: a
 // kear pickup is an AP location, so the free key its collect would grant is always cancelled (the server
@@ -427,7 +426,7 @@ bool on_shop_flatten()
 }
 
 // ShopMenu::SetCursor post-hook: idempotently scout any unscouted AP box location, then rewrite the
-// selected box's name+description from the registry. Leaves vanilla text for non-AP / not-yet-scouted
+// selected box's name+description from the scout map. Leaves vanilla text for non-AP / not-yet-scouted
 // selections. The enumerate sink is a captureless lambda: g_bridge/g_scout are file-local globals, so
 // the plain C function-pointer sink stays valid.
 void on_shop_set_cursor(void *shop_menu)
@@ -435,7 +434,7 @@ void on_shop_set_cursor(void *shop_menu)
     if (g_bridge == nullptr || g_scout == nullptr)
         return;
 
-    // Scout any box location not yet in the registry. A location whose reply hasn't landed stays
+    // Scout any box location not yet in the scout map. A location whose reply hasn't landed stays
     // "unknown" and is re-requested on the next cursor move; the server dedups the scout+hint, so this
     // retry-until-resolved is intentional and cheap.
     std::vector<int> unknown;
@@ -444,7 +443,7 @@ void on_shop_set_cursor(void *shop_menu)
         [](int loc, void *ctx)
         {
             auto *u = static_cast<std::vector<int> *>(ctx);
-            if (loc >= 0 && g_bridge->is_ap_location(loc) && g_scout->lookup(loc) == nullptr)
+            if (loc >= 0 && g_bridge->is_ap_location(loc) && !g_scout->contains(loc))
                 u->push_back(loc);
         },
         &unknown);
@@ -454,7 +453,7 @@ void on_shop_set_cursor(void *shop_menu)
     const int loc = mth::shop_selected_loc(shop_menu);
     if (loc < 0)
         return;
-    const mth::ScoutInfo *si = g_scout->lookup(loc);
+    const mth::ScoutInfo *si = mth::find_scout(*g_scout, loc);
     if (si == nullptr)
         return; // not scouted yet / not AP -> leave vanilla text
 
@@ -537,7 +536,7 @@ int on_item_collected_query(int loc_idx, bool ownership_query)
 namespace mth
 {
 
-LocationHooks::LocationHooks(RandoBridge &bridge, ScoutRegistry *scout)
+LocationHooks::LocationHooks(RandoBridge &bridge, const std::map<int, ScoutInfo> *scout)
 {
     g_bridge = &bridge;
     g_scout = scout;

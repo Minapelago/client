@@ -23,7 +23,6 @@ class AreaReporter
   private:
     IApLink &link_;
     std::optional<std::uint32_t> last_sent_;
-    bool was_connected_{false};
 };
 
 } // namespace mth

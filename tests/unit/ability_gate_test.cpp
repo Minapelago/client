@@ -10,11 +10,6 @@ TEST_CASE("ability item ids occupy the 3000 segment")
     REQUIRE(mth::kAbilityCount == 7);
     REQUIRE(mth::ability_item_id(Ability::Burrow) == 3000);
     REQUIRE(mth::ability_item_id(Ability::Train) == 3006);
-    REQUIRE(mth::is_ability_item(3000));
-    REQUIRE(mth::is_ability_item(3006));
-    REQUIRE_FALSE(mth::is_ability_item(2999));
-    REQUIRE_FALSE(mth::is_ability_item(3007));
-    REQUIRE(mth::ability_from_item(3005) == Ability::Carry);
 }
 
 TEST_CASE("ability_from_name maps known names and rejects unknown")
@@ -36,10 +31,11 @@ TEST_CASE("AbilityGate blocks only randomized, ungranted abilities on the AP slo
     gate.set_randomized(Ability::Burrow, true); // randomized this seed
     // Swim left non-randomized.
 
-    auto q = [&](bool slot_is_ap, bool granted) { return mth::AbilityGate::GrantQuery{slot_is_ap, [granted](std::int64_t) { return granted; }}; };
+    const std::function<bool(std::int64_t)> granted = [](std::int64_t) { return true; };
+    const std::function<bool(std::int64_t)> ungranted = [](std::int64_t) { return false; };
 
-    REQUIRE(gate.blocked(Ability::Burrow, q(true, false)));        // randomized, AP slot, not granted -> block
-    REQUIRE_FALSE(gate.blocked(Ability::Burrow, q(true, true)));   // granted -> allow
-    REQUIRE_FALSE(gate.blocked(Ability::Burrow, q(false, false))); // not the AP slot -> allow
-    REQUIRE_FALSE(gate.blocked(Ability::Swim, q(true, false)));    // not randomized -> allow
+    REQUIRE(gate.blocked(Ability::Burrow, true, ungranted));        // randomized, AP slot, not granted -> block
+    REQUIRE_FALSE(gate.blocked(Ability::Burrow, true, granted));    // granted -> allow
+    REQUIRE_FALSE(gate.blocked(Ability::Burrow, false, ungranted)); // not the AP slot -> allow
+    REQUIRE_FALSE(gate.blocked(Ability::Swim, true, ungranted));    // not randomized -> allow
 }

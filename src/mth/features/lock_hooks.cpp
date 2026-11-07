@@ -297,10 +297,9 @@ void LockHooks::seed_kear_blocks(const ApState &state)
         }
         if (is_area_lock_item(it.item_id))
         {
-            for (const auto &g : kAreaLockGroups)
-                if (g.item_id == it.item_id)
-                    for (const auto &lock : g.locks)
-                        locks_.set_removed(kear_block_engine_id(lock));
+            for (const AreaLock &lock : kAreaLocks)
+                if (lock.area_item_id == it.item_id)
+                    locks_.set_removed(kear_block_engine_id(lock.lock_item_id));
         }
     }
 }

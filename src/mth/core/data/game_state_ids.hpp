@@ -30,5 +30,9 @@ inline constexpr int kGameStateDeath = GAMESTATE_DEATH;
 {
     return gs >= kGameStateFirstWorld && gs <= kGameStateLastWorld;
 }
+static_assert(is_gameplay_game_state(kGameStateFirstWorld) && is_gameplay_game_state(kGameStateLastWorld));
+static_assert(is_gameplay_game_state((kGameStateFirstWorld + kGameStateLastWorld) / 2));
+static_assert(!is_gameplay_game_state(kGameStateFirstWorld - 1) && !is_gameplay_game_state(kGameStateLastWorld + 1));
+static_assert(!is_gameplay_game_state(kGameStateTitleScreen) && !is_gameplay_game_state(kGameStateProfileSelect) && !is_gameplay_game_state(-1));
 
 } // namespace mth

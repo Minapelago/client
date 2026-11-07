@@ -420,7 +420,7 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                                           { push_event(mth::ApLocationsChecked{std::vector<std::int64_t>(locations.begin(), locations.end())}); });
 
     // LocationScouts replies: resolve item/player names here (apclientpp resolution is net-thread-only),
-    // then ship plain-data ScoutInfo over the event queue for the ScoutRegistry.
+    // then ship plain-data ScoutInfo over the event queue for App's scout map.
     client_->set_location_info_handler(
         [this](const std::list<APClient::NetworkItem> &items)
         {

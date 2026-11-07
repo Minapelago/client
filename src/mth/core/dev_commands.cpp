@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <sstream>
+#include <string_view>
 
 namespace mth
 {
@@ -16,44 +17,38 @@ std::string to_lower(std::string s)
     return s;
 }
 
+struct VerbKind
+{
+    std::string_view verb;
+    CommandKind kind;
+};
+
+constexpr VerbKind kVerbKinds[] = {
+    {"help", CommandKind::Help},
+    {"clear", CommandKind::Clear},
+    {"gate", CommandKind::Gate},
+    {"status", CommandKind::Status},
+    {"items", CommandKind::Items},
+    {"giveapitem", CommandKind::GiveItem},
+    {"removelock", CommandKind::RemoveLock},
+    {"modifier", CommandKind::Modifier},
+    {"modifiers", CommandKind::ModifierLock},
+    {"caps", CommandKind::StatCaps},
+    {"ability", CommandKind::Ability},
+    {"connect", CommandKind::Connect},
+    {"disconnect", CommandKind::Disconnect},
+    {"deathlink", CommandKind::Deathlink},
+    {"litlamps", CommandKind::LitLamps},
+    {"savetest", CommandKind::SaveTest},
+    {"trap", CommandKind::Trap},
+    {"switches", CommandKind::Switches},
+};
+
 CommandKind verb_to_kind(const std::string &lower)
 {
-    if (lower == "help")
-        return CommandKind::Help;
-    if (lower == "clear")
-        return CommandKind::Clear;
-    if (lower == "gate")
-        return CommandKind::Gate;
-    if (lower == "status")
-        return CommandKind::Status;
-    if (lower == "items")
-        return CommandKind::Items;
-    if (lower == "giveapitem")
-        return CommandKind::GiveItem;
-    if (lower == "removelock")
-        return CommandKind::RemoveLock;
-    if (lower == "modifier")
-        return CommandKind::Modifier;
-    if (lower == "modifiers")
-        return CommandKind::ModifierLock;
-    if (lower == "caps")
-        return CommandKind::StatCaps;
-    if (lower == "ability")
-        return CommandKind::Ability;
-    if (lower == "connect")
-        return CommandKind::Connect;
-    if (lower == "disconnect")
-        return CommandKind::Disconnect;
-    if (lower == "deathlink")
-        return CommandKind::Deathlink;
-    if (lower == "litlamps")
-        return CommandKind::LitLamps;
-    if (lower == "savetest")
-        return CommandKind::SaveTest;
-    if (lower == "trap")
-        return CommandKind::Trap;
-    if (lower == "switches")
-        return CommandKind::Switches;
+    for (const VerbKind &row : kVerbKinds)
+        if (row.verb == lower)
+            return row.kind;
     return CommandKind::Unknown;
 }
 

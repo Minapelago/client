@@ -10,12 +10,6 @@
 namespace mth
 {
 
-// seam to allow for special-case items and multiple grants and whatnot
-void ApState::push_received(const ReceivedItem &item)
-{
-    received_items_.push_back(item);
-}
-
 // Set the connection phase and clear the (error-only) detail under its lock. The Error
 // branch sets detail instead, so it stores the phase inline rather than calling this.
 void ApState::set_phase(ConnectionPhase p)
@@ -47,7 +41,7 @@ void ApState::reset_session()
 
 void ApState::inject_received_item(std::int64_t item_id)
 {
-    push_received(ReceivedItem{item_id, console_index_--, player_slot_, 0});
+    received_items_.push_back(ReceivedItem{item_id, console_index_--, player_slot_, 0});
     pal::logf(pal::LogLevel::Info, "ap_state: console-injected item id=%lld (total=%zu)", static_cast<long long>(item_id), received_items_.size());
 }
 
@@ -60,7 +54,6 @@ void ApState::apply(const ApEvent &ev)
             if constexpr (std::is_same_v<T, ApConnected>)
             {
                 seed_ = e.seed;
-                slot_data_ = e.slot_data;
                 player_slot_ = e.player_slot;
                 config_ = e.config;
                 valid_locations_.clear();
@@ -90,7 +83,7 @@ void ApState::apply(const ApEvent &ev)
                 pal::logf(pal::LogLevel::Info,
                           "ap_state: CONNECTED slot=%d seed=%s slot_data=%zuB ossex_start=%d kear_rando=%d train_rando=%d train_pass_cost=%d "
                           "max_stat_level=%d; valid_locations=%zu (checked=%zu missing=%zu) id_range=[%lld..%lld]",
-                          player_slot_, seed_.c_str(), slot_data_.size(), config_.ossex_start, static_cast<int>(config_.kear_mode), config_.train_rando,
+                          player_slot_, seed_.c_str(), e.slot_data.size(), config_.ossex_start, static_cast<int>(config_.kear_mode), config_.train_rando,
                           config_.train_pass_cost, config_.max_stat_level, valid_locations_.size(), e.checked_locations.size(), e.missing_locations.size(),
                           static_cast<long long>(lo), static_cast<long long>(hi));
                 if (!removed_locations_.empty())
@@ -108,7 +101,7 @@ void ApState::apply(const ApEvent &ev)
             {
                 if (e.item.index > last_item_index_)
                 {
-                    push_received(e.item);
+                    received_items_.push_back(e.item);
                     last_item_index_ = e.item.index;
                     pal::logf(pal::LogLevel::Info, "ap_state: item received id=%lld index=%d from=%d flags=%u (total=%zu)",
                               static_cast<long long>(e.item.item_id), e.item.index, e.item.player_from, e.item.flags, received_items_.size());
@@ -134,18 +127,13 @@ void ApState::apply(const ApEvent &ev)
             else if constexpr (std::is_same_v<T, ApConnectionRefused>)
             {
                 authenticated_ = false;
-                std::string msg = "Refused:";
-                for (const auto &err : e.errors)
-                {
-                    msg += ' ';
-                    msg += err;
-                }
+                std::string detail;
+                for (std::size_t i = 0; i < e.errors.size(); ++i)
+                    detail += (i ? ", " : "") + e.errors[i];
+                const std::string msg = "Refused: " + detail;
                 set_status(msg);
                 phase_.store(ConnectionPhase::Error, std::memory_order_relaxed);
                 {
-                    std::string detail;
-                    for (std::size_t i = 0; i < e.errors.size(); ++i)
-                        detail += (i ? ", " : "") + e.errors[i];
                     std::lock_guard<std::mutex> lk(text_mutex_);
                     detail_ = std::move(detail);
                 }
@@ -156,24 +144,9 @@ void ApState::apply(const ApEvent &ev)
                 set_status(e.text);
                 pal::logf(pal::LogLevel::Debug, "ap_state: status=%s", e.text.c_str());
             }
-            else if constexpr (std::is_same_v<T, ApDeathReceived>)
-            {
-                // Intentionally state-free: deathlink is handled by the ApCoordinator on_death
-                // callback (-> App applies the kill on the game thread), not by ApState.
-            }
-            else if constexpr (std::is_same_v<T, ApPrintBroadcast>)
-            {
-                // State-free: the ApCoordinator on_broadcast callback forwards it to the banner.
-            }
-            else if constexpr (std::is_same_v<T, ApScoutInfo>)
-            {
-                // handled by the coordinator's on_scout callback; ApState holds no scout data
-            }
-            else if constexpr (std::is_same_v<T, ApSessionEnded>)
-            {
-                // State-free: the coordinator's on_session_end callback runs before apply() and is what
-                // calls reset_session(). Anything applied here would land after that clear.
-            }
+            // ApDeathReceived, ApPrintBroadcast, ApScoutInfo and ApSessionEnded leave ApState alone: the
+            // coordinator's callbacks handle them. on_session_end runs before apply() and is what calls
+            // reset_session(), so anything applied here for ApSessionEnded would land after that clear.
         },
         ev);
 }

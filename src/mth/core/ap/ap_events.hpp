@@ -1,16 +1,43 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "mth/core/ap/slot_data.hpp"
 #include "mth/core/broadcast.hpp"
-#include "mth/core/scout_registry.hpp"
 
 namespace mth
 {
+
+// One scouted shop location: what AP item it holds, for whom, and its classification flags.
+// Strings are resolved in the link layer (net thread) and carried here as plain data.
+struct ScoutInfo
+{
+    int collection_slot{};
+    std::string item_name;
+    std::string player_alias;
+    std::string player_game;
+    unsigned item_flags{};
+    bool is_self{};
+};
+
+// Description-widget text for a scouted location: recipient + their game, or a self form.
+[[nodiscard]] inline std::string format_scout_desc(const ScoutInfo &info)
+{
+    if (info.is_self)
+        return "for you";
+    return "for " + info.player_alias + " (" + info.player_game + ")";
+}
+
+// Scouted locations by collection slot. Null when the slot has not been scouted.
+[[nodiscard]] inline const ScoutInfo *find_scout(const std::map<int, ScoutInfo> &scouts, int collection_slot)
+{
+    const auto it = scouts.find(collection_slot);
+    return it != scouts.end() ? &it->second : nullptr;
+}
 
 struct ReceivedItem
 {
@@ -24,7 +51,7 @@ struct ReceivedItem
 struct ApConnected
 {
     std::string seed;      // persistence key (with player_slot)
-    std::string slot_data; // raw JSON, parsed later
+    std::string slot_data; // raw JSON, logged by size only; config below is the parsed form
     int player_slot{-1};
     std::vector<std::int64_t> checked_locations;
     std::vector<std::int64_t> missing_locations;
@@ -66,7 +93,7 @@ struct ApPrintBroadcast
     std::vector<BannerSegment> segments;
 };
 // Scouted shop locations, resolved to display strings on the net thread (apclientpp resolution is
-// net-thread-only), carried to the game thread to fill the ScoutRegistry.
+// net-thread-only), carried to the game thread to fill App's scout map.
 struct ApScoutInfo
 {
     std::vector<ScoutInfo> locations;

@@ -8,7 +8,7 @@
 
 #include "mth/core/ap/ap_save_state.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/trap_table.hpp"
+#include "mth/core/data/modifiers.hpp"
 #include "mth/core/inbound_granter.hpp"
 #include "mth/core/item_granter_interface.hpp"
 #include "mth/core/rando_bridge.hpp"

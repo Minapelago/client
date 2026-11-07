@@ -15,12 +15,6 @@ namespace mth
 class AbilityGate
 {
   public:
-    struct GrantQuery
-    {
-        bool slot_is_ap;
-        std::function<bool(std::int64_t item_id)> is_granted;
-    };
-
     void set_randomized(Ability a, bool on)
     {
         randomized_[static_cast<int>(a)] = on;
@@ -30,9 +24,10 @@ class AbilityGate
         return randomized_[static_cast<int>(a)];
     }
 
-    [[nodiscard]] bool blocked(Ability a, const GrantQuery &q) const
+    // is_granted is only asked about randomized abilities on the AP slot.
+    [[nodiscard]] bool blocked(Ability a, bool slot_is_ap, const std::function<bool(std::int64_t item_id)> &is_granted) const
     {
-        return randomized(a) && q.slot_is_ap && !q.is_granted(ability_item_id(a));
+        return randomized(a) && slot_is_ap && !is_granted(ability_item_id(a));
     }
 
   private:

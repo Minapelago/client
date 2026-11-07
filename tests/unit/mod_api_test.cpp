@@ -90,9 +90,7 @@ TEST_CASE("mod: current_game_state reflects the API, -1 when unset", "[mod]")
 
 TEST_CASE("mod: IsItemCollected trampoline marshals the query result", "[mod]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     REQUIRE(mod::install_item_collected_hook(&forced_query));
 
     mod::IsItemCollectedCtx ctx{};
@@ -123,9 +121,7 @@ TEST_CASE("mod: IsItemCollected trampoline marshals the query result", "[mod]")
 
 TEST_CASE("mod: IsItemCollected trampoline ignores negative index", "[mod]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     REQUIRE(mod::install_item_collected_hook(&forced_query));
 
     mod::IsItemCollectedCtx ctx{};
@@ -141,9 +137,7 @@ TEST_CASE("mod: IsItemCollected trampoline ignores negative index", "[mod]")
 
 TEST_CASE("mod: WorldUpdate hook fires the registered callback", "[mod]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     g_world_fired = false;
     REQUIRE(mod::install_world_update_hook(&world_cb));
 
@@ -156,9 +150,7 @@ TEST_CASE("mod: WorldUpdate hook fires the registered callback", "[mod]")
 
 TEST_CASE("mod: WorldDestroy hook fires the registered callback", "[mod]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     g_destroy_fired = false;
     REQUIRE(mod::install_world_destroy_hook(&destroy_cb));
 
@@ -196,9 +188,7 @@ TEST_CASE("save api reports unavailable without an api pointer", "[mod][save]")
 
 TEST_CASE("save api passthroughs reach the fake api", "[mod][save]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     REQUIRE(mod::save_api_available());
 
@@ -253,9 +243,7 @@ TEST_CASE("mod: player_component forwards whatever the API reports, null include
 
 TEST_CASE("mod: active_save_slot normalizes the no-slot sentinel to -1", "[mod]")
 {
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     mth::test::fake_save_state().active_slot = 3;
     REQUIRE(mod::active_save_slot() == 3);
@@ -366,9 +354,7 @@ TEST_CASE("mod: a named hook registers under its game-facing name, unfired until
 TEST_CASE("mod: appended entries stay unavailable on a build that predates them", "[mod]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
 
     // A range covering this test binary, so in_game_text() does not fall back to its fail-open answer.
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
@@ -432,9 +418,7 @@ TEST_CASE("mod: appended entries stay unavailable on a build that predates them"
 TEST_CASE("mod: appended entries become available on a newer build", "[mod]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
 
     mth::test::recorder().revision = 200000; // newer than any build lacking the entries
@@ -620,9 +604,7 @@ TEST_CASE("mod: player_world serves the game's live world, null when unset", "[m
 TEST_CASE("mod: queue_destroy_entity refuses null world or entity", "[mod]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
     mth::test::recorder().revision = 200000;
 
@@ -635,9 +617,7 @@ TEST_CASE("mod: queue_destroy_entity refuses null world or entity", "[mod]")
 TEST_CASE("mod: set_item_collected and set_text_color refuse bad arguments", "[mod]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
     mth::test::recorder().revision = 200000;
 
@@ -651,9 +631,7 @@ TEST_CASE("mod: set_item_collected and set_text_color refuse bad arguments", "[m
 TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the query reaches the game", "[mod_api][trap]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
 
     mth::test::recorder().revision = 200000;
@@ -677,9 +655,7 @@ TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the query
 TEST_CASE("cheat_manager: the cheat index is clamped to 0..0xfd before the write reaches the game", "[mod_api][trap]")
 {
     TextRangeGuard guard;
-    mth::test::recorder().reset();
-    auto fake = mth::test::make_fake_api();
-    mod::set_api(&fake);
+    mth::test::ScopedFakeApi scoped;
     pal::set_game_text_range(pal::TextRange{reinterpret_cast<std::uintptr_t>(&fake_text_anchor) - 0x100000, 0x200000});
 
     mth::test::recorder().revision = 200000;

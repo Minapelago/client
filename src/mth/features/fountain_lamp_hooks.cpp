@@ -5,7 +5,7 @@
 
 #include "mth/core/data/game_layout.hpp"
 #include "mth/core/data/game_symbols.hpp"
-#include "mth/core/fountain_lamps.hpp"
+#include "mth/core/goal_state.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"
@@ -28,7 +28,7 @@ void repl_bulb_update(void *self, float dt, bool lit)
     {
         const std::uint32_t mask = g_slot_mask.load(std::memory_order_relaxed) | g_console_mask.load(std::memory_order_relaxed);
         const std::uint32_t idx = pal::at<std::uint32_t>(self, mth::layout::kBulbIndexOff);
-        if (idx < static_cast<std::uint32_t>(mth::kGeneratorLampCount) && ((mask >> idx) & 1u))
+        if (idx < static_cast<std::uint32_t>(mth::kGeneratorCount) && ((mask >> idx) & 1u))
             lit = true; // force this generator lamp lit; never writes SaveSlot+0x290
     }
     if (g_orig_bulb_update)

@@ -21,23 +21,22 @@ namespace mth
 {
 
 class RandoBridge;
-class ScoutRegistry;
 class ApState;
-class SessionPolicy;
+struct SessionPolicy;
 class ApSaveBundleStore;
 
 // Owns the feature hooks and drives their slice of the per-frame tick.
 class HookManager
 {
   public:
-    HookManager(RandoBridge &rando, ScoutRegistry &scout, ApState &state, ApSaveBundleStore &bundle, std::function<void(const std::string &)> send_death,
-                std::function<void *()> get_player);
+    HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
+                std::function<void(const std::string &)> send_death, std::function<void *()> get_player);
     ~HookManager();
 
     HookManager(const HookManager &) = delete;
     HookManager &operator=(const HookManager &) = delete;
 
-    void tick(ApState &state, SessionPolicy &policy, int save_game_slot); // -1 when no save state
+    void tick(ApState &state, const SessionPolicy &policy, int save_game_slot); // -1 when no save state
     // Session boundary: drop the feature state seeded from one connection's received items (lock removals)
     // and the captured AP-game slot, so none of it carries into the next connection's save.
     void clear_session_state();

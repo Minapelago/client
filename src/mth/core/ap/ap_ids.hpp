@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <span>
 
 #include "mth/core/data/game_layout.hpp"
 
@@ -159,11 +158,6 @@ inline constexpr int kTrainPassCostDefault = 1000;
 inline constexpr std::int64_t kProgressiveItemBase = 1000;
 inline constexpr int kStatCount = 3; // 0=attack, 1=defense, 2=sidearm/magic
 
-inline constexpr bool is_progressive_item(std::int64_t ap_item_id_)
-{
-    return ap_item_id_ >= kProgressiveItemBase && ap_item_id_ < kProgressiveItemBase + 1000;
-}
-
 // One chain per weapon family
 inline constexpr std::int64_t kProgWeaponBase = kProgressiveItemBase;
 inline constexpr int kWeaponFamilyCount = 5;
@@ -240,7 +234,7 @@ inline constexpr int kMapTiers = 2;
 inline constexpr int kMapItemTypes[kMapTiers] = {75, 76};
 inline constexpr bool is_map_item(std::int64_t ap_item_id_)
 {
-    return ap_item_id_ >= kProgWeaponBase && ap_item_id_ == kMapItem;
+    return ap_item_id_ == kMapItem;
 }
 
 inline constexpr int map_itemtype(int tier)
@@ -282,7 +276,7 @@ inline constexpr bool is_fishing_rod_item(std::int64_t ap_item_id_)
     return ap_item_id_ == kProgFishingRodId;
 }
 
-// Wallet (bone-wallet) capacity: count-based derived state (see WalletCapState), never granted as an
+// Wallet (bone-wallet) capacity: count-based derived state (see wallet_cap()), never granted as an
 // item. Each receipt raises the enforced bone cap; the game itself is not told, the mod clamps bones.
 inline constexpr std::int64_t kProgWalletId = kProgressiveItemBase + 11; // 1011
 
@@ -346,48 +340,34 @@ inline constexpr std::array<int, kAstralPlatformCount> kAstralPlatformColors{
 inline constexpr std::int64_t kMMFirstDoubleKearBlockID = 2304;
 inline constexpr std::int64_t kMMSecondDoubleKearBlockID = 2306;
 
-inline constexpr std::array<std::int64_t, 3> kOSLocks = {kKearBlockItemBase + 151, kKearBlockItemBase + 152, kKearBlockItemBase + 157};
-inline constexpr std::array<std::int64_t, 2> kTrainLocks = {kKearBlockItemBase + 358, kKearBlockItemBase + 359};
-inline constexpr std::array<std::int64_t, 4> kLLLocks = {kKearBlockItemBase + 19, kKearBlockItemBase + 20, kKearBlockItemBase + 21, kKearBlockItemBase + 22};
-inline constexpr std::array<std::int64_t, 2> kSOLocks = {kKearBlockItemBase + 260, kKearBlockItemBase + 262};
-inline constexpr std::array<std::int64_t, 4> kEHLocks = {kKearBlockItemBase + 225, kKearBlockItemBase + 222, kKearBlockItemBase + 224,
-                                                         kKearBlockItemBase + 227};
-inline constexpr std::array<std::int64_t, 3> kWWLocks = {kKearBlockItemBase + 246, kKearBlockItemBase + 247, kKearBlockItemBase + 244};
-inline constexpr std::array<std::int64_t, 1> kMMLocks = {kKearBlockItemBase + 307};
-inline constexpr std::array<std::int64_t, 3> kQBLocks = {kMMFirstDoubleKearBlockID, kMMSecondDoubleKearBlockID, kKearBlockItemBase + 55};
-inline constexpr std::array<std::int64_t, 3> kBWLocks = {kKearBlockItemBase + 284, kKearBlockItemBase + 283, kKearBlockItemBase + 285};
-inline constexpr std::array<std::int64_t, 1> kNBLocks = {kKearBlockItemBase + 33};
-inline constexpr std::array<std::int64_t, 3> kKWLocks = {kKearBlockItemBase + 336, kKearBlockItemBase + 338, kKearBlockItemBase + 337};
-inline constexpr std::array<std::int64_t, 3> kSFLocks = {kKearBlockItemBase + 320, kKearBlockItemBase + 321, kKearBlockItemBase + 318};
-inline constexpr std::array<std::int64_t, 1> kBBLocks = {kKearBlockItemBase + 69};
-inline constexpr std::array<std::int64_t, 2> kCTPLocks = {kKearBlockItemBase + 115, kKearBlockItemBase + 109};
-inline constexpr std::array<std::int64_t, 3> kAOLocks = {kKearBlockItemBase + 277, kKearBlockItemBase + 278, kKearBlockItemBase + 127};
-inline constexpr std::array<std::int64_t, 1> kRMLocks = {kKearBlockItemBase + 141};
-inline constexpr std::array<std::int64_t, 1> kSBLocks = {kKearBlockItemBase + 96};
-
-struct AreaLockGroup
+// The locks each area kear item removes (kear_rando=2), one row per lock: {area item id, kear-block
+// item id of the lock}. The kear-block ids are also the per-lock items of kear_rando=1, apart from
+// 2306, which the 2304 item removes alongside its own lock.
+struct AreaLock
 {
-    std::int64_t item_id;
-    std::span<const std::int64_t> locks;
+    std::int64_t area_item_id;
+    std::int64_t lock_item_id;
 };
 
-inline constexpr std::array<AreaLockGroup, 17> kAreaLockGroups = {{{kAreaKearLockItemBase + 9, kOSLocks},
-                                                                   {kAreaKearLockItemBase + 10, kTrainLocks},
-                                                                   {kAreaKearLockItemBase + 7, kLLLocks},
-                                                                   {kAreaKearLockItemBase + 15, kSOLocks},
-                                                                   {kAreaKearLockItemBase + 5, kEHLocks},
-                                                                   {kAreaKearLockItemBase + 16, kWWLocks},
-                                                                   {kAreaKearLockItemBase + 8, kMMLocks},
-                                                                   {kAreaKearLockItemBase + 11, kQBLocks},
-                                                                   {kAreaKearLockItemBase + 1, kBWLocks},
-                                                                   {kAreaKearLockItemBase + 2, kNBLocks},
-                                                                   {kAreaKearLockItemBase + 6, kKWLocks},
-                                                                   {kAreaKearLockItemBase + 13, kSFLocks},
-                                                                   {kAreaKearLockItemBase + 3, kBBLocks},
-                                                                   {kAreaKearLockItemBase + 4, kCTPLocks},
-                                                                   {kAreaKearLockItemBase + 0, kAOLocks},
-                                                                   {kAreaKearLockItemBase + 14, kSBLocks},
-                                                                   {kAreaKearLockItemBase + 12, kRMLocks}}};
+inline constexpr AreaLock kAreaLocks[] = {
+    {2509, 2151}, {2509, 2152}, {2509, 2157},               // OS
+    {2510, 2358}, {2510, 2359},                             // Train
+    {2507, 2019}, {2507, 2020}, {2507, 2021}, {2507, 2022}, // LL
+    {2515, 2260}, {2515, 2262},                             // SO
+    {2505, 2225}, {2505, 2222}, {2505, 2224}, {2505, 2227}, // EH
+    {2516, 2246}, {2516, 2247}, {2516, 2244},               // WW
+    {2508, 2307},                                           // MM
+    {2511, 2304}, {2511, 2306}, {2511, 2055},               // QB
+    {2501, 2284}, {2501, 2283}, {2501, 2285},               // BW
+    {2502, 2033},                                           // NB
+    {2506, 2336}, {2506, 2338}, {2506, 2337},               // KW
+    {2513, 2320}, {2513, 2321}, {2513, 2318},               // SF
+    {2503, 2069},                                           // BB
+    {2504, 2115}, {2504, 2109},                             // CTP
+    {2500, 2277}, {2500, 2278}, {2500, 2127},               // AO
+    {2514, 2096},                                           // SB
+    {2512, 2141},                                           // RM
+};
 
 inline constexpr bool is_vanilla_game_item(std::int64_t ap_item_id_)
 {
@@ -450,12 +430,7 @@ inline constexpr int kBossLocBase = 1000;
 // observed play but scans the whole table, so accept the full range.
 inline constexpr int kMaxBossIndex = 0x1C;
 
-[[nodiscard]] inline constexpr bool is_boss_index(int boss_index)
-{
-    return boss_index >= 0 && boss_index <= kMaxBossIndex;
-}
-
-// Precondition: is_boss_index(boss_index).
+// Precondition: 0 <= boss_index <= kMaxBossIndex.
 [[nodiscard]] inline constexpr int boss_location_slot(int boss_index)
 {
     return kBossLocBase + boss_index;

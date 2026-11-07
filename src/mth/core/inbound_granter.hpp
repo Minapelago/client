@@ -37,6 +37,7 @@ class InboundGranter
     [[nodiscard]] bool handled(int index) const;
     bool offer(int game_type, int index);
     void on_applied(int receipt);
+    void consume(int index); // record the receipt as granted and stage the save
 
     IItemGranter &granter_;
     ApState &state_;

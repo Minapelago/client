@@ -1,15 +1,38 @@
 #include "mth/core/ap/slot_data.hpp"
 
 #include <cstddef>
+#include <optional>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
-#include "mth/core/fountain_lamps.hpp"
+#include "mth/core/goal_state.hpp"
 #include "mth/core/stat_cap_state.hpp" // clamp_max_stat_level
 #include "pal/pal_log.hpp"
 
 namespace mth
 {
+namespace
+{
+// The integer entries of the generator index array at `key`, or nullopt when the key is absent or not
+// an array. Out-of-range indices are kept for the mask builders to skip, and warned about here.
+std::optional<std::vector<int>> generator_indices(const nlohmann::json &data, const char *key)
+{
+    if (!data.is_object())
+        return std::nullopt;
+    const auto it = data.find(key);
+    if (it == data.end() || !it->is_array())
+        return std::nullopt;
+    std::vector<int> indices;
+    for (const auto &v : *it)
+        if (v.is_number_integer())
+            indices.push_back(v.get<int>());
+    for (int i : indices)
+        if (i < 0 || i >= kGeneratorCount)
+            pal::logf(pal::LogLevel::Warn, "%s: ignoring out-of-range generator index %d (valid 0..%d)", key, i, kGeneratorCount - 1);
+    return indices;
+}
+} // namespace
 
 SlotDataConfig parse_slot_data(const nlohmann::json &data)
 {
@@ -48,34 +71,18 @@ SlotDataConfig parse_slot_data(const nlohmann::json &data)
         pal::logf(pal::LogLevel::Warn, "goal_bosses: absent while goal_config selects the boss goal; the goal falls back to %d and cannot be reached",
                   cfg.goal_bosses);
 
-    std::vector<int> lit_gen_indices;
-    if (obj)
-        if (auto lg = data.find("lit_generators"); lg != data.end() && lg->is_array())
-            for (const auto &v : *lg)
-                if (v.is_number_integer())
-                    lit_gen_indices.push_back(v.get<int>());
-    for (int i : lit_gen_indices)
-        if (i < 0 || i >= kGeneratorLampCount)
-            pal::logf(pal::LogLevel::Warn, "lit_generators: ignoring out-of-range lamp index %d (valid 0..%d)", i, kGeneratorLampCount - 1);
-    cfg.lit_generator_lamp_mask = lit_mask_from_indices(lit_gen_indices);
+    if (const auto lit = generator_indices(data, "lit_generators"))
+        cfg.lit_generator_lamp_mask = lit_mask_from_indices(*lit);
 
     // Absent means every generator counts, so a missing key must not collapse to an empty array.
-    if (obj)
-        if (auto bg = data.find("broken_generators"); bg != data.end() && bg->is_array())
-        {
-            std::vector<int> broken_indices;
-            for (const auto &v : *bg)
-                if (v.is_number_integer())
-                    broken_indices.push_back(v.get<int>());
-            for (int i : broken_indices)
-                if (i < 0 || i >= kGeneratorLampCount)
-                    pal::logf(pal::LogLevel::Warn, "broken_generators: generator index %d is outside the expected 0..%d", i, kGeneratorLampCount - 1);
-            cfg.broken_generator_mask = broken_generator_mask(broken_indices);
-            // An empty (or wholly unusable) list is legitimate under any other goal.
-            if (cfg.broken_generator_mask == 0 && cfg.goal_config == kGoalGenerators)
-                pal::logf(pal::LogLevel::Warn,
-                          "broken_generators: lists no generator that counts while goal_config selects the generator goal; the goal cannot be reached");
-        }
+    if (const auto broken = generator_indices(data, "broken_generators"))
+    {
+        cfg.broken_generator_mask = broken_generator_mask(*broken);
+        // An empty (or wholly unusable) list is legitimate under any other goal.
+        if (cfg.broken_generator_mask == 0 && cfg.goal_config == kGoalGenerators)
+            pal::logf(pal::LogLevel::Warn,
+                      "broken_generators: lists no generator that counts while goal_config selects the generator goal; the goal cannot be reached");
+    }
 
     // Locations the apworld pruned from the pool (dungeons the generator goal never requires); absent means nothing was pruned.
     if (obj)

@@ -246,7 +246,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
     // anything, since it only ever turns enforcement on. The gamestate test is not part of the policy and
     // stays either way.
     const bool console = g_console_override.load();
-    const bool armed = console || (state.authenticated() && slot_ok && state.mirror_switch_rando());
+    const bool armed = console || (state.authenticated() && slot_ok && state.config().mirror_switch_rando);
     const bool in_hub = mod::current_game_state() == kGameStateMirrorHub && mod::room_index() != kGameStateMirrorHubPathToAO;
     const bool wanted = armed && in_hub;
     // Standing among the switches with nothing driving them is indistinguishable from a broken clamp, and
@@ -257,7 +257,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok)
     {
         g_logged_inert = true;
         pal::logf(pal::LogLevel::Debug, "switches: not driving these switches (authed=%d bound_save=%d seed_flag=%d console=%d) (#28)",
-                  state.authenticated() ? 1 : 0, slot_ok ? 1 : 0, state.mirror_switch_rando() ? 1 : 0, console ? 1 : 0);
+                  state.authenticated() ? 1 : 0, slot_ok ? 1 : 0, state.config().mirror_switch_rando ? 1 : 0, console ? 1 : 0);
     }
     // The probe only reads, so it needs the walk alone; driving the switches also needs somewhere to keep
     // them. Reported once, because otherwise the feature is simply absent on a build whose modding API is

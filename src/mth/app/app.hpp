@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -17,7 +18,6 @@
 #include "mth/core/inbound_granter.hpp"
 #include "mth/core/login_prefs.hpp"
 #include "mth/core/save/ap_save_bundle.hpp"
-#include "mth/core/scout_registry.hpp"
 #include "mth/core/session_policy.hpp"
 #include "mth/core/upgrade_state.hpp"
 #include "mth/core/wallet_cap_state.hpp"
@@ -166,7 +166,6 @@ class App
     bool first_tick_logged_{false};
     SessionPolicy policy_;
     UpgradeState upgrades_;
-    WalletCapState wallet_;
     ConnectResendGate resend_gate_; // fires flush() once per (re)connection
     // Last-used connect target, auto-filled into the login window next launch. connect() runs on the
     // overlay render thread and only stashes what was attempted; the commit happens on the game thread
@@ -175,7 +174,7 @@ class App
     LoginPrefs login_prefs_;
     std::string pending_server_;
     std::string pending_slot_;
-    mth::ScoutRegistry scout_registry_;
+    std::map<int, mth::ScoutInfo> scouts_; // game thread only, by collection slot
     std::unique_ptr<OverlayRoot> overlay_root_;
 };
 

@@ -301,9 +301,7 @@ TEST_CASE("bundle reads and stages without rewriting a container it declined to 
     REQUIRE_FALSE(store.load("S", "2").has_value()); // not usable
     // Checking locations stages without writing, so ordinary play cannot reach the container at all.
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\n"));
-    REQUIRE(store.flush());
     REQUIRE(store.stage_state("S", "2", "c 1\nc 2\nc 3\n"));
-    REQUIRE(store.flush());
     REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip.bak"));
 
     // The container must still carry the unrecognised blob verbatim.
@@ -497,7 +495,6 @@ TEST_CASE("bundle writes no container for state alone", "[bundle]")
     Fixture f;
     auto store = f.make();
     REQUIRE(store.stage_state("S", "2", "c 1\n"));
-    REQUIRE(store.flush());
     REQUIRE_FALSE(std::filesystem::exists(f.saves / "ap_S_2.zip"));
 }
 
