@@ -24,4 +24,21 @@ bool patch_code(void *addr, const void *bytes, std::size_t len);
     return v >= 0x10000 && v < 0x0000800000000000;
 }
 
+// The T at byte offset off from base. No checks of its own: validate base before calling.
+template <class T> [[nodiscard]] T &at(void *base, std::ptrdiff_t off) noexcept
+{
+    return *reinterpret_cast<T *>(static_cast<char *>(base) + off);
+}
+
+template <class T> [[nodiscard]] const T &at(const void *base, std::ptrdiff_t off) noexcept
+{
+    return *reinterpret_cast<const T *>(static_cast<const char *>(base) + off);
+}
+
+// Same, for a base held as an address (a resolved game global).
+template <class T> [[nodiscard]] T &at(std::uintptr_t base, std::ptrdiff_t off) noexcept
+{
+    return *reinterpret_cast<T *>(base + off);
+}
+
 } // namespace pal

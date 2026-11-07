@@ -22,10 +22,11 @@
 #include "mth/features/mirror_switches.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "mth/features/room_tracker.hpp"
+#include "mth/features/save_takeover.hpp"
 #include "mth/features/trap_hooks.hpp"
+#include "mth/features/upgrades.hpp"
 #include "mth/ui/overlay_root.hpp"
 #include "mth_version.h"
-#include "pal/pal_game.hpp"
 #include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
@@ -79,7 +80,7 @@ class AppTickSink final : public mth::IGameEvents
 namespace mth
 {
 
-App::App() : bundle_store_(pal::mod_save_dir(), {pal::log_dir(), pal::mod_save_dir()}), login_prefs_(pal::log_dir() / "login.prefs")
+App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), login_prefs_(pal::log_dir() / "login.prefs")
 {
     pal::logf(pal::LogLevel::Info, "mth-apclient %.*s (%.*s) loaded", static_cast<int>(version::string.size()), version::string.data(),
               static_cast<int>(version::hash.size()), version::hash.data());
@@ -164,7 +165,7 @@ App::App() : bundle_store_(pal::mod_save_dir(), {pal::log_dir(), pal::mod_save_d
     // Suppress the game's default new-file starting kit while AP-authenticated (AP supplies it instead).
     // SaveSlot::Clear also fires on profile-menu / save-load, so the zero can hit an existing save's upgrade
     // fields; re-arm the upgrade re-apply each time we suppress so drive_tick refills them from AP state.
-    pal::install_newfile_kit_suppressor(
+    install_newfile_kit_suppressor(
         [this]
         {
             if (!state_.authenticated())
@@ -190,7 +191,7 @@ App::~App()
     ready_.store(false);   // stop ticking before any member is torn down
     pal::overlay_stop();   // removes render/input hooks + stops drawing first
     overlay_root_.reset(); // then unregister the log observer
-    pal::remove_newfile_kit_suppressor();
+    remove_newfile_kit_suppressor();
     hooks_.reset(); // GameHooks (tick source) stops first inside the manager, then feature hooks
     grants_.reset();
     room_tracker_.reset();
@@ -240,7 +241,7 @@ void App::drive_tick()
             pal::logf(pal::LogLevel::Debug, "upgrades: drive_tick gate -> %s counts=[%d,%d,%d,%d,%d]", w, c[0], c[1], c[2], c[3], c[4]);
         }
     }
-    if (upgrades_.dirty() && tracker_ && pal::apply_upgrades(upgrades_.counts(), tracker_->player()))
+    if (upgrades_.dirty() && tracker_ && apply_upgrades(upgrades_.counts(), tracker_->player()))
         upgrades_.mark_applied(); // applied to the save; retry next tick if player not ready yet
     // Vials are deliberately outside the dirty gate: the game re-seeds their bitfield mid-run, so the AP
     // count has to be re-asserted every tick rather than once per change (#171).

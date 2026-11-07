@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // Word/bit split for the 254-entry modifier ("cheat") bitmask, stored as four 64-bit words covering
-// indices 0..63, 64..127, 128..191 and 192..255. Both PAL implementations write this same layout
+// indices 0..63, 64..127, 128..191 and 192..255. Both builds use this same layout
 // into the runtime mask at CheatManager+0x20, so the shift lives here once rather than twice.
 //
 // cheat_mask_set and cheat_mask_test are total over int: an idx outside 0..255, the full range the

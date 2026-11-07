@@ -1,9 +1,10 @@
-// Capacity-upgrade grants. Every SaveSlot/Player/CombatCore offset below is the same on both builds, and
-// the one platform seam (the g_saveManager deref) is already behind pal::active_save_slot.
+#include "mth/features/upgrades.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <utility>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
@@ -12,6 +13,11 @@
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
+
+// Capacity-upgrade grants and the new-file starting-kit suppression. Every SaveSlot/Player/CombatCore
+// offset below is the same on both builds, and the one platform seam (the g_saveManager deref) is
+// already behind pal::active_save_slot.
 
 // ---- capacity upgrades ----
 // Per-upgrade SaveSlot field (index Magic,Health,Spark,Vial,Trinket); popcount = capacity. These
@@ -39,37 +45,39 @@ constexpr std::ptrdiff_t kSparkMaxOff = 0x230;  // CombatCore, int
 // Vials are NOT written here: their SaveSlot bitfield offset drifts between builds (#97), so App drives
 // them through the offset-free mod-API accessors (mod::set_player_max_vials) instead.
 
-bool g_up_resolved = false;
-bool g_up_ok = false;
 bool g_up_layout_ok = true; // cleared permanently if an upgrade field reads out of its plausible domain
-std::uintptr_t g_up_save_manager = 0;
 
-float fld_f(void *base, std::ptrdiff_t off)
+// ---- new-file starting-kit suppression. MSVC's SaveSlot layout matches Linux on depot_1875582, so the
+// upgrade-field offsets are identical (verified against Windows SetItemCollected's case map). ----
+constexpr std::ptrdiff_t kSparkUpgOff = 0x54;    // Spark_Upgrade   (itemType 0x46)
+constexpr std::ptrdiff_t kHealthUpgOff = 0x130;  // Health_Upgrade  (itemType 0x45) bitfield (0xff = 8)
+constexpr std::ptrdiff_t kMagicUpgOff = 0x170;   // Magic_Upgrade   (itemType 0x44)
+constexpr std::ptrdiff_t kTrinketUpgOff = 0x950; // Trinket_Upgrade (itemType 0x48)
+// Vials are not zeroed here: their bitfield offset drifts (#97). App::enforce_vial_capacity re-asserts the
+// AP vial count via the mod API each tick instead, which also survives the run re-seeding the base (#171).
+
+std::function<bool()> g_kit_suppress = nullptr;
+[[clang::no_destroy]] pal::ScopedHook g_kit_hook;
+void (*g_orig_save_slot_clear)(void *, bool) = nullptr;
+void repl_save_slot_clear(void *self, bool arg)
 {
-    return *reinterpret_cast<float *>(static_cast<char *>(base) + off);
+    if (g_orig_save_slot_clear)
+        g_orig_save_slot_clear(self, arg);
+    if (self == nullptr || !g_kit_suppress || !g_kit_suppress())
+        return;
+    pal::logf(pal::LogLevel::Info, "newfile-kit: zeroing default upgrades (health=%#x magic=%#x spark=%#x trinket=%#x)",
+              pal::at<std::uint32_t>(self, kHealthUpgOff), pal::at<std::uint32_t>(self, kMagicUpgOff), pal::at<std::uint32_t>(self, kSparkUpgOff),
+              pal::at<std::uint32_t>(self, kTrinketUpgOff));
+    pal::at<std::uint32_t>(self, kHealthUpgOff) = 0;
+    pal::at<std::uint32_t>(self, kMagicUpgOff) = 0;
+    pal::at<std::uint32_t>(self, kSparkUpgOff) = 0;
+    pal::at<std::uint32_t>(self, kTrinketUpgOff) = 0;
 }
-int fld_i(void *base, std::ptrdiff_t off)
-{
-    return *reinterpret_cast<int *>(static_cast<char *>(base) + off);
-}
+
 } // namespace
 
-namespace pal
+namespace mth
 {
-
-// True once the g_saveManager global resolves. Resolves and caches on first
-// call; apply_upgrades no-ops if false.
-static bool upgrades_available()
-{
-    if (g_up_resolved)
-        return g_up_ok;
-    g_up_resolved = true;
-    g_up_save_manager = resolve_game_symbol(mth::sym::save_manager);
-    g_up_ok = g_up_save_manager != 0;
-    if (!g_up_ok)
-        logf(LogLevel::Warn, "upgrades: g_saveManager unresolved; feature disabled");
-    return g_up_ok;
-}
 
 bool apply_upgrades(const int *counts, void *player)
 {
@@ -84,11 +92,6 @@ bool apply_upgrades(const int *counts, void *player)
         pal::logf(pal::LogLevel::Debug, "upgrades: apply -> %s (player=%p slot=%p counts=[%d,%d,%d,%d,%d])", what, player, slot, counts[0], counts[1],
                   counts[2], counts[3], counts[4]);
     };
-    if (!upgrades_available())
-    {
-        trace(1, "skip: symbols unavailable", nullptr);
-        return false;
-    }
     if (player == nullptr)
     {
         trace(2, "skip: player null", nullptr);
@@ -106,7 +109,7 @@ bool apply_upgrades(const int *counts, void *player)
         trace(6, "skip: PlayerUpdateStats unavailable", nullptr);
         return false;
     }
-    void *slot = active_save_slot(g_up_save_manager);
+    void *slot = pal::active_save_slot();
     if (slot == nullptr)
     {
         trace(4, "skip: active SaveSlot* null", slot);
@@ -116,7 +119,7 @@ bool apply_upgrades(const int *counts, void *player)
     // faulted on exactly this load, walking a freed Player). Bail rather than treat it as absent: UpdateStats
     // and the magic-pool writes below still go through that same pointer. Leaves the counts dirty, so the
     // next tick retries. A genuinely null CombatCore is the separate case the pool restores already handle.
-    void *cc = *reinterpret_cast<void **>(static_cast<char *>(player) + kCombatCoreOff);
+    void *cc = pal::at<void *>(player, kCombatCoreOff);
     if (cc != nullptr && !pal::pointer_looks_valid(cc))
     {
         trace(5, "skip: CombatCore* invalid", slot);
@@ -126,38 +129,64 @@ bool apply_upgrades(const int *counts, void *player)
     // Capture the missing amount of each pool before the grant; UpdateStats raises the max but never
     // refills current, so we restore the same missing afterward (new_current = new_max - old_missing).
     // No-op on a resend (max unchanged) and a fresh AP file starts full (missing 0).
-    const float hp_missing = cc != nullptr ? fld_f(cc, kHpMaxOff) - fld_f(cc, kHpCurOff) : 0.0f;
-    const int magic_missing = fld_i(player, kMagicMaxOff) - fld_i(player, kMagicCurOff);
-    const int spark_missing = cc != nullptr ? fld_i(cc, kSparkMaxOff) - fld_i(slot, kSparkCurOff) : 0;
+    const float hp_missing = cc != nullptr ? pal::at<float>(cc, kHpMaxOff) - pal::at<float>(cc, kHpCurOff) : 0.0f;
+    const int magic_missing = pal::at<int>(player, kMagicMaxOff) - pal::at<int>(player, kMagicCurOff);
+    const int spark_missing = cc != nullptr ? pal::at<int>(cc, kSparkMaxOff) - pal::at<int>(slot, kSparkCurOff) : 0;
 
     for (int i = 0; i < 5; ++i)
     {
-        if (i == mth::kVialUpgradeIndex)
+        if (i == kVialUpgradeIndex)
             continue; // vials are applied via the mod API (offset-free), not this bitfield
-        auto &fieldv = *reinterpret_cast<std::uint32_t *>(static_cast<char *>(slot) + kUpgradeFieldOff[i]);
-        if (!mth::upgrade_field_in_domain(i, fieldv))
+        auto &fieldv = pal::at<std::uint32_t>(slot, kUpgradeFieldOff[i]);
+        if (!upgrade_field_in_domain(i, fieldv))
         {
-            g_up_layout_ok = false; // upgrades_available()-adjacent guard now short-circuits future calls
-            logf(LogLevel::Warn, "upgrades: kUpgradeFieldOff[%d] read=0x%x exceeds cap %d; offset may have shifted, upgrade writes DISABLED", i, fieldv,
-                 mth::kUpgradeCaps[i]);
+            g_up_layout_ok = false; // short-circuits every later call
+            pal::logf(pal::LogLevel::Warn, "upgrades: kUpgradeFieldOff[%d] read=0x%x exceeds cap %d; offset may have shifted, upgrade writes DISABLED", i,
+                      fieldv, kUpgradeCaps[i]);
             return false;
         }
-        fieldv = mth::upgrade_field_value(i, counts[i], fieldv);
+        fieldv = upgrade_field_value(i, counts[i], fieldv);
     }
     mod::player_update_stats(); // recompute live maxima from the owned-bit fields; acts on the live player
 
     if (cc != nullptr)
     {
-        const float hp_max = fld_f(cc, kHpMaxOff);
-        *reinterpret_cast<float *>(static_cast<char *>(cc) + kHpCurOff) = std::clamp(hp_max - hp_missing, 0.0f, hp_max);
-        const int spark_max = fld_i(cc, kSparkMaxOff);
-        *reinterpret_cast<int *>(static_cast<char *>(slot) + kSparkCurOff) = std::clamp(spark_max - spark_missing, 0, spark_max);
+        const float hp_max = pal::at<float>(cc, kHpMaxOff);
+        pal::at<float>(cc, kHpCurOff) = std::clamp(hp_max - hp_missing, 0.0f, hp_max);
+        const int spark_max = pal::at<int>(cc, kSparkMaxOff);
+        pal::at<int>(slot, kSparkCurOff) = std::clamp(spark_max - spark_missing, 0, spark_max);
     }
-    const int magic_max = fld_i(player, kMagicMaxOff);
-    *reinterpret_cast<int *>(static_cast<char *>(player) + kMagicCurOff) = std::clamp(magic_max - magic_missing, 0, magic_max);
+    const int magic_max = pal::at<int>(player, kMagicMaxOff);
+    pal::at<int>(player, kMagicCurOff) = std::clamp(magic_max - magic_missing, 0, magic_max);
 
     trace(0, "applied", slot);
     return true;
 }
 
-} // namespace pal
+bool install_newfile_kit_suppressor(std::function<bool()> should_suppress)
+{
+    const std::uintptr_t addr = pal::resolve_game_symbol(sym::save_slot_clear);
+    if (addr == 0)
+    {
+        pal::logf(pal::LogLevel::Warn, "newfile-kit: SaveSlot::Clear not resolved; starting-kit suppression disabled");
+        return false;
+    }
+    g_kit_suppress = std::move(should_suppress);
+    g_kit_hook = pal::ScopedHook(addr, &repl_save_slot_clear, &g_orig_save_slot_clear);
+    if (!g_kit_hook.installed())
+    {
+        pal::logf(pal::LogLevel::Error, "newfile-kit: failed to hook SaveSlot::Clear");
+        g_kit_suppress = nullptr;
+        return false;
+    }
+    pal::logf(pal::LogLevel::Info, "newfile-kit: hooked SaveSlot::Clear at %p", g_kit_hook.target());
+    return true;
+}
+
+void remove_newfile_kit_suppressor()
+{
+    g_kit_hook.reset();
+    g_kit_suppress = nullptr;
+}
+
+} // namespace mth

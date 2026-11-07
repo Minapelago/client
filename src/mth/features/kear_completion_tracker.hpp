@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 namespace mth
 {
 class ApState;
@@ -13,12 +11,7 @@ class ApState;
 class KearCompletionTracker
 {
   public:
-    KearCompletionTracker();
-
     void evaluate(const ApState &state); // game thread, per tick while authenticated
-
-  private:
-    std::uintptr_t save_manager_{0};
 };
 
 } // namespace mth

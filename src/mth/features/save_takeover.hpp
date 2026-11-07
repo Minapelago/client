@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <utility>
@@ -71,5 +72,8 @@ class SaveTakeover
     std::string seed_;
     std::string slot_;
 };
+
+// The mod's own save directory: a "saves" subdirectory of the same base pal::log_dir() resolves to.
+std::filesystem::path mod_save_dir();
 
 } // namespace mth

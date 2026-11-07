@@ -43,7 +43,7 @@ inline constexpr int game_item_type(std::int64_t ap_item_id_)
 
 // Capacity upgrades: vanilla itemTypes 68..72 (Magic, Health, Spark, Vial, Trinket), stored as a
 // popcount of owned bits per type, so OnPickupDone can't stack them. UpgradeState counts receipts and
-// pal::apply_upgrades sets that many bits; the granter skips them. Cap = vanilla location count.
+// apply_upgrades (mth/features/upgrades.cpp) sets that many bits; the granter skips them. Cap = vanilla location count.
 inline constexpr int kUpgradeItemBase = 68;
 inline constexpr int kUpgradeCount = 5;
 inline constexpr int kUpgradeCaps[kUpgradeCount] = {10, 18, 4, 10, 6}; // Magic, Health, Spark, Vial, Trinket (full-game counts)

@@ -14,18 +14,16 @@
 #include "mth/core/data/game_tables.hpp"
 #include "mth/core/rando_bridge.hpp"
 #include "mth/core/scout_registry.hpp"
+#include "mth/features/shop_menu.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
-#include "pal/pal_module.hpp"
+#include "pal/pal_mem.hpp"
 
 namespace
 {
 
 mth::RandoBridge *g_bridge = nullptr;
 mth::ScoutRegistry *g_scout = nullptr;
-
-// g_saveManager global (resolves the active SaveSlot); needed to neutralize the kear grant under kear_rando.
-std::uintptr_t g_save_manager = 0;
 
 // Kear key gating (slot_data "kear_rando" mode), game-thread only. Neutralize runs in every AP mode: a
 // kear pickup is an AP location, so the free key its collect would grant is always cancelled (the server
@@ -62,11 +60,11 @@ bool g_kear_offsets_ok = true;
 
 [[nodiscard]] int &pickup_loc_idx(void *self)
 {
-    return *reinterpret_cast<int *>(static_cast<char *>(self) + mth::layout::kPickupLocIdxOff);
+    return pal::at<int>(self, mth::layout::kPickupLocIdxOff);
 }
 [[nodiscard]] int &pickup_item_type(void *self)
 {
-    return *reinterpret_cast<int *>(static_cast<char *>(self) + mth::layout::kPickupItemTypeOff);
+    return pal::at<int>(self, mth::layout::kPickupItemTypeOff);
 }
 
 // A kear collect records its bit in the SaveSlot+0x1f0 bitfield, which doubles as the usable-key count
@@ -79,14 +77,14 @@ void neutralize_kear_grant(int loc_idx, void *slot, std::uint64_t before)
 {
     if (!g_kear_offsets_ok)
         return;
-    auto &bits = *reinterpret_cast<std::uint64_t *>(static_cast<char *>(slot) + mth::layout::kSaveKearBitsOff);
+    auto &bits = pal::at<std::uint64_t>(slot, mth::layout::kSaveKearBitsOff);
     const std::uint64_t new_bits = bits & ~before;
     if (new_bits == 0)
         return; // bit already collected; no key was granted, nothing to neutralize
 
-    int &spent = *reinterpret_cast<int *>(static_cast<char *>(slot) + mth::layout::kSaveKearSpentOff);
+    int &spent = pal::at<int>(slot, mth::layout::kSaveKearSpentOff);
     void *player = g_kear_player_getter ? g_kear_player_getter() : nullptr;
-    int *player_spent = player != nullptr ? reinterpret_cast<int *>(static_cast<char *>(player) + mth::layout::kPlayerKearSpentOff) : nullptr;
+    int *player_spent = player != nullptr ? &pal::at<int>(player, mth::layout::kPlayerKearSpentOff) : nullptr;
     if (!kear_fields_plausible(spent) || (player_spent != nullptr && !kear_fields_plausible(*player_spent)))
     {
         g_kear_offsets_ok = false;
@@ -111,15 +109,15 @@ void neutralize_kear_grant(int loc_idx, void *slot, std::uint64_t before)
 // authoritative usable-key source (no Player mirror exists - see neutralize_kear_grant).
 void reconcile_kear_keys()
 {
-    if (!g_kear_suppress || g_save_manager == 0)
+    if (!g_kear_suppress)
         return;
-    void *slot = pal::active_save_slot(g_save_manager);
+    void *slot = pal::active_save_slot();
     if (slot == nullptr)
         return;
     if (!g_kear_offsets_ok)
         return;
-    const std::uint64_t bits = *reinterpret_cast<std::uint64_t *>(static_cast<char *>(slot) + mth::layout::kSaveKearBitsOff);
-    int &spent = *reinterpret_cast<int *>(static_cast<char *>(slot) + mth::layout::kSaveKearSpentOff);
+    const std::uint64_t bits = pal::at<std::uint64_t>(slot, mth::layout::kSaveKearBitsOff);
+    int &spent = pal::at<int>(slot, mth::layout::kSaveKearSpentOff);
     if (!kear_fields_plausible(spent))
     {
         g_kear_offsets_ok = false;
@@ -143,14 +141,14 @@ void reconcile_kear_keys()
 // once-per-receipt guard is the InboundGranter's ApSaveState marker.
 bool credit_kear_key(void *player)
 {
-    if (!g_kear_offsets_ok || g_save_manager == 0 || player == nullptr)
+    if (!g_kear_offsets_ok || player == nullptr)
         return false;
-    void *slot = pal::active_save_slot(g_save_manager);
+    void *slot = pal::active_save_slot();
     if (slot == nullptr)
         return false;
 
-    int &save_spent = *reinterpret_cast<int *>(static_cast<char *>(slot) + mth::layout::kSaveKearSpentOff);
-    int &player_spent = *reinterpret_cast<int *>(static_cast<char *>(player) + mth::layout::kPlayerKearSpentOff);
+    int &save_spent = pal::at<int>(slot, mth::layout::kSaveKearSpentOff);
+    int &player_spent = pal::at<int>(player, mth::layout::kPlayerKearSpentOff);
     if (!kear_fields_plausible(save_spent) || !kear_fields_plausible(player_spent))
     {
         g_kear_offsets_ok = false;
@@ -177,9 +175,9 @@ bool apply_native_collected(int loc_idx)
         return false;
 
     // Kear (kind 8): capture the bitfield before the write so neutralization targets exactly the new bit.
-    const bool neutralize = g_kear_neutralize && kind == kKearStorageKind && g_save_manager != 0;
-    void *slot = neutralize ? pal::active_save_slot(g_save_manager) : nullptr;
-    const std::uint64_t before = slot != nullptr ? *reinterpret_cast<std::uint64_t *>(static_cast<char *>(slot) + mth::layout::kSaveKearBitsOff) : 0;
+    const bool neutralize = g_kear_neutralize && kind == kKearStorageKind;
+    void *slot = neutralize ? pal::active_save_slot() : nullptr;
+    const std::uint64_t before = slot != nullptr ? pal::at<std::uint64_t>(slot, mth::layout::kSaveKearBitsOff) : 0;
 
     mod::set_item_collected(loc_idx, true, nullptr, nullptr);
 
@@ -218,7 +216,7 @@ void enforce_checked_native_bits()
 {
     if (g_bridge == nullptr || !mod::set_item_collected_available() || !mth::tables::collection_resolved())
         return;
-    if (g_save_manager == 0 || pal::active_save_slot(g_save_manager) == nullptr)
+    if (pal::active_save_slot() == nullptr)
         return; // no active save yet (e.g. connected at the title screen); retry next tick
 
     const std::set<int> *checked = g_bridge->checked_slots();
@@ -283,23 +281,23 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     // c70=-1` reset never runs and c70 sticks on the checked AP weapon location, leaving the merchant
     // uninteractable. Clear it here - after g_orig_pickup_init built the pickup (above), so the forge asset is
     // resolved and the merchant can't re-spawn with itemType 0 (clearing c70 before that spawn freezes).
-    void *wsave = g_save_manager != 0 ? pal::active_save_slot(g_save_manager) : nullptr;
-    const int weapon_idx = wsave != nullptr ? *reinterpret_cast<int *>(static_cast<char *>(wsave) + mth::layout::kSaveWeaponIndexOff) : -1;
+    void *wsave = pal::active_save_slot();
+    const int weapon_idx = wsave != nullptr ? pal::at<int>(wsave, mth::layout::kSaveWeaponIndexOff) : -1;
     if (weapon_idx >= 0 && loc_idx == weapon_idx)
     {
-        *reinterpret_cast<int *>(static_cast<char *>(wsave) + mth::layout::kSaveWeaponIndexOff) = -1;
-        *reinterpret_cast<unsigned char *>(static_cast<char *>(wsave) + mth::layout::kSaveWeaponMoldLatchOff) = 0;
+        pal::at<int>(wsave, mth::layout::kSaveWeaponIndexOff) = -1;
+        pal::at<unsigned char>(wsave, mth::layout::kSaveWeaponMoldLatchOff) = 0;
         pal::logf(pal::LogLevel::Info, "legovich: forge pickup loc=%d -> reset weapon mold to re-arm merchant (#67)", loc_idx);
     }
 
     // Respawn suppression (fallback): already-checked location; tear down via QueueDestroy.
     if (mod::queue_destroy_available() && g_bridge->is_checked(loc_idx))
     {
-        void *ent = *reinterpret_cast<void **>(static_cast<char *>(self) + mth::layout::kComponentEntityOff);
-        void *world = ent != nullptr ? *reinterpret_cast<void **>(static_cast<char *>(ent) + mth::layout::kEntityWorldOff) : nullptr;
+        void *ent = pal::at<void *>(self, mth::layout::kComponentEntityOff);
+        void *world = ent != nullptr ? pal::at<void *>(ent, mth::layout::kEntityWorldOff) : nullptr;
         if (ent != nullptr && world != nullptr)
         {
-            *reinterpret_cast<unsigned *>(static_cast<char *>(self) + mth::layout::kPickupKilledFlagOff) |= 1u; // killed flag
+            pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) |= 1u; // killed flag
             mod::queue_destroy_entity(world, ent, false);
             pal::logf(pal::LogLevel::Info, "outbound: already-checked AP location locIdx=%d -> QueueDestroy", loc_idx);
         }
@@ -315,7 +313,7 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     // this is the only suppression left when QueueDestroy is unresolved.
     if (g_bridge->is_ap_location(loc_idx) && !g_bridge->is_checked(loc_idx) &&
         mth::tables::is_item_keyed_collected_kind(mth::tables::native_location_kind(loc_idx)))
-        *reinterpret_cast<unsigned char *>(static_cast<char *>(self) + mth::layout::kPickupSaveTrackedFlagOff) = 0;
+        pal::at<unsigned char>(self, mth::layout::kPickupSaveTrackedFlagOff) = 0;
 
     // The dummy-itemType redirect is deferred to the PickupOnPickup hook, not done here: the Pickup ctor's
     // surprise-spawn emerge block runs AFTER Init and reads s_rItems[storedType].kind to decide whether to
@@ -392,16 +390,16 @@ int on_shop_stock(int loc_idx)
 // (#94). Only the stock count is corrected. A slot with no AP-location levels is left untouched.
 void on_shop_item_refresh(void *shop_item)
 {
-    void *def = *reinterpret_cast<void **>(static_cast<char *>(shop_item) + mth::layout::kShopItemDefOff);
+    void *def = pal::at<void *>(shop_item, mth::layout::kShopItemDefOff);
     if (def == nullptr)
         return;
 
     void *first_unbought = nullptr;
     int remaining = 0; // AP levels not yet checked
     bool any_ap = false;
-    for (void *v = def; v != nullptr; v = *reinterpret_cast<void **>(static_cast<char *>(v) + mth::layout::kShopDefNextOff))
+    for (void *v = def; v != nullptr; v = pal::at<void *>(v, mth::layout::kShopDefNextOff))
     {
-        const int loc_idx = *reinterpret_cast<int *>(static_cast<char *>(v) + mth::layout::kShopDefLocOff);
+        const int loc_idx = pal::at<int>(v, mth::layout::kShopDefLocOff);
         const int state = loc_idx >= 0 ? on_shop_stock(loc_idx) : 0;
         if (state != 0)
             any_ap = true;
@@ -414,7 +412,7 @@ void on_shop_item_refresh(void *shop_item)
         }
     }
 
-    auto *stock = reinterpret_cast<int *>(static_cast<char *>(shop_item) + mth::layout::kShopItemStockOff);
+    auto *stock = &pal::at<int>(shop_item, mth::layout::kShopItemStockOff);
     if (first_unbought == nullptr)
         *stock = 0; // all levels bought -> sold out
     else if (any_ap)
@@ -441,7 +439,7 @@ void on_shop_set_cursor(void *shop_menu)
     // "unknown" and is re-requested on the next cursor move; the server dedups the scout+hint, so this
     // retry-until-resolved is intentional and cheap.
     std::vector<int> unknown;
-    pal::shop_enumerate_locs(
+    mth::shop_enumerate_locs(
         shop_menu,
         [](int loc, void *ctx)
         {
@@ -453,15 +451,15 @@ void on_shop_set_cursor(void *shop_menu)
     if (!unknown.empty())
         g_bridge->request_scouts(unknown);
 
-    const int loc = pal::shop_selected_loc(shop_menu);
+    const int loc = mth::shop_selected_loc(shop_menu);
     if (loc < 0)
         return;
     const mth::ScoutInfo *si = g_scout->lookup(loc);
     if (si == nullptr)
         return; // not scouted yet / not AP -> leave vanilla text
 
-    void *name_w = pal::shop_name_widget(shop_menu);
-    void *desc_w = pal::shop_desc_widget(shop_menu);
+    void *name_w = mth::shop_name_widget(shop_menu);
+    void *desc_w = mth::shop_desc_widget(shop_menu);
     if (name_w != nullptr)
     {
         const std::uint32_t color = mth::banner_color("item_id", "", si->item_flags, 0, si->is_self);
@@ -469,7 +467,7 @@ void on_shop_set_cursor(void *shop_menu)
         // SetCursor rebinds the widget's palette on every cursor move, so this re-applies each
         // time. SetColor last: it raises the dirty flag that forces the re-resolve. Only on a
         // successful swap, since an untouched palette would resolve color to entry 0.
-        if (pal::shop_apply_name_palette(name_w, color))
+        if (mth::shop_apply_name_palette(name_w, color))
             mod::set_text_color(name_w, color);
     }
     if (desc_w != nullptr)
@@ -493,10 +491,8 @@ void on_shop_set_cursor(void *shop_menu)
 // SaveSlot+0xc70: the WeaponMerchant's pending weapon-upgrade index (-1 = none / save unavailable).
 [[nodiscard]] int current_weapon_index()
 {
-    if (g_save_manager == 0)
-        return -1;
-    void *slot = pal::active_save_slot(g_save_manager);
-    return slot != nullptr ? *reinterpret_cast<int *>(static_cast<char *>(slot) + mth::layout::kSaveWeaponIndexOff) : -1;
+    void *slot = pal::active_save_slot();
+    return slot != nullptr ? pal::at<int>(slot, mth::layout::kSaveWeaponIndexOff) : -1;
 }
 
 // Set while Shop::IsOutOfStock runs (game thread; a depth counter survives any re-entry). Lets the
@@ -555,15 +551,11 @@ LocationHooks::LocationHooks(RandoBridge &bridge, ScoutRegistry *scout)
     if (!mod::text_color_available() || !mod::palette_api_available())
         pal::logf(pal::LogLevel::Warn, "LocationHooks: text color/palette entries unavailable; shop item names stay vanilla");
 
-    g_save_manager = pal::resolve_game_symbol(sym::save_manager);
-    if (g_save_manager == 0)
-        pal::logf(pal::LogLevel::Warn, "LocationHooks: g_saveManager not resolved; kear_rando key-grant neutralization disabled");
-
     pickup_init_ = pal::ScopedHook(sym::pickup_init, &repl_pickup_init, &g_orig_pickup_init, "Pickup::Init");
     shop_oos_ = pal::ScopedHook(sym::shop_is_out_of_stock, &repl_shop_is_out_of_stock, &g_orig_shop_oos, "Shop::IsOutOfStock");
     pal::install_shop_purchase_hook(&on_shop_buy);
-    pal::install_shop_flatten_hook(&on_shop_flatten);
-    pal::install_shop_text_hook(&on_shop_set_cursor);
+    install_shop_flatten_hook(&on_shop_flatten);
+    install_shop_text_hook(&on_shop_set_cursor);
     mod::install_item_collected_hook(&on_item_collected_query);
     mod::install_pickup_on_pickup_hook(&on_pickup_collected);
     mod::install_shop_item_refresh_hook(&on_shop_item_refresh);
@@ -605,8 +597,8 @@ LocationHooks::~LocationHooks()
     mod::remove_item_collected_hook();
     mod::remove_pickup_on_pickup_hook();
     mod::remove_shop_item_refresh_hook();
-    pal::remove_shop_text_hook();
-    pal::remove_shop_flatten_hook();
+    remove_shop_text_hook();
+    remove_shop_flatten_hook();
     pal::remove_shop_purchase_hook();
     // g_bridge/g_scout nulled before the ScopedHook members remove the detours; the repls null-check them.
     g_bridge = nullptr;

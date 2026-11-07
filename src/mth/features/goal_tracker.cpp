@@ -5,32 +5,28 @@
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_state.hpp"
 #include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_symbols.hpp"
 #include "mth/core/goal_state.hpp"
 #include "mth/core/rando_bridge.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
-#include "pal/pal_module.hpp"
+#include "pal/pal_mem.hpp"
 
 namespace mth
 {
 
 GoalTracker::GoalTracker(RandoBridge &bridge) : bridge_(bridge)
 {
-    save_manager_ = pal::resolve_game_symbol(sym::save_manager);
-    if (save_manager_ == 0)
-        pal::logf(pal::LogLevel::Warn, "goal: g_saveManager not resolved; goal tracking disabled");
 }
 
 void GoalTracker::evaluate(const ApState &state)
 {
-    if (save_manager_ == 0 || disabled_)
+    if (disabled_)
         return;
-    void *slot = pal::active_save_slot(save_manager_);
+    void *slot = pal::active_save_slot();
     if (slot == nullptr)
         return;
 
-    const unsigned char clear_flag = *reinterpret_cast<unsigned char *>(static_cast<char *>(slot) + layout::kSaveGameClearOff);
+    const unsigned char clear_flag = pal::at<unsigned char>(slot, layout::kSaveGameClearOff);
     if (!game_clear_flag_in_domain(clear_flag))
     {
         disabled_ = true;
@@ -43,7 +39,7 @@ void GoalTracker::evaluate(const ApState &state)
     bosses_needed_ = state.goal_bosses();
     game_cleared_ = clear_flag != 0;
     broken_mask_ = state.broken_generator_mask();
-    gens_done_ = generators_done(*reinterpret_cast<std::uint64_t *>(static_cast<char *>(slot) + layout::kSaveGeneratorBitsOff), broken_mask_);
+    gens_done_ = generators_done(pal::at<std::uint64_t>(slot, layout::kSaveGeneratorBitsOff), broken_mask_);
     bosses_done_ = std::popcount(mod::player_bosses_defeated());
 
     if (goal_met(config_, gens_needed_, bosses_needed_, game_cleared_, gens_done_, bosses_done_))

@@ -53,7 +53,7 @@ class TrapHooks
     TrapState state_;
     float last_room_time_ = 0.0f;
     bool timing_source_logged_ = false;
-    // Indices whose lift-write failed (pal::set_runtime_modifier returned false meaning "not right
+    // Indices whose lift-write failed (set_runtime_modifier returned false meaning "not right
     // now"); TrapState has already dropped them, and tick() retries these on the next call.
     std::vector<int> pending_off_;
     // Modifier indices arm() has already warned about failing to arm (NotReady). A set rather than

@@ -25,7 +25,6 @@ class BossTracker
     void prime(const void *slot, const char *why, std::uint64_t mask);
 
     RandoBridge &bridge_;
-    std::uintptr_t save_manager_{0};
     const void *prev_slot_{nullptr};
     std::uint64_t prev_mask_{0};
     bool primed_{false};

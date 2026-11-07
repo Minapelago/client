@@ -55,7 +55,6 @@ class AbilityHooks
     bool ticket_machine_suppress_{false}; // else it is a live check, and the seed sets its price
     bool warned_seed_withheld_{false};
     std::uint32_t ticket_machine_seed_{0};
-    std::uintptr_t g_save_manager_{0};
 };
 
 } // namespace mth

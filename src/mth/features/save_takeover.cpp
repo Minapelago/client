@@ -3,15 +3,55 @@
 #include "mod/mod_api.hpp"
 #include "mth/core/data/component_types.hpp"
 #include "mth/core/data/game_layout.hpp"
+#include "mth/core/data/game_symbols.hpp"
 #include "mth/features/scene_walk.hpp"
 #include "pal/pal_game.hpp"
+#include "pal/pal_layout.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
+#include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace mth
 {
 namespace
 {
+// SaveManager::WriteSaveData(bool): the flush trigger for mod-owned saves. Observed only, never
+// suppressed; the mod's own SetSaveWriteEnabled(false) (via the native MinaModAPI) is what
+// actually keeps saveData.yc untouched during a takeover. It fires on the game's own save cadence.
+std::function<void()> g_save_request_fn;
+[[clang::no_destroy]] pal::ScopedHook g_save_request_hook;
+void (*g_orig_write_save_data)(void *, bool) = nullptr;
+
+void repl_write_save_data(void *self, bool flag)
+{
+    if (g_save_request_fn)
+        g_save_request_fn();
+    if (g_orig_write_save_data)
+        g_orig_write_save_data(self, flag);
+}
+
+bool install_save_request_hook(std::function<void()> on_save)
+{
+    g_save_request_fn = std::move(on_save);
+    const std::uintptr_t addr = pal::resolve_game_symbol(sym::save_manager_write_save_data);
+    if (addr == 0)
+    {
+        pal::logf(pal::LogLevel::Warn, "takeover: SaveManager::WriteSaveData not resolved; mod saves will not flush");
+        g_save_request_fn = nullptr;
+        return false;
+    }
+    g_save_request_hook = pal::ScopedHook(addr, &repl_write_save_data, &g_orig_write_save_data);
+    if (!g_save_request_hook.installed())
+    {
+        pal::logf(pal::LogLevel::Error, "takeover: failed to hook SaveManager::WriteSaveData");
+        g_save_request_fn = nullptr;
+        return false;
+    }
+    pal::logf(pal::LogLevel::Info, "takeover: hooked SaveManager::WriteSaveData at %p", g_save_request_hook.target());
+    return true;
+}
+
 // The vanilla slot staged into. Arbitrary once writes are suppressed; fixed so the takeover is
 // deterministic. Its on-disk contents are never modified.
 constexpr unsigned int kScratchSlot = 0;
@@ -19,18 +59,14 @@ constexpr unsigned int kScratchSlot = 0;
 // The scene walk hands back the object's primary pointer on both platforms, so the shared mth::layout
 // offsets apply directly - unlike the old detour, where MSVC passed a base subobject that needed a
 // per-platform adjust.
-int *menu_field(void *menu, std::ptrdiff_t off)
-{
-    return reinterpret_cast<int *>(static_cast<char *>(menu) + off);
-}
-
+//
 // A menu parked outside the range its own dispatch tables accept is either mid-construction or a
 // mis-based pointer; writing through the latter corrupts whatever the offsets land on.
 bool menu_drivable(void *menu)
 {
     if (!pal::pointer_looks_valid(menu))
         return false;
-    const int state = *menu_field(menu, layout::kProfileMenuStateOff);
+    const int state = pal::at<int>(menu, layout::kProfileMenuStateOff);
     if (state >= layout::kProfileMenuStateMin && state <= layout::kProfileMenuStateMax)
         return true;
     static bool warned = false;
@@ -45,7 +81,7 @@ bool menu_drivable(void *menu)
 
 int menu_state(void *menu)
 {
-    return menu_drivable(menu) ? *menu_field(menu, layout::kProfileMenuStateOff) : -1;
+    return menu_drivable(menu) ? pal::at<int>(menu, layout::kProfileMenuStateOff) : -1;
 }
 
 // The live slot holds the player's run only while gameplay owns it. Returning to the title runs
@@ -64,19 +100,70 @@ bool menu_request_state(void *menu, int state)
 {
     if (!menu_drivable(menu))
         return false;
-    int *current = menu_field(menu, layout::kProfileMenuStateOff);
-    int *next = menu_field(menu, layout::kProfileMenuNextStateOff);
+    int *current = &pal::at<int>(menu, layout::kProfileMenuStateOff);
+    int *next = &pal::at<int>(menu, layout::kProfileMenuNextStateOff);
     if (*current == state || *next == state)
         return true;
     *next = state;
-    *reinterpret_cast<unsigned char *>(static_cast<char *>(menu) + layout::kProfileMenuStateReqOff) = 1;
+    pal::at<unsigned char>(menu, layout::kProfileMenuStateReqOff) = 1;
     return true;
 }
+// Resolved on first use rather than eagerly: on Windows each resolve is a full .text signature scan,
+// and the staging path runs on a game frame.
+std::uintptr_t g_takeover_slot_clear = 0;
+std::uintptr_t g_takeover_init_gamestate = 0;
+bool g_takeover_syms_resolved = false;
+
+void resolve_takeover_symbols()
+{
+    if (g_takeover_syms_resolved)
+        return;
+    g_takeover_syms_resolved = true;
+    g_takeover_slot_clear = pal::resolve_game_symbol(sym::save_slot_clear);
+    g_takeover_init_gamestate = pal::resolve_game_symbol(sym::save_slot_init_gamestate);
+    if (pal::save_manager_global() == 0 || g_takeover_slot_clear == 0 || g_takeover_init_gamestate == 0)
+        pal::logf(pal::LogLevel::Warn, "takeover: g_saveManager/SaveSlot::Clear/InitGamestate not all resolved; a new save cannot be staged");
+}
+
+// Runs the game's own new-file init on the vanilla SaveSlot array element for `slot`, not the live
+// working slot: the launch copies array over working, so a working-slot write here is discarded.
+// Clear(false) then InitGamestate(); true would be the NG+ cycle. Deliberately does not persist;
+// WriteSaveData is not on the launch path. False if the symbols or the slot address do not resolve.
+bool init_new_save_file(unsigned int slot)
+{
+    resolve_takeover_symbols();
+    if (pal::save_manager_global() == 0 || g_takeover_slot_clear == 0 || g_takeover_init_gamestate == 0)
+    {
+        pal::logf(pal::LogLevel::Warn, "takeover: SaveSlot::Clear/InitGamestate or g_saveManager not resolved; cannot init a new save");
+        return false;
+    }
+    const std::uintptr_t master = pal::at<std::uintptr_t>(pal::save_manager_global(), pal::layout::kSaveManagerMasterOff);
+    if (master == 0)
+    {
+        pal::logf(pal::LogLevel::Warn, "takeover: save master table not resolved; cannot init a new save");
+        return false;
+    }
+    void *file_slot = reinterpret_cast<void *>(master + layout::kSaveSlotArrayOff + static_cast<std::uintptr_t>(slot) * layout::kSaveSlotStride);
+    if (!pal::pointer_looks_valid(file_slot))
+    {
+        pal::logf(pal::LogLevel::Warn, "takeover: save slot %u address looks invalid; cannot init a new save", slot);
+        return false;
+    }
+    auto clear_fn = reinterpret_cast<void (*)(void *, bool)>(g_takeover_slot_clear);
+    auto init_fn = reinterpret_cast<void (*)(void *)>(g_takeover_init_gamestate);
+    pal::logf(pal::LogLevel::Info, "takeover: initializing new save file (array slot %u at %p)", slot, file_slot);
+    // false = fresh file, what the vanilla profile-select new-file sites pass; true is the NG+ cycle.
+    // Going through the real address re-triggers the newfile-kit suppressor, so AP's starting kit wins.
+    clear_fn(file_slot, false);
+    init_fn(file_slot);
+    return true;
+}
+
 } // namespace
 
 SaveTakeover::SaveTakeover(ApSaveBundleStore &store, IdentityFn identity) : store_(store), identity_(std::move(identity))
 {
-    if (!pal::install_save_request_hook([this] { on_game_save_requested(); }))
+    if (!install_save_request_hook([this] { on_game_save_requested(); }))
         pal::logf(pal::LogLevel::Warn, "takeover: save-request hook unavailable; mod saves will not flush");
     if (!mod::install_input_suppress_hooks())
         pal::logf(pal::LogLevel::Warn, "takeover: input hooks unavailable; a held confirm can still reach the file-select menu");
@@ -85,7 +172,13 @@ SaveTakeover::SaveTakeover(ApSaveBundleStore &store, IdentityFn identity) : stor
 SaveTakeover::~SaveTakeover()
 {
     mod::remove_input_suppress_hooks();
-    pal::remove_save_request_hook();
+    g_save_request_hook.reset();
+    g_save_request_fn = nullptr;
+}
+
+std::filesystem::path mod_save_dir()
+{
+    return pal::log_dir() / "saves";
 }
 
 bool SaveTakeover::begin()
@@ -222,7 +315,7 @@ void SaveTakeover::drive_profile_menu(void *menu)
     if (menu_state(menu) != layout::kProfileMenuBrowseState)
         return;
 
-    *menu_field(menu, layout::kProfileMenuSlotOff) = static_cast<int>(kScratchSlot);
+    pal::at<int>(menu, layout::kProfileMenuSlotOff) = static_cast<int>(kScratchSlot);
     if (!stage_save() || !menu_request_state(menu, layout::kProfileMenuLaunchState))
     {
         fail("could not stage the save or drive the profile menu");
@@ -247,7 +340,7 @@ bool SaveTakeover::stage_save()
         pal::logf(pal::LogLevel::Info, "takeover: staged existing mod save into slot %u", kScratchSlot);
         return true;
     }
-    if (!pal::init_new_save_file(kScratchSlot))
+    if (!init_new_save_file(kScratchSlot))
     {
         pal::logf(pal::LogLevel::Error, "takeover: failed to initialize a new save");
         return false;

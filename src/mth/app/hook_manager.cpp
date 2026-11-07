@@ -4,7 +4,6 @@
 
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/game_symbols.hpp"
 #include "mth/core/game_events.hpp"
 #include "mth/core/modifier_config.hpp"
 #include "mth/core/rando_bridge.hpp"
@@ -29,10 +28,10 @@
 #include "mth/features/sewer_cat_gate.hpp"
 #include "mth/features/status_menu_caps.hpp"
 #include "mth/features/title_gate.hpp"
+#include "mth/features/weapon_grants.hpp"
 #include "mth/hooks/game_hooks.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
-#include "pal/pal_module.hpp"
 
 namespace mth
 {
@@ -46,7 +45,7 @@ HookManager::HookManager(IGameEvents &events, RandoBridge &rando, ScoutRegistry 
     boss_tracker_ = std::make_unique<BossTracker>(rando);
     // Loading a save is the vendor lockout's only reset point, which scopes the latch to a save rather
     // than to the process.
-    pal::set_save_loaded(
+    set_save_loaded(
         [this]
         {
             boss_tracker_->on_save_loaded();
@@ -82,9 +81,6 @@ HookManager::HookManager(IGameEvents &events, RandoBridge &rando, ScoutRegistry 
     // reverse-order destruction then tears that detour down before the takeover it calls into.
     save_takeover_ = std::make_unique<SaveTakeover>(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); });
     title_gate_ = std::make_unique<TitleGate>(connected, [this] { return save_takeover_->begin(); });
-    save_manager_ = pal::resolve_game_symbol(sym::save_manager);
-    if (save_manager_ == 0)
-        pal::logf(pal::LogLevel::Warn, "starter: g_saveManager not resolved; the starter-swap clear and the weapon ownership clamp are disabled");
 }
 
 HookManager::~HookManager()
@@ -105,7 +101,7 @@ HookManager::~HookManager()
     save_takeover_.reset();
     fountain_lamp_hooks_.reset();
     goal_tracker_.reset();
-    pal::set_save_loaded(nullptr); // the callback captures this; drop it before the tracker dies
+    set_save_loaded(nullptr); // the callback captures this; drop it before the tracker dies
     boss_tracker_.reset();
     kear_completion_.reset();
     location_hooks_.reset();
@@ -179,7 +175,7 @@ void HookManager::tick(ApState &state, SessionPolicy &policy, int save_game_slot
     ability_hooks_->set_enforce(armed && slot_ok);
     // Both calls write durable save fields, so both take authed as well: slot_ok on its own is true while
     // offline and is not the bound-save test.
-    pal::clear_starter_weapon_swap(save_manager_, authed, slot_ok);
+    clear_starter_weapon_swap(authed, slot_ok);
     enforce_weapon_grants(state, authed, slot_ok);
     // Mirrors End shortcut switches (#28). Durable like the two above, so it takes slot_ok for the same
     // reason; it reads authed off the state itself.
@@ -245,7 +241,7 @@ void HookManager::enforce_weapon_grants(ApState &state, bool authed, bool slot_o
     std::uint32_t authorized[kWeaponFamilyCount]{};
     for (int fam = 0; fam < kWeaponFamilyCount; ++fam)
         authorized[fam] = tally.owned_mask(fam);
-    pal::enforce_weapon_ownership(save_manager_, authorized, authed, slot_ok);
+    enforce_weapon_ownership(authorized, authed, slot_ok);
     // The clamp corrects the bits after the fact; the chest itself still offers all three starters and still
     // equips the pick, so it is demoted as well. Both extra conditions are load-bearing: the weapon-change
     // mode lists owned weapons only, so demoting before a grant lands, or on a save AP does not own, leaves

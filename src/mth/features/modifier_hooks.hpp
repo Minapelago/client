@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <set>
 #include <string>
@@ -11,7 +12,12 @@
 namespace mth
 {
 
-// Owns the modifier PAL hooks and the enforcement policy. Installs unconditionally when modifiers
+// Runs `cb` on the game thread when a save slot is activated with a real load; title/profile-menu
+// re-activations do not fire it. Rides the ActivateSaveSlot hook ModifierHooks installs, so it is inert
+// while modifiers are unavailable. Null clears it.
+void set_save_loaded(std::function<void()> cb);
+
+// Owns the modifier hooks (modifier_hooks.cpp) and the enforcement policy. Installs unconditionally when modifiers
 // are available; the hooks no-op while disarmed. Armed from construction, so an AP session enforces
 // the deny list without any configuration; `modifiers unlock` is the manual override.
 class ModifierHooks

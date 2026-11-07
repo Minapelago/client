@@ -4,20 +4,15 @@
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
-#include "mth/core/data/game_symbols.hpp"
 #include "mth/core/rando_bridge.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
-#include "pal/pal_module.hpp"
 
 namespace mth
 {
 
 BossTracker::BossTracker(RandoBridge &bridge) : bridge_(bridge)
 {
-    save_manager_ = pal::resolve_game_symbol(sym::save_manager);
-    if (save_manager_ == 0)
-        pal::logf(pal::LogLevel::Warn, "boss: g_saveManager not resolved; boss-defeat checks disabled");
 }
 
 void BossTracker::prime(const void *slot, const char *why, std::uint64_t mask)
@@ -37,12 +32,10 @@ void BossTracker::on_save_loaded()
 
 void BossTracker::poll()
 {
-    if (save_manager_ == 0)
-        return;
     // PlayerGetBossesDefeated reads *(g_saveManager+0x18)+0x280 with no null guard, so it faults
     // wherever no slot is bound. No gameplay happens without a slot, so dropping the baseline here
     // loses no kill: it just re-primes on the next bind.
-    const void *slot = pal::active_save_slot(save_manager_);
+    const void *slot = pal::active_save_slot();
     if (slot == nullptr)
     {
         primed_ = false;

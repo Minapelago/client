@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // Build-specific struct offsets/strides for the Linux game binary, shared by the hook
-// modules. Windows divergence stays in the PAL impls. Where a runtime self-check guards
+// modules. Offsets whose value differs on Windows are in pal/pal_layout.hpp. Where a runtime self-check guards
 // an offset, it is noted; update this file first when the game updates.
 namespace mth::layout
 {

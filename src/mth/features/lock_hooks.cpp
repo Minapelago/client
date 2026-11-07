@@ -7,18 +7,16 @@
 
 #include "mod/mod_api.hpp"
 #include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_symbols.hpp"
 #include "mth/core/data/game_tables.hpp"
 #include "mth/features/name_key.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
-#include "pal/pal_module.hpp"
+#include "pal/pal_mem.hpp"
 
 namespace
 {
 
 mth::LockRegistry *g_locks = nullptr;
-std::uintptr_t g_save_manager = 0;
 bool g_seed_logged = false;
 
 std::set<int> g_logged_lock_slots;  // identity log dedup (game-thread only)
@@ -37,7 +35,7 @@ std::set<int> g_logged_chain_slots; // identity log dedup for KeyBlockChain (gam
         return -1;
 
     // Fast path: PairLock locks have the ctor-cached, already-warp-resolved slot.
-    const int cached = *reinterpret_cast<int *>(static_cast<char *>(self) + mth::layout::kKeyBlockSlotOff);
+    const int cached = pal::at<int>(self, mth::layout::kKeyBlockSlotOff);
     if (cached >= 0)
         return cached;
 
@@ -60,14 +58,14 @@ void open_key_block(void *self)
     std::uint64_t key = 0;
     const int slot = resolve_effective_slot(self, &key);
     if (g_logged_lock_slots.insert(slot).second)
-        pal::logf(pal::LogLevel::Debug, "KeyBlock slot=%d (raw +0x2d0=%d key=0x%llx)", slot,
-                  *reinterpret_cast<int *>(static_cast<char *>(self) + mth::layout::kKeyBlockSlotOff), static_cast<unsigned long long>(key));
+        pal::logf(pal::LogLevel::Debug, "KeyBlock slot=%d (raw +0x2d0=%d key=0x%llx)", slot, pal::at<int>(self, mth::layout::kKeyBlockSlotOff),
+                  static_cast<unsigned long long>(key));
 
     if (slot < 0 || !mod::queue_destroy_available() || !g_locks->is_removed(slot))
         return;
 
-    void *ent = *reinterpret_cast<void **>(static_cast<char *>(self) + mth::layout::kComponentEntityOff);
-    void *world = ent != nullptr ? *reinterpret_cast<void **>(static_cast<char *>(ent) + mth::layout::kEntityWorldOff) : nullptr;
+    void *ent = pal::at<void *>(self, mth::layout::kComponentEntityOff);
+    void *world = ent != nullptr ? pal::at<void *>(ent, mth::layout::kEntityWorldOff) : nullptr;
     if (ent != nullptr && world != nullptr)
         mod::queue_destroy_entity(world, ent, false);
 }
@@ -80,7 +78,7 @@ void open_key_block(void *self)
     if (!mth::tables::collection_resolved() || self == nullptr)
         return -1;
 
-    void *sp = *reinterpret_cast<void **>(static_cast<char *>(self) + mth::layout::kChainSpawnPointOff);
+    void *sp = pal::at<void *>(self, mth::layout::kChainSpawnPointOff);
     const std::uint64_t key = mth::object_name_key(sp); // 0 for a chain that gates no SpawnPoint
     if (key == 0)
         return -1;
@@ -96,18 +94,17 @@ void open_chain(void *base)
 
     const int slot = resolve_chain_slot(base);
     if (g_logged_chain_slots.insert(slot).second)
-        pal::logf(pal::LogLevel::Debug, "KeyBlockChain slot=%d (cur state=%d)", slot,
-                  *reinterpret_cast<int *>(static_cast<char *>(base) + mth::layout::kChainStateCurOff));
+        pal::logf(pal::LogLevel::Debug, "KeyBlockChain slot=%d (cur state=%d)", slot, pal::at<int>(base, mth::layout::kChainStateCurOff));
 
     if (slot < 0 || !g_locks->is_removed(slot))
         return;
 
     // Already opening/killed? leave the native transition alone (idempotent).
-    if (*reinterpret_cast<int *>(static_cast<char *>(base) + mth::layout::kChainStateCurOff) == mth::layout::kChainOpenState)
+    if (pal::at<int>(base, mth::layout::kChainStateCurOff) == mth::layout::kChainOpenState)
         return;
 
-    *reinterpret_cast<int *>(static_cast<char *>(base) + mth::layout::kChainStateReqOff) = mth::layout::kChainOpenState;
-    *reinterpret_cast<unsigned char *>(static_cast<char *>(base) + mth::layout::kChainStatePendingOff) = 1;
+    pal::at<int>(base, mth::layout::kChainStateReqOff) = mth::layout::kChainOpenState;
+    pal::at<unsigned char>(base, mth::layout::kChainStatePendingOff) = 1;
 }
 
 // No room holds anywhere near this many of one type, so a larger count means the list is not what we
@@ -153,9 +150,6 @@ LockHooks::LockHooks()
     g_locks = &locks_;
     tables::resolve();
 
-    g_save_manager = pal::resolve_game_symbol(sym::save_manager);
-    if (g_save_manager == 0)
-        pal::logf(pal::LogLevel::Warn, "LockHooks: g_saveManager not resolved; lock removal disabled");
     if (!mod::queue_destroy_available())
         pal::logf(pal::LogLevel::Warn, "LockHooks: WorldQueueDestroyEntity unavailable; live lock removal disabled");
 }
@@ -189,9 +183,9 @@ void LockHooks::sweep_locks()
 // Idempotent; runs each tick in the pre-World::Update window. Replicates KeyBlock::SetSaveUnlocked's math.
 void LockHooks::seed_removed_locks()
 {
-    if (g_save_manager == 0 || !tables::collection_resolved())
+    if (!tables::collection_resolved())
         return;
-    void *saveslot = pal::active_save_slot(g_save_manager);
+    void *saveslot = pal::active_save_slot();
     if (saveslot == nullptr)
         return; // no active save (e.g. title/menus)
 
@@ -199,7 +193,7 @@ void LockHooks::seed_removed_locks()
     if (slots.empty())
         return;
 
-    auto &field = *reinterpret_cast<std::uint64_t *>(static_cast<char *>(saveslot) + layout::kSaveBlockUnlockOff);
+    auto &field = pal::at<std::uint64_t>(saveslot, layout::kSaveBlockUnlockOff);
     for (int slot : slots)
     {
         if (slot < 0 || slot >= layout::kLocationCount)

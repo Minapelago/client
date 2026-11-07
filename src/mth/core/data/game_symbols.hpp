@@ -60,7 +60,7 @@ inline constexpr const char *save_manager = "g_saveManager";
 // Called only at new-file creation, so a post-hook field zero never touches a progressed save.
 inline constexpr const char *save_slot_clear = "_ZN8SaveSlot5ClearEb"; // SaveSlot::Clear(bool)
 // SaveSlot::InitGamestate(): finishes new-file setup after Clear. Both are called on the same slot
-// address; see mth::layout::kSaveSlotArrayOff and the per-platform master-table offset.
+// address; see mth::layout::kSaveSlotArrayOff and pal::layout::kSaveManagerMasterOff.
 inline constexpr const char *save_slot_init_gamestate = "_ZN8SaveSlot13InitGamestateEv"; // SaveSlot::InitGamestate()
 
 // SaveManager::WriteSaveData(bool): the "persist a slot" chokepoint, hooked observe-only as the
