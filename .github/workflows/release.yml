@@ -11,7 +11,7 @@ name: release
 # So the only manual step in either lane is merging a PR. The stable lane's extra-files write the
 # graduated version back into the beta manifest, which restarts the beta counter from the new base.
 #
-# Nothing is tagged or published unless the test lane is green.
+# Nothing is tagged or published unless the ci gate (format check, tests, both builds) is green.
 
 on:
   push:
@@ -25,37 +25,14 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-env:
-  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite"
-
 jobs:
-  tests:
-    name: Native tests (release gate)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with: { submodules: recursive, fetch-depth: 0 }
-      - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang ninja-build
-      - name: Cache vcpkg binaries
-        uses: actions/cache@v6
-        with:
-          path: .vcpkg-cache
-          key: vcpkg-native-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
-          restore-keys: |
-            vcpkg-native-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
-      - name: Bootstrap vcpkg
-        run: ./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-      - name: Configure
-        run: cmake --preset clang-x64-tests
-      - name: Build
-        run: cmake --build --preset clang-x64-tests
-      - name: Test
-        run: ctest --preset clang-x64-tests --output-on-failure
+  ci:
+    name: Gate
+    uses: ./.github/workflows/ci.yml
 
   beta:
     name: Maintain the prerelease PR
-    needs: tests
+    needs: ci
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -101,93 +78,17 @@ jobs:
           manifest-file: .github/release-manifest.json
           skip-github-release: true
 
-  build-linux:
-    name: Build mod (Linux x86_64, Frida)
+  build:
+    name: Build
     needs: beta
     if: needs.beta.outputs.released == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with: { submodules: recursive, fetch-depth: 0 }
-      - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang ninja-build
-      - name: Cache vcpkg binaries
-        uses: actions/cache@v6
-        with:
-          path: .vcpkg-cache
-          key: vcpkg-linux-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
-          restore-keys: |
-            vcpkg-linux-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
-      - name: Bootstrap vcpkg
-        run: ./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-      - name: Configure
-        run: cmake --preset clang-x64-release
-      - name: Check the build picked up the release tag
-        run: |
-          built=$(cat build/clang-x64-release/version.txt)
-          want="${TAG#v}"
-          if [ "$built" != "$want" ]; then
-            echo "::error::drop-in stamped $built but the release is $want"
-            exit 1
-          fi
-        env:
-          TAG: ${{ needs.beta.outputs.tag }}
-      - name: Build
-        run: cmake --build --preset clang-x64-release
-      - name: Upload mod drop-in (Linux)
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-linux
-          path: build/clang-x64-release/mods/
-          if-no-files-found: error
-
-  build-windows:
-    name: Build mod (Windows clang-cl x64)
-    needs: beta
-    if: needs.beta.outputs.released == 'true'
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v7
-        with: { submodules: recursive, fetch-depth: 0 }
-      - name: Set up MSVC environment (x64)
-        uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
-        with:
-          arch: x64
-      - name: Cache vcpkg binaries
-        uses: actions/cache@v6
-        with:
-          path: .vcpkg-cache
-          key: vcpkg-winclangcl-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
-          restore-keys: |
-            vcpkg-winclangcl-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
-      - name: Bootstrap vcpkg
-        shell: cmd
-        run: external\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-      - name: Configure
-        run: cmake --preset clang-cl-x64-release
-      - name: Check the build picked up the release tag
-        shell: bash
-        run: |
-          built=$(cat build/clang-cl-x64-release/version.txt)
-          want="${TAG#v}"
-          if [ "$built" != "$want" ]; then
-            echo "::error::drop-in stamped $built but the release is $want"
-            exit 1
-          fi
-        env:
-          TAG: ${{ needs.beta.outputs.tag }}
-      - name: Build
-        run: cmake --build --preset clang-cl-x64-release
-      - name: Upload mod drop-in (Windows)
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-windows
-          path: build/clang-cl-x64-release/mods/
-          if-no-files-found: error
+    uses: ./.github/workflows/build.yml
+    with:
+      tag: ${{ needs.beta.outputs.tag }}
 
   publish:
     name: Attach the drop-ins to the release
-    needs: [beta, build-linux, build-windows]
+    needs: [beta, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -195,6 +96,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: release-*
       # Each artifact extracts to dist/<name>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform
       # so the release asset unpacks to an apclient/ drop-in folder.
       - name: Package drop-in zips

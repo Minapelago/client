@@ -1,0 +1,91 @@
+name: build
+
+# Reusable build of the mod drop-in for both platforms. The Linux leg also builds and runs the native
+# tests. Called by ci.yml for pull requests and by release.yml, which passes the release tag.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z). When set, the build must stamp that version and the artifact is named release-<platform> instead of mod-<platform>-<version>.
+        type: string
+        default: ""
+
+# Reuse vcpkg-built binaries across runs via a workspace-local file cache.
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite"
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, platform: linux, preset: clang-x64-release, label: "Build mod (Linux x86_64, Frida)" }
+          - { os: windows-2022, platform: windows, preset: clang-cl-x64-release, label: "Build mod (Windows clang-cl x64)" }
+    steps:
+      - uses: actions/checkout@v7
+        with: { submodules: recursive, fetch-depth: 0 }
+      - name: Install toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang ninja-build
+      - name: Set up MSVC environment (x64)
+        if: runner.os == 'Windows'
+        uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
+        with:
+          arch: x64
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v6
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+      # The release call skips the tests: release.yml already ran them through ci.yml.
+      - name: Configure and build tests
+        if: runner.os == 'Linux' && inputs.tag == ''
+        run: cmake --preset clang-x64-tests && cmake --build --preset clang-x64-tests
+      - name: Test
+        if: runner.os == 'Linux' && inputs.tag == ''
+        run: ctest --preset clang-x64-tests --output-on-failure --output-junit "$GITHUB_WORKSPACE/test-results.xml"
+      - name: Upload test results (JUnit)
+        if: always() && runner.os == 'Linux' && inputs.tag == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-native-tests
+          path: test-results.xml
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Check the build picked up the release tag
+        if: inputs.tag != ''
+        shell: bash
+        run: |
+          built=$(cat build/${{ matrix.preset }}/version.txt)
+          want="${TAG#v}"
+          if [ "$built" != "$want" ]; then
+            echo "::error::drop-in stamped $built but the release is $want"
+            exit 1
+          fi
+        env:
+          TAG: ${{ inputs.tag }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Name the artifact
+        id: artifact
+        shell: bash
+        run: |
+          if [ -n "$TAG" ]; then
+            echo "name=release-${{ matrix.platform }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=mod-${{ matrix.platform }}-$(cat build/${{ matrix.preset }}/version.txt)" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TAG: ${{ inputs.tag }}
+      - name: Upload mod drop-in
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: build/${{ matrix.preset }}/mods/
+          if-no-files-found: error

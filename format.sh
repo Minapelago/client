@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Format all first-party C/C++ sources in-place with clang-format.
-# Excludes external/ (submodules), build/, and the generated signature table.
-# Selection matches the CI format gate (.github/workflows/ci.yml) exactly.
+# Format all tracked C/C++ sources with clang-format. With no arguments it formats in place.
+# Arguments go straight to clang-format instead, so CI runs: bash format.sh --dry-run --Werror
+# external/ is a submodule and build/ is untracked, so git ls-files already leaves them out.
 #
 # Pin note: CI uses clang-format 21.1.8.
 #
@@ -17,16 +17,5 @@ if ! command -v clang-format >/dev/null 2>&1; then
     exit 1
 fi
 
-mapfile -d '' -t files < <(
-    git ls-files -z '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' '*.hxx' \
-        | grep -zvE '^(external|build)/|^src/pal/windows/win_signatures\.cpp$'
-)
-
-if [ "${#files[@]}" -eq 0 ]; then
-    echo "No C/C++ sources to format."
-    exit 0
-fi
-
-printf 'Formatting %d files with %s...\n' "${#files[@]}" "$(clang-format --version)"
-clang-format -i -- "${files[@]}"
-echo "Done."
+[ "$#" -gt 0 ] || set -- -i
+git ls-files -z '*.cpp' '*.hpp' '*.h' | xargs -0 clang-format "$@"

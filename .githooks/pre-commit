@@ -1,28 +1,18 @@
 #!/usr/bin/env bash
 #
-# Auto-format staged C/C++ sources with clang-format, then re-stage them.
-# Excludes external/ and build/. Enable with: git config core.hooksPath .githooks
+# Format the C/C++ sources with format.sh, then re-stage the staged ones.
+# Enable with: git config core.hooksPath .githooks
 # Bypass once with: git commit --no-verify
 #
 set -eu
 
-if ! command -v clang-format >/dev/null 2>&1; then
-    echo "pre-commit: clang-format not found on PATH; install it or commit with --no-verify." >&2
-    exit 1
-fi
+staged=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.cpp' '*.hpp' '*.h' | tr '\0' '\n')
 
-# Staged files (added/copied/modified/renamed), C/C++ only, excluding external/ and build/.
-files=$(git diff --cached --name-only --diff-filter=ACMR \
-    | grep -E '\.(c|cc|cpp|cxx|h|hpp|hxx)$' \
-    | grep -vE '^(external|build)/' || true)
+[ -n "$staged" ] || exit 0
 
-if [ -z "$files" ]; then
-    exit 0
-fi
+bash "$(git rev-parse --show-toplevel)/format.sh"
 
-printf '%s\n' "$files" | while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    clang-format -i -- "$f"
+printf '%s\n' "$staged" | while IFS= read -r f; do
     git add -- "$f"
 done
 

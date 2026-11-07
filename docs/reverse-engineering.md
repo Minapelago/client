@@ -90,8 +90,8 @@ byte pattern that matches the target function exactly once in `.text`.
 by hand. It holds one `kPatN` byte array and one `kMaskN` array (1 for a fixed
 byte, 0 for a wildcard) per entry, plus the `kEntries` rows with the symbol
 `name`, the kind (`Code` or `DataRef`), and for a `DataRef` the `disp_off` and
-`next_insn`. `format.sh` and CI skip this file, so
-formatting is not checked; running `clang-format -i` on it is optional.
+`next_insn`. `format.sh` and CI format-check this file like the rest of
+the tree, so run `bash format.sh` after editing it.
 
 `scripts/sig_mapping.json` records per-symbol RVAs and `DataRef` reference sites.
 It is a carving and validation input, not a runtime dependency.
