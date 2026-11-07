@@ -3,8 +3,8 @@
 #include <utility>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_state_ids.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/core/game/game_state_ids.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 

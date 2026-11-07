@@ -20,9 +20,7 @@ find_package(Threads REQUIRED)
 find_package(asio CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-# game_tables.cpp links PAL and is built into the module.
 file(GLOB_RECURSE _mthap_core_sources CONFIGURE_DEPENDS core/*.cpp)
-list(REMOVE_ITEM _mthap_core_sources "${CMAKE_CURRENT_SOURCE_DIR}/core/data/game_tables.cpp")
 
 add_library(mthap_core STATIC ${_mthap_core_sources} "${CMAKE_SOURCE_DIR}/src/mod/mod_api.cpp")
 
@@ -57,7 +55,6 @@ add_library(mthap MODULE
     ${_mthap_module_sources}
     ${_mthap_pal_sources}
     "${MTHAP_OVERLAY_FONT_SOURCE}"
-    core/data/game_tables.cpp
 )
 
 target_compile_definitions(mthap PRIVATE

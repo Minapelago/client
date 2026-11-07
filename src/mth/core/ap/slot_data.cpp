@@ -6,8 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "mth/core/goal_state.hpp"
-#include "mth/core/stat_cap_state.hpp" // clamp_max_stat_level
+#include "mth/core/rules/goal.hpp"
+#include "mth/core/rules/progression.hpp" // clamp_max_stat_level
 #include "pal/pal_log.hpp"
 
 namespace mth

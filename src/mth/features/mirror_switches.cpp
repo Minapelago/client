@@ -8,9 +8,9 @@
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/component_types.hpp"
-#include "mth/core/data/game_state_ids.hpp"
-#include "mth/features/scene_walk.hpp"
+#include "mth/core/game/component_types.hpp"
+#include "mth/core/game/game_state_ids.hpp"
+#include "mth/features/scene_gates/scene_walk.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 

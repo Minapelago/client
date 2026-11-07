@@ -1,12 +1,12 @@
 #pragma once
 
-#include "mth/core/lock_registry.hpp"
+#include "mth/core/rules/lock_registry.hpp"
 
 namespace mth
 {
 class ApState;
 
-// twin: mth/core/lock_registry.hpp (pure removed-set).
+// twin: mth/core/rules/lock_registry.hpp (pure removed-set).
 // Kear-lock removal for KeyBlock, KeyBlockChain and locked Chest. sweep() walks the world's own "KeyBlock"
 // and "KeyBlockChain" entity lists: it removes already-spawned single-block locks whose slot is in the
 // registry, and drives multi-block KeyBlockChain locks (a distinct class) to their open state. Both

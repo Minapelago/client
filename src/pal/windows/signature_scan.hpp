@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 
-#include "mth/core/sig_scan.hpp"
+#include "mth/core/game/sig_scan.hpp"
 
 namespace pal
 {

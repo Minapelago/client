@@ -8,8 +8,8 @@
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/game_layout.hpp"
-#include "mth/features/scene_walk.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/features/scene_gates/scene_walk.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"

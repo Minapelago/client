@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <functional>
 
-#include "mth/core/data/game_symbols.hpp"
+#include "mth/core/game/game_symbols.hpp"
 #include "pal/pal_layout.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"

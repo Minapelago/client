@@ -5,8 +5,8 @@
 
 #include "mth/core/ap/ap_events.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/rando_bridge.hpp"
-#include "mth/core/stat_cap_state.hpp"
+#include "mth/core/ap/rando_bridge.hpp"
+#include "mth/core/rules/progression.hpp"
 
 namespace
 {

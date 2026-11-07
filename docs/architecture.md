@@ -8,21 +8,22 @@ The game runs on a custom engine (`yc`), rendering with Vulkan on Linux and Dire
 
 ## Targets
 
-The build has a strict dependency direction (`core` <- `pal` <- `mthap`). Two targets hold our code; the PAL, the net link and the ImGui overlay sources are compiled straight into the module:
+The build has a strict dependency direction (`core` <- `pal` <- `mthap`). Two targets hold our code. The PAL, the net link, the feature hooks, the UI and the ImGui overlay sources are compiled straight into the module, and Dear ImGui itself is an object library (`mthap_imgui`) linked into it:
 
 | Target       | Kind       | Contents                                                                                                                                                                                                                       |
 | ------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mthap_core` | static lib | Pure, cross-platform logic: the wrapper over the game's mod API (`src/mod/`, with the live `MinaModAPI*` injected so tests can substitute a fake), AP state/coordinator, the location/item bridge, inbound granter, save state, ID mapping, startup config, enforcement policy, and the signature matcher. No OS/backend headers that require linking. |
-| `mthap`      | module     | The final shared object (`mod.so` / `mod.dll`). The composition root (`mth::App`) wires it all together, and owns the per-feature hooks under `src/mth/features/`.                                                             |
+| `mthap_core` | static lib | Pure, cross-platform logic under `src/mth/core/`, plus the wrapper over the game's mod API (`src/mod/`, with the live `MinaModAPI*` injected so tests can substitute a fake). It holds AP state and coordinator, the location/item bridge, inbound granter, save container and state, ID mapping, enforcement rules, the dev command parser and the signature matcher. No OS/backend headers that require linking. |
+| `mthap`      | module     | The final shared object (`mod.so` / `mod.dll`). The composition root (`mth::App`) wires it all together. It also holds the per-feature hooks (`src/mth/features/`), the AP link (`src/mth/net/`), the UI (`src/mth/ui/`) and the PAL (`src/pal/`). |
 
 `mth::App` owns the runtime. The logger is a PAL global behind `pal::ILog`, which tests swap with
 `pal::set_default_log`, so the core can be unit-tested without a real platform. The hook engine
 (`pal::install_hook` / `pal::remove_hook`) and the overlay (`pal::overlay_start` / `pal::overlay_stop`)
 are plain functions implemented once per platform.
 
-The unit tests link `mthap_core`, and additionally compile in the Linux file-log
-and certificate-store PAL sources plus `features/death_hooks.cpp` to exercise them directly. That
-makes the test lane Linux-only: it does not build on Windows.
+The unit tests (`mthap_unit_tests`) link `mthap_core`, and additionally compile in the Linux
+file-log and certificate-store PAL sources plus `features/death_hooks.cpp` and `net/deathlink.cpp`
+to exercise them directly. That makes the test lane Linux-only: it does not build on Windows. The
+`clang-x64-tests` preset inherits `clang-x64-debug`, so a test build also builds the module.
 
 ## Loading
 
@@ -53,8 +54,8 @@ Hooks target specific game functions, resolved differently per platform behind a
 - **Windows**: the shipping PE is stripped, so there is no name to resolve. Addresses come from
   the mod API's `GetSymAddr` where the game exposes the name, then from a hook-name-hash anchor,
   and only then from scanning the `.text` section for masked byte signatures. The pure matcher
-  lives in `core` and is unit-tested. The signature table is produced by standalone tooling and
-  validated against the shipping build.
+  lives in `core` and is unit-tested. The signature table is `src/pal/windows/win_signatures.cpp`,
+  edited by hand and validated against the shipping build with `scripts/validate_signatures.py`.
 
 The hook mechanisms and the signature-table workflow are documented in
 [reverse-engineering.md](reverse-engineering.md).
@@ -95,12 +96,12 @@ flowchart TB
   game's own item-grant path, in a window where spawning is safe.
 - **Persistence**: checked locations and granted items are persisted per `(seed, slot)` so
   reconnects and reloads don't double-send or double-grant.
-- The network stack (apclientpp / wswrap / websocketpp with OpenSSL) is an optional build feature.
-  When it is not compiled in, a null link stands in.
+- The network stack (apclientpp / wswrap / websocketpp with OpenSSL) lives in `src/mth/net/` and
+  implements the `IApLink` interface from core. The tests use an in-memory fake of it.
 
 ## In-game overlay
 
-An optional Dear ImGui dev console (toggle **F1**) renders over the game and offers commands to
+A Dear ImGui dev console (toggle **F1**) renders over the game and offers commands to
 connect, inspect status, and list items. It is implemented per platform but shares one
 platform-agnostic console:
 
@@ -120,16 +121,26 @@ few symbols that would otherwise raise it.
 ## Repository layout
 
 ```
-src/mth/core/     pure logic (test-linked)
-src/mth/app/      composition root: App, HookManager, startup gate probes
-src/mth/features/ per-feature game hooks (pickups/shop, bosses, locks, player tracking, item grants)
-src/mth/net/      Archipelago link implementation
-src/mth/ui/       dev console, login window, banners
-src/mod/          wrapper over the game's native mod API
-src/pal/linux/    Linux PAL (Frida, Vulkan/SDL overlay, entry point)
-src/pal/windows/  Windows PAL (MinHook, D3D12 overlay, native mod entry)
-cmake/            dependency + toolchain modules
-scripts/          build and signature tooling
-tests/unit/       Catch2 unit tests
-external/vcpkg/   vcpkg submodule
+src/mth/core/ap/       AP link interface, state, coordinator, slot_data, ID tables, location/item bridge, inbound granter
+src/mth/core/save/     mod-owned save container: bundle, store, zip, AP save state, takeover state machine
+src/mth/core/game/     game data tables: layout offsets, symbols, component and gamestate ids, signature matcher,
+                       modifiers, shop/title constants, pure game_tables predicates
+src/mth/core/rules/    enforcement policy: gates, burrow boundary, progression (level caps, upgrades, wallet),
+                       goal and kear completion, traps, lock registry
+src/mth/core/console/  dev command parser, log ring, login prefs
+src/mth/app/           composition root: App, HookManager, startup gate probes
+src/mth/features/      per-feature game hooks (pickups, bosses, locks, player tracking, item grants, save takeover);
+                       game_table_access.* reads and patches s_rItems / s_rItemCollection
+src/mth/features/scene_gates/  intro chest, sewer cat and ticket machine gates plus the shared scene_walk
+src/mth/features/menus/        pawn shop, shop menu, title gate and status menu caps
+src/mth/net/           Archipelago link implementation and deathlink payloads
+src/mth/ui/            dev console, login window, banners
+src/mod/               wrapper over the game's native mod API
+src/pal/               platform-neutral PAL: pal_*.hpp interfaces, pal_layout.hpp offsets, ScopedHook, log, mod entry
+src/pal/linux/         Linux PAL (Frida, Vulkan/SDL overlay, game detours, symbol lookup)
+src/pal/windows/       Windows PAL (MinHook, D3D12 overlay, game detours, symbol lookup and win_signatures.cpp)
+cmake/                 dependency, toolchain and compiler modules
+scripts/               glibc check and signature tooling
+tests/unit/            Catch2 unit tests (globbed); tests/mocks/ holds the fakes
+external/vcpkg/        vcpkg submodule
 ```

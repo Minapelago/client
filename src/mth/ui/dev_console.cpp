@@ -9,10 +9,10 @@
 #include <imgui.h>
 
 #include "mth/app/app.hpp"
-#include "mth/core/ap_gate.hpp"
-#include "mth/core/data/ability_ids.hpp"
-#include "mth/core/dev_commands.hpp"
-#include "mth/core/goal_state.hpp"
+#include "mth/core/ap/ability_ids.hpp"
+#include "mth/core/console/dev_commands.hpp"
+#include "mth/core/rules/ap_gate.hpp"
+#include "mth/core/rules/goal.hpp"
 #include "mth_version.h"
 #include "pal/pal_log.hpp"
 

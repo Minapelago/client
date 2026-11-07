@@ -4,8 +4,8 @@
 #include <cstdint>
 
 #include "mth/core/ap/ap_ids.hpp"
-#include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_tables.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/core/game/game_tables.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"

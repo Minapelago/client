@@ -10,7 +10,7 @@
 
 #include "mth/core/save/ap_save_bundle.hpp"
 #include "mth/core/save/takeover_state.hpp"
-#include "mth/features/scene_walk.hpp"
+#include "mth/features/scene_gates/scene_walk.hpp"
 
 namespace mth
 {

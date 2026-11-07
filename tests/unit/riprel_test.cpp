@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/sig_scan.hpp"
+#include "mth/core/game/sig_scan.hpp"
 
 TEST_CASE("read_riprel_target computes a RIP-relative global", "[sig]")
 {

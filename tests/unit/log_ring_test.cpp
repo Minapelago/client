@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/log_ring.hpp"
+#include "mth/core/console/log_ring.hpp"
 
 TEST_CASE("LogRing keeps lines oldest-first until capacity", "[mth][logring]")
 {

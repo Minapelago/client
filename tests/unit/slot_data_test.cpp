@@ -12,7 +12,7 @@
 
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/slot_data.hpp"
-#include "mth/core/goal_state.hpp"
+#include "mth/core/rules/goal.hpp"
 #include "pal/pal_log.hpp"
 
 using nlohmann::json;

@@ -5,7 +5,7 @@
 
 // Game data offsets and code patterns that differ between the Linux (GCC) and Windows (MSVC) builds.
 // Shared code in mth/ reads these instead of branching on the platform. Layout that is the same on
-// both builds lives in mth/core/data/game_layout.hpp or next to the code that uses it.
+// both builds lives in mth/core/game/game_layout.hpp or next to the code that uses it.
 namespace pal::layout
 {
 

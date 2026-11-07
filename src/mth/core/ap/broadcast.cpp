@@ -1,0 +1,150 @@
+#include "mth/core/ap/broadcast.hpp"
+
+#include <algorithm>
+
+namespace mth
+{
+
+namespace
+{
+
+constexpr std::uint32_t pack_rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b)
+{
+    return static_cast<std::uint32_t>(r) | (static_cast<std::uint32_t>(g) << 8) | (static_cast<std::uint32_t>(b) << 16) | (std::uint32_t{0xFF} << 24);
+}
+
+// Color names apclientpp's color2ansi emits.
+std::uint32_t name_to_rgba(std::string_view name)
+{
+    if (name == "red")
+        return pack_rgba(255, 90, 90);
+    if (name == "green")
+        return pack_rgba(90, 220, 90);
+    if (name == "yellow")
+        return pack_rgba(240, 230, 90);
+    if (name == "blue")
+        return pack_rgba(110, 150, 255);
+    if (name == "magenta")
+        return pack_rgba(245, 110, 245);
+    if (name == "cyan")
+        return pack_rgba(90, 220, 230);
+    if (name == "plum")
+        return pack_rgba(240, 175, 245);
+    if (name == "slateblue")
+        return pack_rgba(125, 130, 235);
+    if (name == "salmon")
+        return pack_rgba(250, 150, 140);
+    if (name == "gray" || name == "grey")
+        return pack_rgba(170, 170, 170);
+    return pack_rgba(255, 255, 255); // default / unknown
+}
+
+} // namespace
+
+bool broadcast_is_announcement(std::string_view print_type)
+{
+    // Chat carries the sender's slot, so the slot gate would show only our own messages back to us.
+    return print_type == "ServerChat" || print_type == "Chat" || print_type == "Countdown" || print_type == "CommandResult" ||
+           print_type == "AdminCommandResult" || print_type == "Tutorial";
+}
+
+bool broadcast_relevant(std::string_view print_type, int our_team, int our_slot, std::optional<int> team, std::optional<int> slot, std::optional<int> receiving,
+                        std::optional<int> item_player)
+{
+    const bool team_ok = !team.has_value() || *team == our_team;
+    const bool slot_ok = broadcast_is_announcement(print_type) || (slot.has_value() && *slot == our_slot) ||
+                         (receiving.has_value() && *receiving == our_slot) || (item_player.has_value() && *item_player == our_slot);
+    return team_ok && slot_ok;
+}
+
+std::uint32_t banner_color(std::string_view type, std::string_view explicit_color, unsigned item_flags, unsigned hint_status, bool is_self)
+{
+    // Explicit server color wins, as render_json does for ANSI/HTML.
+    if (!explicit_color.empty())
+        return name_to_rgba(explicit_color);
+
+    if (type == "player_id")
+        return name_to_rgba(is_self ? "magenta" : "yellow");
+    if (type == "item_id")
+    {
+        if (item_flags & 1u) // FLAG_ADVANCEMENT (progression)
+            return name_to_rgba("plum");
+        if (item_flags & 2u) // FLAG_NEVER_EXCLUDE (useful)
+            return name_to_rgba("slateblue");
+        if (item_flags & 4u) // FLAG_TRAP
+            return name_to_rgba("salmon");
+        return name_to_rgba("cyan");
+    }
+    if (type == "location_id")
+        return name_to_rgba("blue");
+    if (type == "hint_status")
+    {
+        switch (hint_status)
+        {
+        case 40: // HINT_FOUND
+            return name_to_rgba("green");
+        case 10: // HINT_NO_PRIORITY
+            return name_to_rgba("slateblue");
+        case 20: // HINT_AVOID
+            return name_to_rgba("salmon");
+        case 30: // HINT_PRIORITY
+            return name_to_rgba("plum");
+        case 0: // HINT_UNSPECIFIED
+            return name_to_rgba("grey");
+        default:
+            return name_to_rgba("red");
+        }
+    }
+    return name_to_rgba(""); // "text" / "color" / unknown -> white
+}
+
+void BannerQueue::push(std::vector<BannerSegment> segments)
+{
+    if (segments.empty())
+        return;
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_.push_back(std::move(segments));
+}
+
+std::vector<BannerFrame> BannerQueue::update(double now)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Retire any faded-out banners. All share the same lifetime and start in arrival order, so the oldest
+    // (front) always expires first; erasing in place keeps the rest ordered.
+    while (!active_.empty() && now - active_.front().start >= kHoldSeconds + kFadeSeconds)
+        active_.pop_front();
+
+    // One banner per interval, so a batch of messages pushed in the same frame does not appear all at once.
+    // A banner promoted now starts its hold from `now`.
+    if (!pending_.empty() && static_cast<int>(active_.size()) < kMaxVisible && now >= next_promote_)
+    {
+        active_.push_back(Active{std::move(pending_.front()), now});
+        pending_.pop_front();
+        next_promote_ = now + kPromoteIntervalSeconds;
+    }
+
+    std::vector<BannerFrame> frames;
+    frames.reserve(active_.size());
+    for (const Active &a : active_)
+    {
+        const double elapsed = now - a.start;
+        float alpha = 1.0f;
+        if (elapsed > kHoldSeconds)
+            alpha = static_cast<float>(1.0 - (elapsed - kHoldSeconds) / kFadeSeconds);
+        alpha = std::clamp(alpha, 0.0f, 1.0f);
+        frames.push_back(BannerFrame{a.segments, alpha});
+    }
+    return frames;
+}
+
+std::string deathlink_banner_text(std::string_view source, std::string_view cause)
+{
+    if (!cause.empty())
+        return std::string(cause);
+    if (!source.empty())
+        return "Killed by " + std::string(source);
+    return "Killed by a deathlink";
+}
+
+} // namespace mth

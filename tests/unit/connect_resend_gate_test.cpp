@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/connect_resend_gate.hpp"
+#include "mth/core/ap/connect_resend_gate.hpp"
 
 TEST_CASE("connect_resend_gate: fires once per connection when connected+ready", "[mth][resend]")
 {

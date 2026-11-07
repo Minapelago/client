@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/ap_gate.hpp"
+#include "mth/core/rules/ap_gate.hpp"
 
 namespace
 {

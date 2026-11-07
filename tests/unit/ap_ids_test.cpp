@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "mth/core/ap/ap_ids.hpp"
-#include "mth/core/data/game_layout.hpp"
+#include "mth/core/game/game_layout.hpp"
 
 TEST_CASE("ap_item_id and game_item_type round-trip", "[ap_ids]")
 {

@@ -32,7 +32,7 @@ original, or call the target itself: the hook contexts hand back no callable
 original. `FixedUpdate` is such a case. The client detours it and uses the hook
 name only as an address anchor, because a hook name's 64-bit hash is compiled
 into its dispatch site, which pins the enclosing function without a carved
-signature (see `src/mth/core/data/native_sym_names.hpp`).
+signature (see `src/mth/core/game/native_sym_names.hpp`).
 
 ### Signature and symbol detours
 
@@ -53,11 +53,11 @@ against. Functions are located by the fallback chain described below.
 On Windows, `pal::resolve_game_symbol(name)` cannot resolve by name, so it tries
 three sources in order. First the mod API's `GetSymAddr`, for the names the game
 itself exposes (mapped from mangled to plain in
-`src/mth/core/data/native_sym_names.hpp`); those addresses come from the game and
+`src/mth/core/game/native_sym_names.hpp`); those addresses come from the game and
 cannot drift. Then a hook anchor, where a hook name's 64-bit hash is compiled
 into the dispatch site inside the target function. Only then the carved signature
 table, scanning `.text` for a masked byte pattern. The pure matcher is
-`src/mth/core/sig_scan.cpp` (`mth::sig::find_masked` / `resolve`), linked into
+`src/mth/core/game/sig_scan.cpp` (`mth::sig::find_masked` / `resolve`), linked into
 `mthap_core` and unit-tested in `tests/unit/sig_scan_test.cpp`. There are two
 entry kinds. A `Code` entry resolves to the function address directly. A
 `DataRef` entry resolves a global through a RIP-relative `disp32`.
@@ -155,9 +155,12 @@ Windows resolver never keys on them at runtime. It scans for signatures instead.
 
 Platform divergence goes behind the `pal::` seam. Never `#ifdef _WIN32` in
 `mth/`. When a function needs a different implementation per platform, extend the
-PAL interface and provide the two implementations under
-`src/pal/{linux,windows}/`. Do not branch inside the core or the composition
-layer. This keeps `mthap_core` pure and unit-testable without a real platform.
+PAL function in `src/pal/pal_*.hpp` and provide the two implementations under
+`src/pal/{linux,windows}/`. Struct offsets and code patterns that differ per
+platform go in `src/pal/pal_layout.hpp`, and the platform-specific game detours
+live in `src/pal/{linux,windows}/game_detours_*.cpp`. Do not branch inside the
+core or the composition layer. This keeps `mthap_core` pure and unit-testable
+without a real platform.
 
 Patching `.text` needs executable-preserving memory changes. Use
 `pal::patch_code`, which restores read and execute and flushes the instruction

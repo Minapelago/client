@@ -7,15 +7,15 @@
 
 #include "mth/features/ability_hooks.hpp"
 #include "mth/features/death_hooks.hpp"
-#include "mth/features/intro_chest_gate.hpp"
 #include "mth/features/levelcap_hooks.hpp"
 #include "mth/features/location_hooks.hpp"
 #include "mth/features/lock_hooks.hpp"
+#include "mth/features/menus/status_menu_caps.hpp"
 #include "mth/features/modifier_hooks.hpp"
 #include "mth/features/save_pollers.hpp"
 #include "mth/features/save_takeover.hpp"
-#include "mth/features/sewer_cat_gate.hpp"
-#include "mth/features/status_menu_caps.hpp"
+#include "mth/features/scene_gates/intro_chest_gate.hpp"
+#include "mth/features/scene_gates/sewer_cat_gate.hpp"
 
 namespace mth
 {

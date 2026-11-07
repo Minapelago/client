@@ -6,13 +6,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/ap/ap_save_state.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/modifiers.hpp"
-#include "mth/core/inbound_granter.hpp"
-#include "mth/core/item_granter_interface.hpp"
-#include "mth/core/rando_bridge.hpp"
-#include "mth/core/trap_state.hpp"
+#include "mth/core/ap/inbound_granter.hpp"
+#include "mth/core/ap/item_granter_interface.hpp"
+#include "mth/core/ap/rando_bridge.hpp"
+#include "mth/core/game/modifiers.hpp"
+#include "mth/core/rules/trap_state.hpp"
+#include "mth/core/save/ap_save_state.hpp"
 
 namespace
 {

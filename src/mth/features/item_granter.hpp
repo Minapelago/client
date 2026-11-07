@@ -2,7 +2,7 @@
 
 #include <functional>
 
-#include "mth/core/item_granter_interface.hpp"
+#include "mth/core/ap/item_granter_interface.hpp"
 
 namespace mth
 {
@@ -14,7 +14,7 @@ namespace mth
 // hence a free function rather than a member.
 void set_train_pass_machine_blocked(bool on);
 
-// twin: mth/core/item_granter_interface.hpp (the IItemGranter interface).
+// twin: mth/core/ap/item_granter_interface.hpp (the IItemGranter interface).
 // IItemGranter via Items::OnPickupDone replay. Owns the OnPickupDone hook (which also
 // refreshes the tracker's Player* on every vanilla pickup). grant() enqueues (false
 // until a Player* is captured); drain() replays from the engine's spawn window

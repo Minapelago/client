@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/data/game_layout.hpp"
+#include "mth/core/game/game_layout.hpp"
 #include "mth/features/name_key.hpp"
 
 // Stand-ins for the game objects the name-key walk crosses. Only the offsets it reads are modelled, and

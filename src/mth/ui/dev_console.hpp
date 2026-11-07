@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <string>
 
-#include "mth/core/log_ring.hpp"
+#include "mth/core/console/log_ring.hpp"
 #include "mth/ui/broadcast_banner.hpp"
 #include "pal/pal_overlay.hpp"
 

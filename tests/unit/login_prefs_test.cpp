@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/login_prefs.hpp"
+#include "mth/core/console/login_prefs.hpp"
 
 namespace
 {

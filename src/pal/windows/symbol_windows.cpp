@@ -1,6 +1,6 @@
 #include <span>
 
-#include "mth/core/data/game_symbols.hpp"
+#include "mth/core/game/game_symbols.hpp"
 #include "pal/pal_module.hpp"
 #include "pal/windows/signature_scan.hpp"
 

@@ -3,8 +3,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "mth/core/ap/ability_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/data/ability_ids.hpp"
 
 TEST_CASE("ap_state: starts idle, unauthenticated", "[mth][ap_state]")
 {

@@ -3,7 +3,7 @@
 #include <functional>
 #include <string>
 
-#include "mth/core/death_broadcast_gate.hpp"
+#include "mth/core/rules/death_broadcast_gate.hpp"
 #include "mth/features/room_clock.hpp"
 
 namespace mth

@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/dev_commands.hpp"
+#include "mth/core/console/dev_commands.hpp"
 
 using mth::CommandKind;
 using mth::parse_command;

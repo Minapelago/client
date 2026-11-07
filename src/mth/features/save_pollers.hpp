@@ -10,7 +10,7 @@ namespace mth
 class RandoBridge;
 class ApState;
 
-// twin: mth/core/goal_state.hpp (pure goal_met()).
+// twin: mth/core/rules/goal.hpp (pure goal_met()).
 // Polls the active SaveSlot each tick and fires the AP goal when the slot_data-configured condition is met:
 // finish = the game-clear flag; generators/bosses = popcount of the matching SaveSlot bitfield >= threshold.
 // Read-only; send_goal() is one-shot in the bridge.
@@ -61,7 +61,7 @@ class BossTracker
     bool primed_{false};
 };
 
-// twin: mth/core/kear_completion.hpp (pure have_all_kears()).
+// twin: mth/core/rules/kear_completion.hpp (pure have_all_kears()).
 // Latches the KeyMiser trade bit once the run holds every kear its mode defines, so the game's own
 // KeyReward path spawns the location-150 pickup and the normal pickup hook reports the check (#174).
 // Writes one durable save bit. Game thread, per tick while authenticated.

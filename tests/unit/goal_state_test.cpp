@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/goal_state.hpp"
+#include "mth/core/rules/goal.hpp"
 
 TEST_CASE("finish goal keys only on the game-clear flag", "[goal]")
 {

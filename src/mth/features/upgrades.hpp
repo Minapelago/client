@@ -5,7 +5,7 @@
 namespace mth
 {
 
-// twin: mth/core/upgrade_state.hpp (counts received capacity upgrades).
+// twin: mth/core/rules/progression.hpp (counts received capacity upgrades).
 // Apply per-type upgrade counts (index order Magic,Health,Spark,Vial,Trinket; already clamped to
 // caps) to the active save: set that many low bits in each per-type field, then call
 // Player::UpdateStats(player) to recompute live maxima. `counts` has kUpgradeCount entries.

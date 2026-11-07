@@ -2,9 +2,9 @@
 #include <cstdint>
 #include <utility>
 
-#include "mth/core/data/game_symbols.hpp"
-#include "mth/core/shop_ui.hpp"
-#include "mth/core/stat_cap_state.hpp"
+#include "mth/core/game/game_symbols.hpp"
+#include "mth/core/game/shop_ui.hpp"
+#include "mth/core/rules/progression.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"

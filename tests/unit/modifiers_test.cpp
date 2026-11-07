@@ -6,7 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "mth/core/ap/ap_ids.hpp"
-#include "mth/core/data/modifiers.hpp"
+#include "mth/core/game/modifiers.hpp"
 
 using mth::CheatClass;
 

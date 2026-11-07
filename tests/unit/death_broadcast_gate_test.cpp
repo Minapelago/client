@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/death_broadcast_gate.hpp"
+#include "mth/core/rules/death_broadcast_gate.hpp"
 
 // observe(dying, alive, gameplay_advanced) is polled each tick. `dying` is the death-guard byte (pulses
 // through a death sequence); `alive` is a stable "truly alive" signal (health > 0). A settled respawn

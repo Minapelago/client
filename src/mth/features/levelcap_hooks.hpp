@@ -4,13 +4,13 @@
 #include <string>
 #include <vector>
 
-#include "mth/core/stat_cap_state.hpp"
+#include "mth/core/rules/progression.hpp"
 
 namespace mth
 {
 class ApState;
 
-// twin: mth/core/stat_cap_state.hpp (pure cap policy).
+// twin: mth/core/rules/progression.hpp (pure cap policy).
 // Owns the level-cap PAL hook and the StatCapState policy. Installs unconditionally when the PAL
 // reports the feature available; the provider returns vanilla (no restriction) until enforcement is
 // live (AP session or offline test mode), so vanilla play is never affected. Game-thread only:

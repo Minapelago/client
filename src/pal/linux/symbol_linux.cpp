@@ -2,7 +2,7 @@
 
 #include <frida-gum.h>
 
-#include "mth/core/data/game_symbols.hpp"
+#include "mth/core/game/game_symbols.hpp"
 #include "pal/pal_module.hpp"
 
 namespace pal

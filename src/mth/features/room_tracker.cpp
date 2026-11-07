@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/game_state_ids.hpp"
+#include "mth/core/game/game_state_ids.hpp"
 #include "pal/pal_log.hpp"
 
 namespace

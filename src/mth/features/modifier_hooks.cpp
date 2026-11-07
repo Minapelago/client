@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/game_symbols.hpp"
-#include "mth/core/data/modifiers.hpp"
+#include "mth/core/game/game_symbols.hpp"
+#include "mth/core/game/modifiers.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_layout.hpp"
 #include "pal/pal_log.hpp"

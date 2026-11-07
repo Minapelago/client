@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mth/core/ap_gate.hpp"
+#include "mth/core/rules/ap_gate.hpp"
 
 namespace mth
 {

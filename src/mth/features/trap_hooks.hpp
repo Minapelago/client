@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "mth/core/trap_state.hpp"
+#include "mth/core/rules/trap_state.hpp"
 #include "mth/features/room_clock.hpp"
 
 namespace mth

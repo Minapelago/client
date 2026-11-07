@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/burrow_boundary.hpp"
+#include "mth/core/rules/burrow_boundary.hpp"
 
 using mth::BoundaryAction;
 using mth::BurrowBoundaryGate;

@@ -4,7 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/broadcast.hpp"
+#include "mth/core/ap/broadcast.hpp"
 
 using Catch::Approx;
 using mth::banner_color;

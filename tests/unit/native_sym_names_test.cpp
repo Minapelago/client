@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/data/native_sym_names.hpp"
+#include "mth/core/game/native_sym_names.hpp"
 
 using mth::sym::kNativeSymNames;
 using mth::sym::native_sym_name;

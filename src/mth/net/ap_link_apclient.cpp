@@ -11,9 +11,9 @@
 #include <apuuid.hpp>
 
 #include "mth/core/ap/ap_ids.hpp" // kLocBase
+#include "mth/core/ap/broadcast.hpp"
 #include "mth/core/ap/connect_target.hpp"
 #include "mth/core/ap/slot_data.hpp"
-#include "mth/core/broadcast.hpp"
 #include "mth/net/deathlink.hpp"
 #include "pal/pal_cert.hpp"
 #include "pal/pal_log.hpp"

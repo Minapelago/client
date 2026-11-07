@@ -4,7 +4,7 @@
 #include <utility>
 #include <variant>
 
-#include "mth/core/data/ability_ids.hpp"
+#include "mth/core/ap/ability_ids.hpp"
 #include "pal/pal_log.hpp"
 
 namespace mth

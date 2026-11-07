@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/sig_scan.hpp"
+#include "mth/core/game/sig_scan.hpp"
 
 using mth::sig::Entry;
 using mth::sig::find_masked;

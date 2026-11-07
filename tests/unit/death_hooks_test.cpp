@@ -5,8 +5,8 @@
 
 #include "mocks/fake_mod_api.hpp"
 #include "mod/mod_api.hpp"
-#include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_state_ids.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/core/game/game_state_ids.hpp"
 #include "mth/features/death_hooks.hpp"
 
 // What this file covers is the deathlink state machine given a correct offset, not the offset itself.

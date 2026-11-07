@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/lock_registry.hpp"
+#include "mth/core/rules/lock_registry.hpp"
 
 TEST_CASE("LockRegistry tracks removed slots", "[locks]")
 {

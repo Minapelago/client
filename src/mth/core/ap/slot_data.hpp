@@ -6,7 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "mth/core/ap/ap_ids.hpp"  // kTrainPassCostDefault
-#include "mth/core/goal_state.hpp" // kAllGeneratorsMask
+#include "mth/core/rules/goal.hpp" // kAllGeneratorsMask
 
 namespace mth
 {

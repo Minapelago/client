@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/ap/ap_save_state.hpp"
+#include "mth/core/save/ap_save_state.hpp"
 
 namespace
 {

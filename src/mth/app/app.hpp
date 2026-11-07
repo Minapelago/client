@@ -9,18 +9,17 @@
 #include <string>
 #include <vector>
 
-#include "mth/core/ap/ap_save_state.hpp"
+#include "mth/core/ap/ability_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/ap_gate.hpp"
-#include "mth/core/broadcast.hpp"
-#include "mth/core/connect_resend_gate.hpp"
-#include "mth/core/data/ability_ids.hpp"
-#include "mth/core/inbound_granter.hpp"
-#include "mth/core/login_prefs.hpp"
+#include "mth/core/ap/broadcast.hpp"
+#include "mth/core/ap/connect_resend_gate.hpp"
+#include "mth/core/ap/inbound_granter.hpp"
+#include "mth/core/console/login_prefs.hpp"
+#include "mth/core/rules/ap_gate.hpp"
+#include "mth/core/rules/progression.hpp"
+#include "mth/core/rules/session_policy.hpp"
 #include "mth/core/save/ap_save_bundle.hpp"
-#include "mth/core/session_policy.hpp"
-#include "mth/core/upgrade_state.hpp"
-#include "mth/core/wallet_cap_state.hpp"
+#include "mth/core/save/ap_save_state.hpp"
 #include "mth/features/item_granter.hpp"
 #include "pal/scoped_hook.hpp"
 

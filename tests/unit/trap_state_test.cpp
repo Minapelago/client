@@ -3,7 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "mth/core/trap_state.hpp"
+#include "mth/core/rules/trap_state.hpp"
 
 namespace
 {

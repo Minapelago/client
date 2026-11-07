@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "mth/core/data/modifiers.hpp"
+#include "mth/core/game/modifiers.hpp"
 
 namespace mth
 {

@@ -7,9 +7,9 @@
 #include <mutex>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/game_state_ids.hpp"
-#include "mth/core/data/modifiers.hpp"
-#include "mth/core/death_broadcast_gate.hpp" // kMaxFixedUpdateHz, for the no-delta fallback
+#include "mth/core/game/game_state_ids.hpp"
+#include "mth/core/game/modifiers.hpp"
+#include "mth/core/rules/death_broadcast_gate.hpp" // kMaxFixedUpdateHz, for the no-delta fallback
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 

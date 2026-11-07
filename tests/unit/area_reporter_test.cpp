@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "mocks/fake_ap_link.hpp"
-#include "mth/core/area_reporter.hpp"
+#include "mth/core/ap/area_reporter.hpp"
 
 using mth::AreaReporter;
 

@@ -6,9 +6,9 @@
 #include <unordered_map>
 
 #include "mod/mod_api.hpp"
-#include "mth/core/data/native_sym_names.hpp"
-#include "mth/core/hook_hash.hpp"
-#include "mth/core/sig_scan.hpp"
+#include "mth/core/game/hook_hash.hpp"
+#include "mth/core/game/native_sym_names.hpp"
+#include "mth/core/game/sig_scan.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
 

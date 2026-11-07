@@ -6,8 +6,8 @@
 
 #include "mocks/fake_mod_api.hpp"
 #include "mod/mod_api.hpp"
-#include "mth/core/data/component_types.hpp"
-#include "mth/features/scene_walk.hpp"
+#include "mth/core/game/component_types.hpp"
+#include "mth/features/scene_gates/scene_walk.hpp"
 
 namespace
 {

@@ -7,9 +7,9 @@
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
-#include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_symbols.hpp"
-#include "mth/core/data/game_tables.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/core/game/game_symbols.hpp"
+#include "mth/features/game_table_access.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"

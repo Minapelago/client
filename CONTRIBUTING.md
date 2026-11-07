@@ -7,8 +7,9 @@ conventions the project follows.
 
 - CMake >= 3.25, Ninja, and a C++23 compiler (the presets use `clang`/`clang++` (`clang-cl` / `clang++-cl` on Windows)).
 - Dependencies are pulled automatically:
-  - **vcpkg**: the only git submodule (`external/vcpkg`). It provides nlohmann-json and the
-    networking deps (asio, OpenSSL, zlib). The Linux overlay's Vulkan and SDL2 headers are
+  - **vcpkg**: the only git submodule (`external/vcpkg`). It bootstraps itself on first
+    configure and provides nlohmann-json and the networking deps (asio, OpenSSL, zlib). The
+    Linux overlay's Vulkan and SDL2 headers are
     fetched by CMake, and the Windows overlay's Dear ImGui backends build against the
     D3D12/Win32 headers the platform SDK already ships.
   - **Dear ImGui** (overlay), **Frida-Gum** (Linux hook backend), **MinHook** (Windows hook
@@ -36,16 +37,21 @@ cmake --preset clang-x64-debug      # or clang-x64-release
 cmake --build --preset clang-x64-debug
 ```
 
-### Tests only (fastest loop)
+### Unit tests
 
-The unit tests skip the module and the hook backends, so this needs none of the game-adjacent
-dependencies. They do compile in a couple of Linux PAL sources, so the test lane is Linux-only:
+`clang-x64-tests` is `clang-x64-debug` with the unit tests switched on, so it builds the module
+too. The tests link `mthap_core` plus a few PAL and module sources, which makes the test lane
+Linux-only:
 
 ```bash
 cmake --preset clang-x64-tests
 cmake --build --preset clang-x64-tests
 ctest --preset clang-x64-tests --output-on-failure
 ```
+
+Source and test files are globbed. Drop a new `tests/unit/*_test.cpp` or a source under `src/` in
+place and re-run the configure step; there is no list to edit. A test that needs a PAL or module
+source the library does not already expose adds it to `target_sources` in `tests/CMakeLists.txt`.
 
 ### Windows mod (`mod.dll`)
 
@@ -56,8 +62,16 @@ cmake --preset clang-cl-x64-release
 cmake --build --preset clang-cl-x64-release
 ```
 
-A LLVM-MinGW cross preset (`mingw-x64-debug`) is available for a fast Windows compile-check from a
-Linux box. It is a development aid only. It produces a MinGW-ABI binary, not a shippable artifact.
+A LLVM-MinGW cross preset (`mingw-x64-debug`) builds the Windows module from a Linux box, so a
+Windows compile error shows up before the change reaches CI. It expects llvm-mingw in
+`/opt/llvm-mingw` (override with the `LLVM_MINGW_ROOT` CMake variable):
+
+```bash
+cmake --preset mingw-x64-debug
+cmake --build --preset mingw-x64-debug
+```
+
+It is a compile check only. It produces a MinGW-ABI binary, not a shippable artifact.
 
 ## Testing the Linux build
 
@@ -106,14 +120,20 @@ CI gates merges on formatting with a pinned clang-format version.
 
 The codebase is split into these targets (see [docs/architecture.md](docs/architecture.md)):
 
-- `mthap_core`: pure, cross-platform logic. **It must not include platform, OS, or hook-backend
-  headers**, because the unit tests link it without the module or a backend. Portable third-party
-  libraries are allowed. It also holds the wrapper over the game's own mod API, under `src/mod/`.
-- `mthap`: the final module. It composes core with the platform abstraction layer (process entry
-  points and hook backend, under `src/pal/{linux,windows}/`), the Archipelago link and the overlay.
+- `mthap_core`: pure, cross-platform logic under `src/mth/core/` (grouped into `ap`, `save`,
+  `game`, `rules` and `console`), plus the wrapper over the game's own mod API in `src/mod/`.
+  **It must not include platform, OS, or hook-backend headers**, because the unit tests link it
+  without the module or a backend. Portable third-party libraries are allowed.
+- `mthap`: the final module. It composes core with the composition root (`src/mth/app/`), the
+  per-feature game hooks (`src/mth/features/`), the Archipelago link (`src/mth/net/`), the UI
+  (`src/mth/ui/`) and the platform abstraction layer (`src/pal/`, with the per-platform code
+  under `src/pal/{linux,windows}/`).
+- `mthap_imgui`: Dear ImGui, built as an object library and linked into `mthap`.
+- `mthap_unit_tests`: the Catch2 tests under `tests/unit/`.
 
-When you add platform-specific behavior, put it behind a PAL interface rather than `#ifdef`-ing it
-into the core or the higher-level logic.
+When you add platform-specific behavior, put it behind a PAL function in `src/pal/pal_*.hpp`
+rather than `#ifdef`-ing it into the core or the higher-level logic. Per-platform struct offsets
+go in `src/pal/pal_layout.hpp`.
 
 See [docs/reverse-engineering.md](docs/reverse-engineering.md) for how game functions are
 hooked and resolved on each platform. It covers the native mod hooks, the Frida/MinHook detour
@@ -121,8 +141,9 @@ seam, and the Windows signature-table workflow.
 
 ## Continuous integration
 
-Pull requests run a formatting check, the Linux unit tests, and the Linux and Windows mod builds.
-Keep them green. Tagged releases (`v*` on `master`) build and publish artifacts automatically.
+Pull requests run a formatting check, then the Linux unit tests and the Linux and Windows mod builds
+(`ci.yml` calls the reusable `build.yml`). Keep them green. Tagged releases (`v*` on `master`) build
+and publish artifacts automatically.
 
 ## Commit conventions
 

@@ -3,9 +3,9 @@
 #include <atomic>
 #include <cstdint>
 
-#include "mth/core/data/game_layout.hpp"
-#include "mth/core/data/game_symbols.hpp"
-#include "mth/core/goal_state.hpp"
+#include "mth/core/game/game_layout.hpp"
+#include "mth/core/game/game_symbols.hpp"
+#include "mth/core/rules/goal.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"

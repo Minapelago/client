@@ -5,7 +5,7 @@
 #include "mth/core/ap/ap_events.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_state.hpp"
-#include "mth/core/wallet_cap_state.hpp"
+#include "mth/core/rules/progression.hpp"
 
 namespace
 {

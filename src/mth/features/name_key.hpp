@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "mth/core/data/game_layout.hpp"
+#include "mth/core/game/game_layout.hpp"
 
 namespace mth
 {

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <functional>
 
-#include "mth/core/data/ability_ids.hpp"
+#include "mth/core/ap/ability_ids.hpp"
 
 namespace mth
 {

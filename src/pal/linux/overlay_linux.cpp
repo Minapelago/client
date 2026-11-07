@@ -30,7 +30,7 @@
 #include <link.h> // dl_iterate_phdr (libvulkan presence check without touching dlerror)
 #include <vulkan/vulkan.h>
 
-#include "mth/core/data/game_symbols.hpp"
+#include "mth/core/game/game_symbols.hpp"
 #include "pal/overlay_keys.hpp"
 #include "pal/overlay_scale.hpp"
 #include "pal/pal_log.hpp"
