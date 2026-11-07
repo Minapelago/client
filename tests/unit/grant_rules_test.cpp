@@ -348,6 +348,15 @@ TEST_CASE("is_train_pass_machine_grant matches only the donation machine's dispe
     REQUIRE_FALSE(mth::is_train_pass_machine_grant(149, 41));
 }
 
+TEST_CASE("should_suppress_vanilla_grant: only a real item at an AP location is suppressed", "[grant]")
+{
+    REQUIRE(mth::should_suppress_vanilla_grant(12, 41, true));
+
+    REQUIRE_FALSE(mth::should_suppress_vanilla_grant(-1, 41, true));
+    REQUIRE_FALSE(mth::should_suppress_vanilla_grant(12, mth::layout::kApDummyItemType, true));
+    REQUIRE_FALSE(mth::should_suppress_vanilla_grant(12, 41, false));
+}
+
 TEST_CASE("ticket_machine_seed pre-pays the donation goal down to the configured cost", "[train]")
 {
     // Seed + cost equals the compiled-in goal, so the player owes exactly the cost.

@@ -121,6 +121,13 @@ inline constexpr int kTrainPassLocIdx = 149;    // Ticket_Pass
     return loc_idx == kTrainPassLocIdx && item_type == kTrainPassItemType;
 }
 
+// Whether Items::OnPickupDone should skip a vanilla grant. AP replays use slot -1 and world AP pickups carry the dummy itemType, so only a real item
+// at an AP location is suppressed.
+[[nodiscard]] inline constexpr bool should_suppress_vanilla_grant(int slot, int item_type, bool is_ap_location) noexcept
+{
+    return slot >= 0 && item_type != layout::kApDummyItemType && is_ap_location;
+}
+
 // Donating accumulates a SaveSlot counter; the machine completes once it passes kTicketMachineGoal (compiled in). Pre-seeding the counter with
 // 10000-cost leaves exactly `cost` owing, and the game clamps the dial to what is still owed, so the player can't overpay (the deposit itself is
 // unclamped). cost is clamped to a payable, non-free range.

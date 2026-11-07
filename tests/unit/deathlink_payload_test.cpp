@@ -58,3 +58,21 @@ TEST_CASE("deathlink payload: time survives with sub-second precision", "[mth][d
 
     REQUIRE(j.at("time").get<double>() == 1786866611.25);
 }
+
+TEST_CASE("make_deathlink_payload: an empty source is still sent", "[mth][deathlink]")
+{
+    const auto j = nlohmann::json::parse(make_deathlink_payload("", "", 1.0));
+
+    REQUIRE(j.contains("source"));
+    REQUIRE(j.at("source") == "");
+    REQUIRE_FALSE(j.contains("cause"));
+}
+
+TEST_CASE("parse_deathlink_payload: wrong-typed fields read as empty", "[mth][deathlink]")
+{
+    const auto dl = parse_deathlink_payload(R"({"time":1.5,"source":7,"cause":["x"]})");
+
+    REQUIRE(dl.has_value());
+    REQUIRE(dl->source.empty());
+    REQUIRE(dl->cause.empty());
+}

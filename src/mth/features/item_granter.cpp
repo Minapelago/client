@@ -1,12 +1,12 @@
 #include "mth/features/item_granter.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <functional>
-#include <mutex>
-#include <vector>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/grant_queue.hpp"
 #include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/game_symbols.hpp"
 #include "mth/features/game_table_access.hpp"
@@ -30,14 +30,7 @@ bool g_train_pass_machine_blocked = false;   // train_rando: the donation machin
 // ItemsOnPickupDone named hook, which hands back no callable original. Calling it re-enters our hook with slot -1, which suppression passes over.
 void (*g_call_on_pickup_done)(int, int, void *, void *, int, int, unsigned int, bool) = nullptr;
 
-// Inbound-grant queue: grant() enqueues, drain() replays in the engine's update window. The receipt rides along so drain() acks only what landed (#175).
-struct PendingGrant
-{
-    int item_type;
-    int receipt;
-};
-std::mutex g_pending_mtx;
-std::vector<PendingGrant> g_pending;
+mth::GrantQueue g_pending; // grant() enqueues, drain() replays in the engine's update window
 
 // Start of Items::OnPickupDone. Returns true to stop the original running.
 bool on_items_pickup_done(int slot, int item_type, void *player)
@@ -48,9 +41,7 @@ bool on_items_pickup_done(int slot, int item_type, void *player)
     if (item_type == mth::layout::kItemHealingVialFirst || item_type == mth::layout::kItemVialUpgrade)
         pal::logf(pal::LogLevel::Debug, "vials: OnPickupDone itemType=%#x slot=%d", item_type, slot);
 
-    // Skip vanilla grants for randomized locations. AP replays use slot -1 and world AP pickups carry the dummy itemType, so only a real item at an AP slot is
-    // overridden.
-    if (slot >= 0 && item_type != mth::layout::kApDummyItemType && g_is_ap_location && g_is_ap_location(slot))
+    if (mth::should_suppress_vanilla_grant(slot, item_type, g_is_ap_location && g_is_ap_location(slot)))
     {
         pal::logf(pal::LogLevel::Info, "outbound: suppressed vanilla grant for AP location %d (itemType=%d)", slot, item_type);
         // Grants straight through OnPickupDone (no Pickup entity or ShopMenu, e.g. the train-ticket machine) never reach the pickup/shop hooks, so the check is
@@ -112,7 +103,6 @@ ItemGranter::~ItemGranter()
     mod::remove_items_on_pickup_hook();
     mod::remove_items_on_pickup_done_hook();
     g_call_on_pickup_done = nullptr;
-    std::lock_guard<std::mutex> lk(g_pending_mtx);
     g_pending.clear();
     g_is_ap_location = nullptr;
     g_report_collected = nullptr;
@@ -140,51 +130,39 @@ bool ItemGranter::grant(int item_type, int receipt)
         return true;
     }
 
-    std::lock_guard<std::mutex> lk(g_pending_mtx);
-    g_pending.push_back(PendingGrant{item_type, receipt});
+    g_pending.push(item_type, receipt);
     return true;
 }
 
 // Session change: the queue belongs to the old save. Dropping it un-acked makes the caller re-offer each receipt against the new save (#175).
 void ItemGranter::discard_pending()
 {
-    std::lock_guard<std::mutex> lk(g_pending_mtx);
-    if (!g_pending.empty())
-        pal::logf(pal::LogLevel::Info, "inbound: dropped %zu queued grant(s) on session change", g_pending.size());
-    g_pending.clear();
+    if (const std::size_t dropped = g_pending.clear(); dropped != 0)
+        pal::logf(pal::LogLevel::Info, "inbound: dropped %zu queued grant(s) on session change", dropped);
 }
 
 void ItemGranter::drain()
 {
-    std::vector<PendingGrant> batch;
-    {
-        std::lock_guard<std::mutex> lk(g_pending_mtx);
-        if (g_pending.empty())
-            return;
-        batch.swap(g_pending);
-    }
-
-    // Position comes from the tracker's cache: PlayerGetPos3 unconditionally dereferences a second-level pointer that is null in the pre-World::Update spawn
-    // window. Requeue until cached.
     float p[3];
-    void *player = player_tracker::player();
-    const bool ready = g_call_on_pickup_done && player != nullptr && player_tracker::position(p);
-    if (!ready || !std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
-    {
-        std::lock_guard<std::mutex> lk(g_pending_mtx);
-        g_pending.insert(g_pending.begin(), batch.begin(), batch.end());
-        return;
-    }
-
-    // locIdx=-1: grant by type only, no location state touched.
-    for (const PendingGrant &pending : batch)
-    {
-        YcVec3 grant_pos{p[0], p[1], p[2]}; // fresh copy per item (ycVec3 const&)
-        g_call_on_pickup_done(-1, pending.item_type, player, &grant_pos, 0, 0, 0, false);
-        pal::logf(pal::LogLevel::Info, "inbound: granted item_type=%d (kind=%d)", pending.item_type, tables::storage_kind(pending.item_type));
-        // Ack only once the item is in the save. Upstream durable state keys off the ack, so a batch that never gets here is retried (#175).
-        notify_applied(pending.receipt);
-    }
+    void *player = nullptr;
+    g_pending.drain(
+        [&]
+        {
+            // Position comes from the tracker's cache: PlayerGetPos3 unconditionally dereferences a second-level pointer that is null in the
+            // pre-World::Update spawn window. Requeue until cached.
+            player = player_tracker::player();
+            const bool ready = g_call_on_pickup_done && player != nullptr && player_tracker::position(p);
+            return ready && std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]);
+        },
+        [&](int item_type)
+        {
+            // locIdx=-1: grant by type only, no location state touched.
+            YcVec3 grant_pos{p[0], p[1], p[2]}; // fresh copy per item (ycVec3 const&)
+            g_call_on_pickup_done(-1, item_type, player, &grant_pos, 0, 0, 0, false);
+            pal::logf(pal::LogLevel::Info, "inbound: granted item_type=%d (kind=%d)", item_type, tables::storage_kind(item_type));
+        },
+        // Upstream durable state keys off the ack, so a batch that never gets applied is retried (#175).
+        [this](int receipt) { notify_applied(receipt); });
 }
 
 } // namespace mth

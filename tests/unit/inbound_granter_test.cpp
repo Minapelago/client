@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "mth/core/ap/ap_state.hpp"
+#include "mth/core/ap/grant_queue.hpp"
 #include "mth/core/ap/inbound_granter.hpp"
 #include "mth/core/ap/item_granter_interface.hpp"
 #include "mth/core/ap/rando_bridge.hpp"
@@ -430,4 +431,21 @@ TEST_CASE("InboundGranter consumes a trap the player already enabled", "[inbound
     state.apply(recv(mth::kTrapItemBase + 204, 0));
     inbound.tick();
     REQUIRE(save.is_granted(0));
+}
+
+TEST_CASE("GrantQueue acks a grant only after applying it, and keeps it while the game is not ready", "[inbound][grant_queue]")
+{
+    mth::GrantQueue queue;
+    std::vector<std::string> log;
+    const auto apply = [&](int item_type) { log.push_back("apply " + std::to_string(item_type)); };
+    const auto ack = [&](int receipt) { log.push_back("ack " + std::to_string(receipt)); };
+
+    queue.push(41, 0);
+    queue.drain([] { return false; }, apply, ack);
+    REQUIRE(log.empty());
+
+    queue.push(42, 1);
+    queue.drain([] { return true; }, apply, ack);
+    REQUIRE(log == std::vector<std::string>{"apply 41", "ack 0", "apply 42", "ack 1"});
+    REQUIRE(queue.clear() == 0);
 }
