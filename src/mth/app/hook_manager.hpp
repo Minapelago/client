@@ -66,7 +66,7 @@ class HookManager
     AbilityHooks ability_hooks_;
     SewerCatGate sewer_cat_gate_; // reads vendor_lockout_
     IntroChestGate intro_chest_gate_;
-    ModifierHooks modifier_hooks_;
+    ModifierHooks modifier_hooks_; // its save-loaded callback reads boss_tracker_ and vendor_lockout_
     LevelCapHooks level_cap_hooks_;
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it

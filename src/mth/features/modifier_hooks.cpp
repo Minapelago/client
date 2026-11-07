@@ -114,7 +114,7 @@ void repl_set_applied(void *self, int idx, bool applied, void *slot)
 {
     if (g_block_fn && g_block_fn(idx))
     {
-        pal::logf(pal::LogLevel::Debug, "modifiers: blocked SetCheatApplied idx=%d (locked)", idx);
+        pal::logf(pal::LogLevel::Debug, "modifiers: blocked SetCheatApplied idx=%d applied=%d (locked)", idx, static_cast<int>(applied));
         return;
     }
     if (g_orig_set_applied)
@@ -141,12 +141,14 @@ bool modifiers_available()
 }
 
 // Installs the ActivateSaveSlot hook. `seed` runs on the game thread before the original, with the
-// active 0-based save-slot index and the slot's 8 cheat-mask words (in/out).
-void set_new_game_modifier_seed(std::function<void(int slot_index, std::uint32_t *words)> seed)
+// active 0-based save-slot index and the slot's 8 cheat-mask words (in/out). `save_loaded` runs after
+// the original on a real load. Both are stored before the hook goes in, since the detour reads them.
+void set_new_game_modifier_seed(std::function<void(int slot_index, std::uint32_t *words)> seed, std::function<void()> save_loaded)
 {
     if (!modifiers_available())
         return;
     g_seed_fn = std::move(seed);
+    g_save_loaded_fn = std::move(save_loaded);
     g_activate_slot_hook = pal::ScopedHook(g_addr_activate_slot, &repl_activate_slot, &g_orig_activate_slot);
     if (!g_activate_slot_hook.installed())
         pal::logf(pal::LogLevel::Error, "modifiers: ActivateSaveSlot seed hook FAILED (new-game seeding disabled)");
@@ -216,19 +218,14 @@ void remove_modifier_hooks()
 namespace mth
 {
 
-void set_save_loaded(std::function<void()> cb)
-{
-    g_save_loaded_fn = std::move(cb);
-}
-
-ModifierHooks::ModifierHooks()
+ModifierHooks::ModifierHooks(std::function<void()> on_save_loaded)
 {
     if (!modifiers_available())
     {
         pal::logf(pal::LogLevel::Warn, "modifiers: PAL unavailable; ModifierHooks inert");
         return;
     }
-    set_new_game_modifier_seed([this](int slot, std::uint32_t *w) { seed(slot, w); });
+    set_new_game_modifier_seed([this](int slot, std::uint32_t *w) { seed(slot, w); }, std::move(on_save_loaded));
     set_modifier_lockdown([this](int idx) { return block(idx); });
     installed_ = true;
     pal::logf(pal::LogLevel::Info, "modifiers: ModifierHooks installed (armed=%d)", static_cast<int>(armed_));

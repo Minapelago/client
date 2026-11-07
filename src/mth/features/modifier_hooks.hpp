@@ -12,18 +12,16 @@
 namespace mth
 {
 
-// Runs `cb` on the game thread when a save slot is activated with a real load; title/profile-menu
-// re-activations do not fire it. Rides the ActivateSaveSlot hook ModifierHooks installs, so it is inert
-// while modifiers are unavailable. Null clears it.
-void set_save_loaded(std::function<void()> cb);
-
 // Owns the modifier hooks (modifier_hooks.cpp) and the enforcement policy. Installs unconditionally when modifiers
 // are available; the hooks no-op while disarmed. Armed from construction, so an AP session enforces
 // the deny list without any configuration; `modifiers unlock` is the manual override.
 class ModifierHooks
 {
   public:
-    ModifierHooks();
+    // `on_save_loaded` runs on the game thread when a save slot is activated with a real load;
+    // title/profile-menu re-activations do not fire it. It rides the ActivateSaveSlot hook, so it is
+    // inert while modifiers are unavailable, and the destructor clears it after removing the hook.
+    explicit ModifierHooks(std::function<void()> on_save_loaded);
     ~ModifierHooks();
     ModifierHooks(const ModifierHooks &) = delete;
     ModifierHooks &operator=(const ModifierHooks &) = delete;

@@ -130,7 +130,7 @@ void ApState::apply(const ApEvent &ev)
                 std::string detail;
                 for (std::size_t i = 0; i < e.errors.size(); ++i)
                     detail += (i ? ", " : "") + e.errors[i];
-                const std::string msg = "Refused: " + detail;
+                const std::string msg = "Refused" + (detail.empty() ? "" : ": " + detail);
                 set_status(msg);
                 phase_.store(ConnectionPhase::Error, std::memory_order_relaxed);
                 {

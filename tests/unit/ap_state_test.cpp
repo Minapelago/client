@@ -88,6 +88,8 @@ TEST_CASE("ap_state: disconnect clears auth; status reflects events", "[mth][ap_
     REQUIRE(s.status() == "Connecting...");
     s.apply(mth::ApConnectionRefused{{"InvalidSlot", "InvalidGame"}});
     REQUIRE(s.status() == "Refused: InvalidSlot, InvalidGame");
+    s.apply(mth::ApConnectionRefused{{}});
+    REQUIRE(s.status() == "Refused");
 }
 
 TEST_CASE("ap_state: each connection event maps to its phase", "[mth][ap_state]")

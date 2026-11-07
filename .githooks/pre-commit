@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Format the C/C++ sources with format.sh, then re-stage the staged ones.
+# Format the staged C/C++ sources with clang-format, then re-stage them.
 # Enable with: git config core.hooksPath .githooks
 # Bypass once with: git commit --no-verify
 #
@@ -10,7 +10,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.cpp' '*.hpp' 
 
 [ -n "$staged" ] || exit 0
 
-bash "$(git rev-parse --show-toplevel)/format.sh"
+printf '%s\n' "$staged" | xargs -d '\n' clang-format -i --
 
 printf '%s\n' "$staged" | while IFS= read -r f; do
     git add -- "$f"

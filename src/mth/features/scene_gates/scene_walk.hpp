@@ -120,7 +120,7 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
 // use rather than at startup because the lookup takes the loader lock, and retried until it answers so
 // a walk that runs before the module is published does not cache a zero for the rest of the session.
 // Game-thread only, like every walk.
-[[nodiscard]] inline pal::ModuleInfo game_range()
+[[nodiscard]] inline const pal::ModuleInfo &game_range()
 {
     static pal::ModuleInfo gm{};
     if (gm.size == 0)
@@ -130,7 +130,7 @@ SceneWalk walk_scene(void *root, std::uintptr_t mod_base, std::size_t mod_size, 
 
 [[nodiscard]] inline bool looks_like_component(const void *p)
 {
-    const pal::ModuleInfo gm = game_range();
+    const pal::ModuleInfo &gm = game_range();
     return looks_like_component(p, gm.base, gm.size);
 }
 
@@ -190,7 +190,7 @@ class SceneWalker
 
     template <typename Visit> SceneWalk walk(void *root, Visit &&visit)
     {
-        const pal::ModuleInfo gm = game_range();
+        const pal::ModuleInfo &gm = game_range();
         return walk_scene(root, gm.base, gm.size, pending_, buffer_, std::forward<Visit>(visit));
     }
 

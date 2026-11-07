@@ -33,34 +33,35 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
                          std::function<void(const std::string &)> send_death, std::function<void *()> get_player)
     : rando_(rando), get_player_(get_player), location_hooks_(rando, &scout), boss_tracker_(rando), goal_tracker_(rando),
       death_hooks_(std::move(send_death), std::move(get_player)), ability_hooks_([&state](std::int64_t id) { return state.has_received(id); }),
-      sewer_cat_gate_([this, &state] { return vendor_locked(state); }), status_menu_caps_(level_cap_hooks_),
-      save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); })
+      sewer_cat_gate_([this, &state] { return vendor_locked(state); }),
+      // Loading a save is the vendor lockout's only reset point, which scopes the latch to a save rather
+      // than to the process. boss_tracker_ and vendor_lockout_ are declared before modifier_hooks_, so
+      // both are built before the hook can fire and outlive it.
+      modifier_hooks_(
+          [this]
+          {
+              boss_tracker_.on_save_loaded();
+              vendor_lockout_.store(false, std::memory_order_relaxed);
+          }),
+      status_menu_caps_(level_cap_hooks_), save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); })
 {
     install_pawn_shop_hook([this, &state] { return vendor_locked(state); });
     install_fountain_lamp_hook();
     // The title gate owns the only StartGame detour, which calls into the takeover; the destructor
     // removes it before the takeover member is destroyed.
     install_title_gate([&state] { return state.phase() == ConnectionPhase::Connected; }, [this] { return save_takeover_.begin(); });
-    // Loading a save is the vendor lockout's only reset point, which scopes the latch to a save rather
-    // than to the process.
-    set_save_loaded(
-        [this]
-        {
-            boss_tracker_.on_save_loaded();
-            vendor_lockout_.store(false, std::memory_order_relaxed);
-        });
     location_hooks_.set_player_getter(get_player_); // kear key edits mirror Player+0x11b0 (#130)
 }
 
 HookManager::~HookManager()
 {
-    // Unreached while the entry point leaks App (see entry.cpp). These detours and the save-loaded
-    // callback reach members through this, so they go before any member is destroyed. App removes the
-    // tick hooks before this runs.
+    // Unreached while the entry point leaks App (see entry.cpp). These detours reach members through
+    // this, so they go before any member is destroyed. modifier_hooks_ removes its own hook and the
+    // save-loaded callback when it is destroyed, ahead of the earlier-declared members the callback
+    // touches. App removes the tick hooks before this runs.
     remove_title_gate();
     remove_pawn_shop_hook();
     remove_fountain_lamp_hook();
-    set_save_loaded(nullptr);
 }
 
 // Pawnty and Panino both sell outside AP logic, so they stay shut for the rest of the save once a
