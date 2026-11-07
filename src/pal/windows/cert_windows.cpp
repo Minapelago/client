@@ -14,35 +14,16 @@ namespace fs = std::filesystem;
 namespace
 {
 
-std::string base64(const unsigned char *data, std::size_t len)
+// PEM block with CRLF line breaks, which OpenSSL's PEM reader accepts.
+std::string der_to_pem(const unsigned char *data, DWORD len)
 {
-    static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve(((len + 2) / 3) * 4);
-    std::size_t i = 0;
-    for (; i + 3 <= len; i += 3)
-    {
-        const unsigned n = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
-        out.push_back(tbl[(n >> 18) & 63]);
-        out.push_back(tbl[(n >> 12) & 63]);
-        out.push_back(tbl[(n >> 6) & 63]);
-        out.push_back(tbl[n & 63]);
-    }
-    if (len - i == 1)
-    {
-        const unsigned n = data[i] << 16;
-        out.push_back(tbl[(n >> 18) & 63]);
-        out.push_back(tbl[(n >> 12) & 63]);
-        out.append("==");
-    }
-    else if (len - i == 2)
-    {
-        const unsigned n = (data[i] << 16) | (data[i + 1] << 8);
-        out.push_back(tbl[(n >> 18) & 63]);
-        out.push_back(tbl[(n >> 12) & 63]);
-        out.push_back(tbl[(n >> 6) & 63]);
-        out.push_back('=');
-    }
+    DWORD size = 0;
+    if (!CryptBinaryToStringA(data, len, CRYPT_STRING_BASE64HEADER, nullptr, &size))
+        return {};
+    std::string out(size, '\0');
+    if (!CryptBinaryToStringA(data, len, CRYPT_STRING_BASE64HEADER, out.data(), &size))
+        return {};
+    out.resize(size);
     return out;
 }
 
@@ -88,11 +69,10 @@ std::optional<fs::path> ca_bundle_path()
         PCCERT_CONTEXT ctx = nullptr;
         while ((ctx = CertEnumCertificatesInStore(store, ctx)) != nullptr)
         {
-            const std::string body = base64(ctx->pbCertEncoded, ctx->cbCertEncoded);
-            f << "-----BEGIN CERTIFICATE-----\n";
-            for (std::size_t i = 0; i < body.size(); i += 64)
-                f << body.substr(i, 64) << "\n";
-            f << "-----END CERTIFICATE-----\n";
+            const std::string pem = der_to_pem(ctx->pbCertEncoded, ctx->cbCertEncoded);
+            if (pem.empty())
+                continue;
+            f << pem;
             ++count;
         }
         CertCloseStore(store, 0);

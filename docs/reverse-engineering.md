@@ -38,7 +38,7 @@ signature (see `src/mth/core/data/native_sym_names.hpp`).
 ### Signature and symbol detours
 
 For a function with no named hook, the client installs a detour through a hook
-backend behind the `pal::IHookEngine` seam. The backend is Frida-Gum on Linux and
+backend behind `pal::install_hook` / `pal::remove_hook`. The backend is Frida-Gum on Linux and
 MinHook on Windows. The function address is resolved per platform behind
 `pal::resolve_game_symbol(name)`.
 

@@ -57,7 +57,9 @@ int fld_i(void *base, std::ptrdiff_t off)
 namespace pal
 {
 
-bool upgrades_available()
+// True once the g_saveManager global resolves. Resolves and caches on first
+// call; apply_upgrades no-ops if false.
+static bool upgrades_available()
 {
     if (g_up_resolved)
         return g_up_ok;

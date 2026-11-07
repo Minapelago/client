@@ -8,9 +8,9 @@
 
 #include "mth/core/data/game_symbols.hpp"
 #include "pal/pal_game.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace
 {
@@ -19,7 +19,7 @@ namespace
 // suppressed; the mod's own SetSaveWriteEnabled(false) (via the native MinaModAPI) is what
 // actually keeps saveData.yc untouched during a takeover.
 pal::SaveRequestedFn g_save_request_fn;
-pal::HookId g_save_request_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_save_request_hook;
 void (*g_orig_write_save_data)(void *, bool) = nullptr;
 
 void repl_write_save_data(void *self, bool flag)
@@ -45,23 +45,20 @@ bool install_save_request_hook(SaveRequestedFn on_save)
         g_save_request_fn = nullptr;
         return false;
     }
-    g_save_request_hook = hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_write_save_data),
-                                                     reinterpret_cast<void **>(&g_orig_write_save_data));
-    if (g_save_request_hook == kInvalidHookId)
+    g_save_request_hook = ScopedHook(addr, &repl_write_save_data, &g_orig_write_save_data);
+    if (!g_save_request_hook.installed())
     {
         logf(LogLevel::Error, "takeover: failed to hook SaveManager::WriteSaveData");
         g_save_request_fn = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "takeover: hooked SaveManager::WriteSaveData (id=%llu)", static_cast<unsigned long long>(g_save_request_hook));
+    logf(LogLevel::Info, "takeover: hooked SaveManager::WriteSaveData at %p", g_save_request_hook.target());
     return true;
 }
 
 void remove_save_request_hook()
 {
-    if (g_save_request_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_save_request_hook);
-    g_save_request_hook = kInvalidHookId;
+    g_save_request_hook.reset();
     g_save_request_fn = nullptr;
 }
 

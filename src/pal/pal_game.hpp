@@ -47,7 +47,6 @@ void remove_shop_text_hook();
 void shop_enumerate_locs(void *shop_menu, void (*sink)(int loc, void *ctx), void *ctx);
 [[nodiscard]] void *shop_name_widget(void *shop_menu);
 [[nodiscard]] void *shop_desc_widget(void *shop_menu);
-void shop_set_text(void *widget, const char *utf8);
 
 // Points a palette-mapped text widget at a private palette clone carrying `rgba` at the entry the
 // widget will select, so the color survives the mapping. False leaves the widget untouched.
@@ -132,10 +131,6 @@ void boneup_annotate_description(void *level_up_menu);
 
 // ---- Capacity upgrades (itemTypes 68..72). Symbol/offset divergence lives in the PAL impl. ----
 
-// True once the active SaveSlot global and Player::UpdateStats resolve. Resolves + caches on first
-// call; the feature no-ops if false.
-bool upgrades_available();
-
 // Apply per-type upgrade counts (index order Magic,Health,Spark,Vial,Trinket; already clamped to
 // caps) to the active save: set that many low bits in each per-type field, then call
 // Player::UpdateStats(player) to recompute live maxima. `counts` has mth::kUpgradeCount entries.
@@ -143,9 +138,6 @@ bool upgrades_available();
 bool apply_upgrades(const int *counts, void *player);
 
 // ---- Ability gating. Symbol/offset/game-call divergence lives in the PAL impl. ----
-
-// True once at least one ability chokepoint symbol resolves on this platform.
-bool abilities_available();
 
 // Gate predicate consulted by the detours on the game thread. `a` is the mth::Ability ordinal
 // (int, to keep pal/ free of mth/ headers).

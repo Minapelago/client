@@ -175,7 +175,6 @@ void report_crash(EXCEPTION_POINTERS *ep, const char *source)
     if (ep && ep->ContextRecord)
         log_backtrace(ep->ContextRecord);
 
-    pal::default_log().flush(); // ensure it reaches disk before the process dies
     InterlockedExchange(&g_in_handler, 0);
 }
 

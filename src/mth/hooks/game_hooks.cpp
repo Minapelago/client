@@ -49,8 +49,7 @@ namespace mth
 GameHooks::GameHooks(IGameEvents &sink)
 {
     g_sink = &sink;
-    fixed_update_ = ScopedHook(sym::game_fixed_update, reinterpret_cast<void *>(&repl_game_fixed_update), reinterpret_cast<void **>(&g_orig_game_fixed_update),
-                               "Game::FixedUpdate");
+    fixed_update_ = pal::ScopedHook(sym::game_fixed_update, &repl_game_fixed_update, &g_orig_game_fixed_update, "Game::FixedUpdate");
     mod::install_world_update_hook(&world_update_notify);
     mod::install_world_update_end_hook(&world_update_end_notify);
     mod::install_world_destroy_hook(&world_destroy_notify);

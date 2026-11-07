@@ -18,9 +18,6 @@ class CapturingLog final : public pal::ILog
         std::lock_guard<std::mutex> lock(mu_);
         entries_.emplace_back(level, std::string(message));
     }
-    void flush() override
-    {
-    }
 
     std::vector<std::pair<pal::LogLevel, std::string>> entries()
     {

@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <span>
 #include <string>
 
@@ -68,9 +67,5 @@ inline void set_game_text_range(TextRange r) noexcept
 // Reads the full symbol table (incl. local symbols); requires init_hook_engine() first.
 // Returns 0 if not found.
 std::uintptr_t resolve_game_symbol(const char *mangled_name);
-
-// Pass nullptr to clear; empty resolver falls back to platform default.
-using SymbolResolver = std::function<std::uintptr_t(const char *)>;
-void set_symbol_resolver(SymbolResolver);
 
 } // namespace pal

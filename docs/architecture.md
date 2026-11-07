@@ -15,8 +15,10 @@ The build has a strict dependency direction (`core` <- `pal` <- `mthap`). Two ta
 | `mthap_core` | static lib | Pure, cross-platform logic: the wrapper over the game's mod API (`src/mod/`, with the live `MinaModAPI*` injected so tests can substitute a fake), AP state/coordinator, the location/item bridge, inbound granter, save state, ID mapping, startup config, enforcement policy, and the signature matcher. No OS/backend headers that require linking. |
 | `mthap`      | module     | The final shared object (`mod.so` / `mod.dll`). The composition root (`mth::App`) wires it all together, and owns the per-feature hooks under `src/mth/features/`.                                                             |
 
-`mth::App` owns the runtime. The logger and the hook engine are PAL globals exposed through
-interfaces with injectable seams, so the core can be unit-tested without a real platform.
+`mth::App` owns the runtime. The logger is a PAL global behind `pal::ILog`, which tests swap with
+`pal::set_default_log`, so the core can be unit-tested without a real platform. The hook engine
+(`pal::install_hook` / `pal::remove_hook`) and the overlay (`pal::overlay_start` / `pal::overlay_stop`)
+are plain functions implemented once per platform.
 
 The unit tests link `mthap_core`, and additionally compile in the Linux file-log
 and certificate-store PAL sources plus `features/death_hooks.cpp` to exercise them directly. That

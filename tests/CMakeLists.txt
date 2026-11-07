@@ -27,7 +27,6 @@ target_link_libraries(mthap_unit_tests PRIVATE
 # set_default_log, logf) and the cert store.
 target_sources(mthap_unit_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src/pal/log.cpp"
-    "${CMAKE_SOURCE_DIR}/src/pal/linux/log_linux.cpp"
     "${CMAKE_SOURCE_DIR}/src/pal/linux/cert_linux.cpp"
     # DeathHooks lives in the mthap module (not linked by tests); compile it in directly so its
     # sparkless-demise gating can be unit-tested against mthap_core (mod:: and the gate).

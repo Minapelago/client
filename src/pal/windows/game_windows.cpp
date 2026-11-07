@@ -15,10 +15,10 @@
 #include "mth/core/stat_cap_state.hpp"
 #include "mth/core/title_menu.hpp"
 #include "pal/pal_game.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace
 {
@@ -31,7 +31,7 @@ constexpr std::ptrdiff_t kShopLocIdxOff = 0x1e0;   // int
 constexpr std::ptrdiff_t kShopItemTypeOff = 0x1e4; // int
 
 pal::ShopBuyFn g_on_shop_buy = nullptr;
-pal::HookId g_shop_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_shop_hook;
 void (*g_orig_init_state)(void *) = nullptr;
 int g_shop_last_locidx = -1; // dedup: InitState is re-entered while in the buy-confirm state
 
@@ -91,9 +91,9 @@ pal::SeedFn g_seed_fn;
 pal::SaveLoadedFn g_save_loaded_fn;
 pal::BlockFn g_block_fn;
 std::uintptr_t g_addr_activate_slot = 0, g_addr_toggle = 0, g_addr_set_applied = 0;
-pal::HookId g_id_activate_slot = pal::kInvalidHookId;
-pal::HookId g_id_toggle = pal::kInvalidHookId;
-pal::HookId g_id_set_applied = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_activate_slot_hook;
+[[clang::no_destroy]] pal::ScopedHook g_toggle_hook;
+[[clang::no_destroy]] pal::ScopedHook g_set_applied_hook;
 void (*g_orig_activate_slot)(void *, bool) = nullptr;
 void (*g_orig_toggle)(void *, int, bool, void *, bool, int) = nullptr;
 void (*g_orig_set_applied)(void *, int, bool, void *) = nullptr;
@@ -171,7 +171,7 @@ void repl_set_applied(void *self, int idx, bool applied, void *slot)
 // TitleScreen::UpdateState(): while disconnected, keep the menu cursor off index 0 ("Start Game")
 // so the wrap behaves as a two-option menu. The game has no disabled-option concept to set.
 pal::TitleGateFn g_title_gate_fn;
-pal::HookId g_title_gate_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_title_gate_hook;
 void (*g_orig_title_update)(void *) = nullptr;
 
 // This build's TitleScreen::UpdateState/StartGame detours are handed the SECONDARY state-machine
@@ -297,22 +297,19 @@ bool install_shop_purchase_hook(ShopBuyFn on_buy)
         logf(LogLevel::Warn, "shop: ShopMenu::InitState not resolved; shop check disabled");
         return false;
     }
-    g_shop_hook =
-        hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_init_state), reinterpret_cast<void **>(&g_orig_init_state));
-    if (g_shop_hook == kInvalidHookId)
+    g_shop_hook = ScopedHook(addr, &repl_init_state, &g_orig_init_state);
+    if (!g_shop_hook.installed())
     {
         logf(LogLevel::Error, "shop: failed to hook ShopMenu::InitState");
         return false;
     }
-    logf(LogLevel::Info, "shop: hooked ShopMenu::InitState (id=%llu)", static_cast<unsigned long long>(g_shop_hook));
+    logf(LogLevel::Info, "shop: hooked ShopMenu::InitState at %p", g_shop_hook.target());
     return true;
 }
 
 void remove_shop_purchase_hook()
 {
-    if (g_shop_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_shop_hook);
-    g_shop_hook = kInvalidHookId;
+    g_shop_hook.reset();
     g_on_shop_buy = nullptr;
 }
 
@@ -326,23 +323,20 @@ bool install_title_gate_hook(TitleGateFn connected)
         g_title_gate_fn = nullptr;
         return false;
     }
-    g_title_gate_hook = hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_title_update_state),
-                                                   reinterpret_cast<void **>(&g_orig_title_update));
-    if (g_title_gate_hook == kInvalidHookId)
+    g_title_gate_hook = ScopedHook(addr, &repl_title_update_state, &g_orig_title_update);
+    if (!g_title_gate_hook.installed())
     {
         logf(LogLevel::Error, "title: failed to hook TitleScreen::UpdateState");
         g_title_gate_fn = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "title: hooked TitleScreen::UpdateState (id=%llu)", static_cast<unsigned long long>(g_title_gate_hook));
+    logf(LogLevel::Info, "title: hooked TitleScreen::UpdateState at %p", g_title_gate_hook.target());
     return true;
 }
 
 void remove_title_gate_hook()
 {
-    if (g_title_gate_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_title_gate_hook);
-    g_title_gate_hook = kInvalidHookId;
+    g_title_gate_hook.reset();
     g_title_gate_fn = nullptr;
 }
 
@@ -380,9 +374,8 @@ void set_new_game_modifier_seed(SeedFn seed)
     if (!modifiers_available())
         return;
     g_seed_fn = std::move(seed);
-    g_id_activate_slot = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_activate_slot), reinterpret_cast<void *>(&repl_activate_slot),
-                                                    reinterpret_cast<void **>(&g_orig_activate_slot));
-    if (g_id_activate_slot == kInvalidHookId)
+    g_activate_slot_hook = ScopedHook(g_addr_activate_slot, &repl_activate_slot, &g_orig_activate_slot);
+    if (!g_activate_slot_hook.installed())
         logf(LogLevel::Error, "modifiers: ActivateSaveSlot seed hook FAILED (new-game seeding disabled)");
     else
         logf(LogLevel::Info, "modifiers: seed hooks installed (Windows)");
@@ -393,15 +386,13 @@ void set_modifier_lockdown(BlockFn block)
         return;
     g_block_fn = std::move(block);
     // ToggleCheat = the options-menu path (mirror + persist); SetCheatApplied = the typed cheat-code path.
-    g_id_toggle =
-        hook_engine().install_hook(reinterpret_cast<void *>(g_addr_toggle), reinterpret_cast<void *>(&repl_toggle), reinterpret_cast<void **>(&g_orig_toggle));
-    g_id_set_applied = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_set_applied), reinterpret_cast<void *>(&repl_set_applied),
-                                                  reinterpret_cast<void **>(&g_orig_set_applied));
-    if (g_id_toggle == kInvalidHookId)
+    g_toggle_hook = ScopedHook(g_addr_toggle, &repl_toggle, &g_orig_toggle);
+    g_set_applied_hook = ScopedHook(g_addr_set_applied, &repl_set_applied, &g_orig_set_applied);
+    if (!g_toggle_hook.installed())
         logf(LogLevel::Error, "modifiers: ToggleCheat hook FAILED (menu lockdown disabled)");
-    if (g_id_set_applied == kInvalidHookId)
+    if (!g_set_applied_hook.installed())
         logf(LogLevel::Error, "modifiers: SetCheatApplied hook FAILED (cheat-code lockdown disabled)");
-    if (g_id_toggle != kInvalidHookId && g_id_set_applied != kInvalidHookId)
+    if (g_toggle_hook.installed() && g_set_applied_hook.installed())
         logf(LogLevel::Info, "modifiers: lockdown hooks installed (Windows)");
 }
 bool apply_live_modifier(int idx, bool on)
@@ -425,12 +416,8 @@ bool apply_live_modifier(int idx, bool on)
 }
 void remove_modifier_hooks()
 {
-    for (HookId *id : {&g_id_activate_slot, &g_id_toggle, &g_id_set_applied})
-    {
-        if (*id != kInvalidHookId)
-            hook_engine().remove_hook(*id);
-        *id = kInvalidHookId;
-    }
+    for (ScopedHook *hook : {&g_activate_slot_hook, &g_toggle_hook, &g_set_applied_hook})
+        hook->reset();
     g_seed_fn = nullptr;
     g_save_loaded_fn = nullptr;
     g_block_fn = nullptr;
@@ -461,7 +448,7 @@ constexpr std::ptrdiff_t kLevelUpMenuStatOff = 0xb8;
 
 std::uintptr_t g_lc_save_manager = 0; // g_saveManager; *(g_lc_save_manager) = the active SaveSlot the menu reads
 std::uintptr_t g_lc_addr_update = 0;
-pal::HookId g_lc_id_update = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_lc_update_hook;
 void (*g_lc_orig_update)(void *, void *) = nullptr; // LevelUpMenu::Update(this, ycUpdateQueueContext*)
 pal::LevelCapFn g_lc_cap_fn;
 bool g_lc_resolved = false;
@@ -533,9 +520,8 @@ void set_level_cap_provider(LevelCapFn cap)
     if (!level_cap_available())
         return;
     g_lc_cap_fn = std::move(cap);
-    g_lc_id_update = hook_engine().install_hook(reinterpret_cast<void *>(g_lc_addr_update), reinterpret_cast<void *>(&repl_lvlup_update),
-                                                reinterpret_cast<void **>(&g_lc_orig_update));
-    if (g_lc_id_update == kInvalidHookId)
+    g_lc_update_hook = ScopedHook(g_lc_addr_update, &repl_lvlup_update, &g_lc_orig_update);
+    if (!g_lc_update_hook.installed())
     {
         logf(LogLevel::Error, "levelcap: Windows hook install FAILED (LevelUpMenu::Update)");
         remove_level_cap_hook();
@@ -546,9 +532,7 @@ void set_level_cap_provider(LevelCapFn cap)
 
 void remove_level_cap_hook()
 {
-    if (g_lc_id_update != kInvalidHookId)
-        hook_engine().remove_hook(g_lc_id_update);
-    g_lc_id_update = kInvalidHookId;
+    g_lc_update_hook.reset();
     g_lc_cap_fn = nullptr;
 }
 
@@ -620,15 +604,15 @@ std::uintptr_t g_addr_pickup = 0;
 std::uintptr_t g_addr_train_npc = 0;
 std::uintptr_t g_addr_burrow_jump = 0; // #56
 
-pal::HookId g_id_burrow = pal::kInvalidHookId;
-pal::HookId g_id_rope = pal::kInvalidHookId;
-pal::HookId g_id_puff = pal::kInvalidHookId;
-pal::HookId g_id_launch = pal::kInvalidHookId;
-pal::HookId g_id_on_bounce = pal::kInvalidHookId;
-pal::HookId g_id_spring = pal::kInvalidHookId;
-pal::HookId g_id_carry = pal::kInvalidHookId;
-pal::HookId g_id_train = pal::kInvalidHookId;
-pal::HookId g_id_burrow_jump = pal::kInvalidHookId; // #56
+[[clang::no_destroy]] pal::ScopedHook g_burrow_hook;
+[[clang::no_destroy]] pal::ScopedHook g_rope_hook;
+[[clang::no_destroy]] pal::ScopedHook g_puff_hook;
+[[clang::no_destroy]] pal::ScopedHook g_launch_hook;
+[[clang::no_destroy]] pal::ScopedHook g_on_bounce_hook;
+[[clang::no_destroy]] pal::ScopedHook g_spring_hook;
+[[clang::no_destroy]] pal::ScopedHook g_carry_hook;
+[[clang::no_destroy]] pal::ScopedHook g_train_hook;
+[[clang::no_destroy]] pal::ScopedHook g_burrow_jump_hook; // #56
 
 unsigned long (*g_orig_burrow_ground)(void *) = nullptr;
 void (*g_orig_rope_climb)(void *, void *, bool, bool) = nullptr;
@@ -889,7 +873,8 @@ void patch_train_destination_menu()
 namespace pal
 {
 
-bool abilities_available()
+// True once at least one ability chokepoint symbol resolves on this platform.
+static bool abilities_available()
 {
     if (g_ab_resolved)
         return g_ab_ok;
@@ -918,9 +903,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_burrow_ground != 0)
     {
-        g_id_burrow = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_burrow_ground), reinterpret_cast<void *>(&repl_burrow_ground),
-                                                 reinterpret_cast<void **>(&g_orig_burrow_ground));
-        if (g_id_burrow == kInvalidHookId)
+        g_burrow_hook = ScopedHook(g_addr_burrow_ground, &repl_burrow_ground, &g_orig_burrow_ground);
+        if (!g_burrow_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook Player::SetBurrowGround");
     }
     else
@@ -930,9 +914,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_rope_climb != 0)
     {
-        g_id_rope = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_rope_climb), reinterpret_cast<void *>(&repl_rope_climb),
-                                               reinterpret_cast<void **>(&g_orig_rope_climb));
-        if (g_id_rope == kInvalidHookId)
+        g_rope_hook = ScopedHook(g_addr_rope_climb, &repl_rope_climb, &g_orig_rope_climb);
+        if (!g_rope_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook Player::RopeClimbStart");
     }
     else
@@ -940,9 +923,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_bounce_plant != 0)
     {
-        g_id_puff = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_bounce_plant), reinterpret_cast<void *>(&repl_bounce_plant),
-                                               reinterpret_cast<void **>(&g_orig_bounce_plant));
-        if (g_id_puff == kInvalidHookId)
+        g_puff_hook = ScopedHook(g_addr_bounce_plant, &repl_bounce_plant, &g_orig_bounce_plant);
+        if (!g_puff_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook BouncePlant::CollideWith");
     }
     else
@@ -950,9 +932,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_bounce_launch != 0)
     {
-        g_id_launch = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_bounce_launch), reinterpret_cast<void *>(&repl_bounce_launch),
-                                                 reinterpret_cast<void **>(&g_orig_bounce_launch));
-        if (g_id_launch == kInvalidHookId)
+        g_launch_hook = ScopedHook(g_addr_bounce_launch, &repl_bounce_launch, &g_orig_bounce_launch);
+        if (!g_launch_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook BouncePlant::BounceLaunch");
     }
     else
@@ -960,9 +941,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_on_bounce != 0) // #168: universal launch gate (bounce bushes and any other non-plant surface)
     {
-        g_id_on_bounce = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_on_bounce), reinterpret_cast<void *>(&repl_on_bounce),
-                                                    reinterpret_cast<void **>(&g_orig_on_bounce));
-        if (g_id_on_bounce == kInvalidHookId)
+        g_on_bounce_hook = ScopedHook(g_addr_on_bounce, &repl_on_bounce, &g_orig_on_bounce);
+        if (!g_on_bounce_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook Player::OnBounce");
     }
     else
@@ -970,9 +950,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_spring != 0)
     {
-        g_id_spring = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_spring), reinterpret_cast<void *>(&repl_spring),
-                                                 reinterpret_cast<void **>(&g_orig_spring));
-        if (g_id_spring == kInvalidHookId)
+        g_spring_hook = ScopedHook(g_addr_spring, &repl_spring, &g_orig_spring);
+        if (!g_spring_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook SpringBellows::CollideWith");
     }
     else
@@ -980,9 +959,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_pickup != 0)
     {
-        g_id_carry = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_pickup), reinterpret_cast<void *>(&repl_pickup),
-                                                reinterpret_cast<void **>(&g_orig_pickup));
-        if (g_id_carry == kInvalidHookId)
+        g_carry_hook = ScopedHook(g_addr_pickup, &repl_pickup, &g_orig_pickup);
+        if (!g_carry_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook Player::PickUpAnyNearbyCarryableObject");
     }
     else
@@ -990,9 +968,8 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_train_npc != 0)
     {
-        g_id_train = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_train_npc), reinterpret_cast<void *>(&repl_train_npc),
-                                                reinterpret_cast<void **>(&g_orig_train_npc));
-        if (g_id_train == kInvalidHookId)
+        g_train_hook = ScopedHook(g_addr_train_npc, &repl_train_npc, &g_orig_train_npc);
+        if (!g_train_hook.installed())
             logf(LogLevel::Error, "abilities: failed to hook TrainAuthority::OnNPCEvent");
     }
     else
@@ -1002,17 +979,16 @@ bool install_ability_hooks(AbilityBlockFn block)
 
     if (g_addr_burrow_jump != 0) // #56: suppress the burrow-emerge when a carryable is overhead
     {
-        g_id_burrow_jump = hook_engine().install_hook(reinterpret_cast<void *>(g_addr_burrow_jump), reinterpret_cast<void *>(&repl_burrow_jump),
-                                                      reinterpret_cast<void **>(&g_orig_burrow_jump));
-        if (g_id_burrow_jump == kInvalidHookId)
+        g_burrow_jump_hook = ScopedHook(g_addr_burrow_jump, &repl_burrow_jump, &g_orig_burrow_jump);
+        if (!g_burrow_jump_hook.installed())
             logf(LogLevel::Warn, "abilities: failed to hook Mina::OnBurrowJump (#56)");
     }
     else
         logf(LogLevel::Warn, "abilities: Mina::OnBurrowJump not resolved; carry emerge-suppress disabled");
 
-    const bool any = g_id_burrow != kInvalidHookId || g_id_rope != kInvalidHookId || g_id_puff != kInvalidHookId || g_id_launch != kInvalidHookId ||
-                     g_id_on_bounce != kInvalidHookId || g_id_spring != kInvalidHookId || g_id_carry != kInvalidHookId || g_id_train != kInvalidHookId ||
-                     g_id_burrow_jump != kInvalidHookId;
+    const bool any = g_burrow_hook.installed() || g_rope_hook.installed() || g_puff_hook.installed() || g_launch_hook.installed() ||
+                     g_on_bounce_hook.installed() || g_spring_hook.installed() || g_carry_hook.installed() || g_train_hook.installed() ||
+                     g_burrow_jump_hook.installed();
     if (any)
         logf(LogLevel::Info, "abilities: ability gating hooks installed");
     else
@@ -1022,12 +998,9 @@ bool install_ability_hooks(AbilityBlockFn block)
 
 void remove_ability_hooks()
 {
-    for (HookId *id : {&g_id_burrow, &g_id_rope, &g_id_puff, &g_id_launch, &g_id_on_bounce, &g_id_spring, &g_id_carry, &g_id_train, &g_id_burrow_jump})
-    {
-        if (*id != kInvalidHookId)
-            hook_engine().remove_hook(*id);
-        *id = kInvalidHookId;
-    }
+    for (ScopedHook *hook :
+         {&g_burrow_hook, &g_rope_hook, &g_puff_hook, &g_launch_hook, &g_on_bounce_hook, &g_spring_hook, &g_carry_hook, &g_train_hook, &g_burrow_jump_hook})
+        hook->reset();
     g_ability_block = nullptr;
     g_burrow_commit = nullptr;
     g_burrow_emerge = nullptr;

@@ -2,7 +2,7 @@
 
 #include <functional>
 
-#include "mth/hooks/scoped_hook.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace mth
 {
@@ -51,8 +51,8 @@ class LocationHooks
     void reset_native_bits();
 
   private:
-    ScopedHook pickup_init_;
-    ScopedHook shop_oos_; // brackets Shop::IsOutOfStock so the IsItemCollected override can scope to it (#67)
+    pal::ScopedHook pickup_init_;
+    pal::ScopedHook shop_oos_; // brackets Shop::IsOutOfStock so the IsItemCollected override can scope to it (#67)
 };
 
 } // namespace mth

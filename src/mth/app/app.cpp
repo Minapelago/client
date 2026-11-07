@@ -179,8 +179,7 @@ App::App() : bundle_store_(pal::mod_save_dir(), {pal::log_dir(), pal::mod_save_d
         [this]() -> void * { return tracker_->player(); });
     {
         overlay_root_ = std::make_unique<OverlayRoot>(*this, net_->banner_queue());
-        overlay_ = pal::make_overlay();
-        overlay_->set_ui(overlay_root_.get());
+        pal::overlay_start(overlay_root_.get());
         pal::logf(pal::LogLevel::Info, "overlay: dev console attached"); // overlay logs the resolved toggle key
     }
     ready_.store(true); // everything wired: allow the game-thread tick hooks to run (they may already be firing)
@@ -189,7 +188,7 @@ App::App() : bundle_store_(pal::mod_save_dir(), {pal::log_dir(), pal::mod_save_d
 App::~App()
 {
     ready_.store(false);   // stop ticking before any member is torn down
-    overlay_.reset();      // removes render/input hooks + stops drawing first
+    pal::overlay_stop();   // removes render/input hooks + stops drawing first
     overlay_root_.reset(); // then unregister the log observer
     pal::remove_newfile_kit_suppressor();
     hooks_.reset(); // GameHooks (tick source) stops first inside the manager, then feature hooks

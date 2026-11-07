@@ -18,7 +18,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
-#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -32,11 +31,12 @@
 #include <vulkan/vulkan.h>
 
 #include "mth/core/data/game_symbols.hpp"
+#include "pal/overlay_keys.hpp"
 #include "pal/overlay_scale.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
 #include "pal/pal_overlay.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace pal
 {
@@ -52,32 +52,37 @@ PFN_vkGetInstanceProcAddr g_vkGetInstanceProcAddr = nullptr;
 PFN_vkGetDeviceProcAddr g_vkGetDeviceProcAddr = nullptr;
 
 // Device-level functions resolved via vkGetDeviceProcAddr once the device is known.
-PFN_vkGetDeviceQueue g_vkGetDeviceQueue = nullptr;
-PFN_vkGetSwapchainImagesKHR g_vkGetSwapchainImagesKHR = nullptr;
-PFN_vkCreateImageView g_vkCreateImageView = nullptr;
-PFN_vkDestroyImageView g_vkDestroyImageView = nullptr;
-PFN_vkCreateRenderPass g_vkCreateRenderPass = nullptr;
-PFN_vkDestroyRenderPass g_vkDestroyRenderPass = nullptr;
-PFN_vkCreateFramebuffer g_vkCreateFramebuffer = nullptr;
-PFN_vkDestroyFramebuffer g_vkDestroyFramebuffer = nullptr;
-PFN_vkCreateDescriptorPool g_vkCreateDescriptorPool = nullptr;
-PFN_vkDestroyDescriptorPool g_vkDestroyDescriptorPool = nullptr;
-PFN_vkCreateCommandPool g_vkCreateCommandPool = nullptr;
-PFN_vkDestroyCommandPool g_vkDestroyCommandPool = nullptr;
-PFN_vkAllocateCommandBuffers g_vkAllocateCommandBuffers = nullptr;
-PFN_vkResetCommandBuffer g_vkResetCommandBuffer = nullptr;
-PFN_vkBeginCommandBuffer g_vkBeginCommandBuffer = nullptr;
-PFN_vkEndCommandBuffer g_vkEndCommandBuffer = nullptr;
-PFN_vkCmdBeginRenderPass g_vkCmdBeginRenderPass = nullptr;
-PFN_vkCmdEndRenderPass g_vkCmdEndRenderPass = nullptr;
-PFN_vkQueueSubmit g_vkQueueSubmit = nullptr;
-PFN_vkDeviceWaitIdle g_vkDeviceWaitIdle = nullptr;
-PFN_vkCreateSemaphore g_vkCreateSemaphore = nullptr;
-PFN_vkDestroySemaphore g_vkDestroySemaphore = nullptr;
-PFN_vkCreateFence g_vkCreateFence = nullptr;
-PFN_vkDestroyFence g_vkDestroyFence = nullptr;
-PFN_vkWaitForFences g_vkWaitForFences = nullptr;
-PFN_vkResetFences g_vkResetFences = nullptr;
+#define MTHAP_VK_DEVICE_FNS(X)                                                                                                                                 \
+    X(GetDeviceQueue)                                                                                                                                          \
+    X(GetSwapchainImagesKHR)                                                                                                                                   \
+    X(CreateImageView)                                                                                                                                         \
+    X(DestroyImageView)                                                                                                                                        \
+    X(CreateRenderPass)                                                                                                                                        \
+    X(DestroyRenderPass)                                                                                                                                       \
+    X(CreateFramebuffer)                                                                                                                                       \
+    X(DestroyFramebuffer)                                                                                                                                      \
+    X(CreateDescriptorPool)                                                                                                                                    \
+    X(DestroyDescriptorPool)                                                                                                                                   \
+    X(CreateCommandPool)                                                                                                                                       \
+    X(DestroyCommandPool)                                                                                                                                      \
+    X(AllocateCommandBuffers)                                                                                                                                  \
+    X(ResetCommandBuffer)                                                                                                                                      \
+    X(BeginCommandBuffer)                                                                                                                                      \
+    X(EndCommandBuffer)                                                                                                                                        \
+    X(CmdBeginRenderPass)                                                                                                                                      \
+    X(CmdEndRenderPass)                                                                                                                                        \
+    X(QueueSubmit)                                                                                                                                             \
+    X(DeviceWaitIdle)                                                                                                                                          \
+    X(CreateSemaphore)                                                                                                                                         \
+    X(DestroySemaphore)                                                                                                                                        \
+    X(CreateFence)                                                                                                                                             \
+    X(DestroyFence)                                                                                                                                            \
+    X(WaitForFences)                                                                                                                                           \
+    X(ResetFences)
+
+#define X(name) PFN_vk##name g_vk##name = nullptr;
+MTHAP_VK_DEVICE_FNS(X)
+#undef X
 
 // Trampolines installed by the hook engine.
 PFN_vkCreateSwapchainKHR g_orig_create_swapchain = nullptr;
@@ -146,44 +151,24 @@ std::vector<SDL_Event> g_input_queue; // guarded by g_input_mu
 SDL_Keycode g_toggle_key = SDLK_F1;
 SDL_Keycode g_login_key = SDLK_F2;
 
-// MTHAP_CONSOLE_KEY env string to SDL_Keycode.
-static SDL_Keycode parse_console_key(const char *name)
-{
-    if (name == nullptr || name[0] == '\0')
-        return SDLK_F1;
-    std::string_view sv{name};
-    if (sv == "F1")
-        return SDLK_F1;
-    if (sv == "F2")
-        return SDLK_F2;
-    if (sv == "F3")
-        return SDLK_F3;
-    if (sv == "F4")
-        return SDLK_F4;
-    if (sv == "F5")
-        return SDLK_F5;
-    if (sv == "F6")
-        return SDLK_F6;
-    if (sv == "F7")
-        return SDLK_F7;
-    if (sv == "F8")
-        return SDLK_F8;
-    if (sv == "F9")
-        return SDLK_F9;
-    if (sv == "F10")
-        return SDLK_F10;
-    if (sv == "F11")
-        return SDLK_F11;
-    if (sv == "F12")
-        return SDLK_F12;
-    if (sv == "BACKQUOTE" || sv == "GRAVE" || sv == "`")
-        return SDLK_BACKQUOTE;
-    return SDLK_F1;
-}
+// SDL_Keycode to ImGuiKey (header-only, no SDL linkage). Letters, digits, F1..F12 and KP_1..KP_9 are
+// contiguous in both enums, which the static_asserts pin.
+static_assert(SDLK_z - SDLK_a == ImGuiKey_Z - ImGuiKey_A);
+static_assert(SDLK_9 - SDLK_0 == ImGuiKey_9 - ImGuiKey_0);
+static_assert(SDLK_F12 - SDLK_F1 == 11 && ImGuiKey_F12 - ImGuiKey_F1 == 11);
+static_assert(SDLK_KP_9 - SDLK_KP_1 == 8 && ImGuiKey_Keypad9 - ImGuiKey_Keypad1 == 8);
 
-// SDL_Keycode to ImGuiKey (header-only, no SDL linkage).
 static ImGuiKey sdl_keycode_to_imgui(SDL_Keycode key)
 {
+    if (key >= SDLK_a && key <= SDLK_z)
+        return static_cast<ImGuiKey>(ImGuiKey_A + (key - SDLK_a));
+    if (key >= SDLK_0 && key <= SDLK_9)
+        return static_cast<ImGuiKey>(ImGuiKey_0 + (key - SDLK_0));
+    if (key >= SDLK_F1 && key <= SDLK_F12)
+        return static_cast<ImGuiKey>(ImGuiKey_F1 + (key - SDLK_F1));
+    if (key >= SDLK_KP_1 && key <= SDLK_KP_9)
+        return static_cast<ImGuiKey>(ImGuiKey_Keypad1 + (key - SDLK_KP_1));
+
     switch (key)
     {
     case SDLK_TAB:
@@ -232,102 +217,6 @@ static ImGuiKey sdl_keycode_to_imgui(SDL_Keycode key)
         return ImGuiKey_LeftSuper;
     case SDLK_RGUI:
         return ImGuiKey_RightSuper;
-    case SDLK_a:
-        return ImGuiKey_A;
-    case SDLK_b:
-        return ImGuiKey_B;
-    case SDLK_c:
-        return ImGuiKey_C;
-    case SDLK_d:
-        return ImGuiKey_D;
-    case SDLK_e:
-        return ImGuiKey_E;
-    case SDLK_f:
-        return ImGuiKey_F;
-    case SDLK_g:
-        return ImGuiKey_G;
-    case SDLK_h:
-        return ImGuiKey_H;
-    case SDLK_i:
-        return ImGuiKey_I;
-    case SDLK_j:
-        return ImGuiKey_J;
-    case SDLK_k:
-        return ImGuiKey_K;
-    case SDLK_l:
-        return ImGuiKey_L;
-    case SDLK_m:
-        return ImGuiKey_M;
-    case SDLK_n:
-        return ImGuiKey_N;
-    case SDLK_o:
-        return ImGuiKey_O;
-    case SDLK_p:
-        return ImGuiKey_P;
-    case SDLK_q:
-        return ImGuiKey_Q;
-    case SDLK_r:
-        return ImGuiKey_R;
-    case SDLK_s:
-        return ImGuiKey_S;
-    case SDLK_t:
-        return ImGuiKey_T;
-    case SDLK_u:
-        return ImGuiKey_U;
-    case SDLK_v:
-        return ImGuiKey_V;
-    case SDLK_w:
-        return ImGuiKey_W;
-    case SDLK_x:
-        return ImGuiKey_X;
-    case SDLK_y:
-        return ImGuiKey_Y;
-    case SDLK_z:
-        return ImGuiKey_Z;
-    case SDLK_0:
-        return ImGuiKey_0;
-    case SDLK_1:
-        return ImGuiKey_1;
-    case SDLK_2:
-        return ImGuiKey_2;
-    case SDLK_3:
-        return ImGuiKey_3;
-    case SDLK_4:
-        return ImGuiKey_4;
-    case SDLK_5:
-        return ImGuiKey_5;
-    case SDLK_6:
-        return ImGuiKey_6;
-    case SDLK_7:
-        return ImGuiKey_7;
-    case SDLK_8:
-        return ImGuiKey_8;
-    case SDLK_9:
-        return ImGuiKey_9;
-    case SDLK_F1:
-        return ImGuiKey_F1;
-    case SDLK_F2:
-        return ImGuiKey_F2;
-    case SDLK_F3:
-        return ImGuiKey_F3;
-    case SDLK_F4:
-        return ImGuiKey_F4;
-    case SDLK_F5:
-        return ImGuiKey_F5;
-    case SDLK_F6:
-        return ImGuiKey_F6;
-    case SDLK_F7:
-        return ImGuiKey_F7;
-    case SDLK_F8:
-        return ImGuiKey_F8;
-    case SDLK_F9:
-        return ImGuiKey_F9;
-    case SDLK_F10:
-        return ImGuiKey_F10;
-    case SDLK_F11:
-        return ImGuiKey_F11;
-    case SDLK_F12:
-        return ImGuiKey_F12;
     case SDLK_MINUS:
         return ImGuiKey_Minus;
     case SDLK_EQUALS:
@@ -352,24 +241,6 @@ static ImGuiKey sdl_keycode_to_imgui(SDL_Keycode key)
         return ImGuiKey_GraveAccent;
     case SDLK_KP_0:
         return ImGuiKey_Keypad0;
-    case SDLK_KP_1:
-        return ImGuiKey_Keypad1;
-    case SDLK_KP_2:
-        return ImGuiKey_Keypad2;
-    case SDLK_KP_3:
-        return ImGuiKey_Keypad3;
-    case SDLK_KP_4:
-        return ImGuiKey_Keypad4;
-    case SDLK_KP_5:
-        return ImGuiKey_Keypad5;
-    case SDLK_KP_6:
-        return ImGuiKey_Keypad6;
-    case SDLK_KP_7:
-        return ImGuiKey_Keypad7;
-    case SDLK_KP_8:
-        return ImGuiKey_Keypad8;
-    case SDLK_KP_9:
-        return ImGuiKey_Keypad9;
     case SDLK_KP_PERIOD:
         return ImGuiKey_KeypadDecimal;
     case SDLK_KP_DIVIDE:
@@ -542,38 +413,15 @@ bool resolve_device_functions(VkDevice device)
         }
     }
 
-    resolve_device_fn(g_vkGetDeviceQueue, device, "vkGetDeviceQueue");
-    resolve_device_fn(g_vkGetSwapchainImagesKHR, device, "vkGetSwapchainImagesKHR");
-    resolve_device_fn(g_vkCreateImageView, device, "vkCreateImageView");
-    resolve_device_fn(g_vkDestroyImageView, device, "vkDestroyImageView");
-    resolve_device_fn(g_vkCreateRenderPass, device, "vkCreateRenderPass");
-    resolve_device_fn(g_vkDestroyRenderPass, device, "vkDestroyRenderPass");
-    resolve_device_fn(g_vkCreateFramebuffer, device, "vkCreateFramebuffer");
-    resolve_device_fn(g_vkDestroyFramebuffer, device, "vkDestroyFramebuffer");
-    resolve_device_fn(g_vkCreateDescriptorPool, device, "vkCreateDescriptorPool");
-    resolve_device_fn(g_vkDestroyDescriptorPool, device, "vkDestroyDescriptorPool");
-    resolve_device_fn(g_vkCreateCommandPool, device, "vkCreateCommandPool");
-    resolve_device_fn(g_vkDestroyCommandPool, device, "vkDestroyCommandPool");
-    resolve_device_fn(g_vkAllocateCommandBuffers, device, "vkAllocateCommandBuffers");
-    resolve_device_fn(g_vkResetCommandBuffer, device, "vkResetCommandBuffer");
-    resolve_device_fn(g_vkBeginCommandBuffer, device, "vkBeginCommandBuffer");
-    resolve_device_fn(g_vkEndCommandBuffer, device, "vkEndCommandBuffer");
-    resolve_device_fn(g_vkCmdBeginRenderPass, device, "vkCmdBeginRenderPass");
-    resolve_device_fn(g_vkCmdEndRenderPass, device, "vkCmdEndRenderPass");
-    resolve_device_fn(g_vkQueueSubmit, device, "vkQueueSubmit");
-    resolve_device_fn(g_vkDeviceWaitIdle, device, "vkDeviceWaitIdle");
-    resolve_device_fn(g_vkCreateSemaphore, device, "vkCreateSemaphore");
-    resolve_device_fn(g_vkDestroySemaphore, device, "vkDestroySemaphore");
-    resolve_device_fn(g_vkCreateFence, device, "vkCreateFence");
-    resolve_device_fn(g_vkDestroyFence, device, "vkDestroyFence");
-    resolve_device_fn(g_vkWaitForFences, device, "vkWaitForFences");
-    resolve_device_fn(g_vkResetFences, device, "vkResetFences");
+#define X(name) resolve_device_fn(g_vk##name, device, "vk" #name);
+    MTHAP_VK_DEVICE_FNS(X)
+#undef X
 
-    return g_vkGetDeviceQueue && g_vkGetSwapchainImagesKHR && g_vkCreateImageView && g_vkDestroyImageView && g_vkCreateRenderPass && g_vkDestroyRenderPass &&
-           g_vkCreateFramebuffer && g_vkDestroyFramebuffer && g_vkCreateDescriptorPool && g_vkDestroyDescriptorPool && g_vkCreateCommandPool &&
-           g_vkDestroyCommandPool && g_vkAllocateCommandBuffers && g_vkResetCommandBuffer && g_vkBeginCommandBuffer && g_vkEndCommandBuffer &&
-           g_vkCmdBeginRenderPass && g_vkCmdEndRenderPass && g_vkQueueSubmit && g_vkDeviceWaitIdle && g_vkCreateSemaphore && g_vkDestroySemaphore &&
-           g_vkCreateFence && g_vkDestroyFence && g_vkWaitForFences && g_vkResetFences;
+    bool all_resolved = true;
+#define X(name) all_resolved = all_resolved && g_vk##name != nullptr;
+    MTHAP_VK_DEVICE_FNS(X)
+#undef X
+    return all_resolved;
 }
 
 // Loader thunk for ImGui_ImplVulkan_LoadFunctions.
@@ -1192,15 +1040,9 @@ std::uintptr_t g_process_sdl_event_addr = 0;
 std::thread g_vk_watch_thread;
 std::atomic<bool> g_vk_watch_stop{false};
 
-constexpr std::size_t kMaxOverlayHooks = 3; // vkCreateSwapchainKHR + vkQueuePresentKHR + ProcessSDLEvent
-HookId g_overlay_hook_ids[kMaxOverlayHooks]{};
-std::size_t g_overlay_hook_count = 0;
-
-void record_overlay_hook(HookId id)
-{
-    if (id != pal::kInvalidHookId && g_overlay_hook_count < kMaxOverlayHooks)
-        g_overlay_hook_ids[g_overlay_hook_count++] = id;
-}
+[[clang::no_destroy]] ScopedHook g_create_swapchain_hook;
+[[clang::no_destroy]] ScopedHook g_present_hook;
+[[clang::no_destroy]] ScopedHook g_process_sdl_event_hook;
 
 // True if libvulkan is already mapped. Uses dl_iterate_phdr, which (unlike a failing
 // dlopen probe) never sets dlerror - critical because we run inside the game's own
@@ -1256,10 +1098,12 @@ bool try_install_vulkan_hooks()
         const char *name;
         void *replacement;
         void **trampoline;
+        ScopedHook *hook;
     };
     const Spec specs[] = {
-        {"vkCreateSwapchainKHR", reinterpret_cast<void *>(&repl_vkCreateSwapchainKHR), reinterpret_cast<void **>(&g_orig_create_swapchain)},
-        {"vkQueuePresentKHR", reinterpret_cast<void *>(&repl_vkQueuePresentKHR), reinterpret_cast<void **>(&g_orig_present)},
+        {"vkCreateSwapchainKHR", reinterpret_cast<void *>(&repl_vkCreateSwapchainKHR), reinterpret_cast<void **>(&g_orig_create_swapchain),
+         &g_create_swapchain_hook},
+        {"vkQueuePresentKHR", reinterpret_cast<void *>(&repl_vkQueuePresentKHR), reinterpret_cast<void **>(&g_orig_present), &g_present_hook},
     };
     for (const auto &s : specs)
     {
@@ -1269,27 +1113,21 @@ bool try_install_vulkan_hooks()
             pal::logf(pal::LogLevel::Error, "overlay: dlsym(%s) failed; not hooked", s.name);
             continue;
         }
-        HookId id = pal::hook_engine().install_hook(target, s.replacement, s.trampoline);
-        if (id == pal::kInvalidHookId)
+        *s.hook = ScopedHook(reinterpret_cast<std::uintptr_t>(target), s.replacement, s.trampoline);
+        if (!s.hook->installed())
             pal::logf(pal::LogLevel::Error, "overlay: failed to hook %s at %p", s.name, target);
         else
-        {
-            record_overlay_hook(id);
-            pal::logf(pal::LogLevel::Info, "overlay: hooked %s at %p (id=%llu)", s.name, target, static_cast<unsigned long long>(id));
-        }
+            pal::logf(pal::LogLevel::Info, "overlay: hooked %s at %p", s.name, target);
     }
 
     if (g_process_sdl_event_addr != 0)
     {
         void *evt = reinterpret_cast<void *>(g_process_sdl_event_addr);
-        HookId id = pal::hook_engine().install_hook(evt, reinterpret_cast<void *>(&repl_process_sdl_event), reinterpret_cast<void **>(&g_orig_process));
-        if (id == pal::kInvalidHookId)
+        g_process_sdl_event_hook = ScopedHook(g_process_sdl_event_addr, &repl_process_sdl_event, &g_orig_process);
+        if (!g_process_sdl_event_hook.installed())
             pal::logf(pal::LogLevel::Error, "overlay: failed to hook ProcessSDLEvent at %p; input unavailable", evt);
         else
-        {
-            record_overlay_hook(id);
-            pal::logf(pal::LogLevel::Info, "overlay: hooked ProcessSDLEvent at %p (id=%llu)", evt, static_cast<unsigned long long>(id));
-        }
+            pal::logf(pal::LogLevel::Info, "overlay: hooked ProcessSDLEvent at %p", evt);
     }
 
     pal::logf(pal::LogLevel::Info, "overlay: Vulkan hooks installed (libvulkan ready)");
@@ -1317,73 +1155,51 @@ void watch_for_libvulkan()
         pal::logf(pal::LogLevel::Warn, "overlay: libvulkan did not appear; overlay inert");
 }
 
-// ---------------------------------------------------------------------------
-// VulkanOverlay.
-// ---------------------------------------------------------------------------
+} // namespace
 
-class VulkanOverlay final : public IOverlay
+void overlay_start(IOverlayUi *ui)
 {
-  public:
-    VulkanOverlay()
+    g_process_sdl_event_addr = resolve_game_symbol(mth::sym::process_sdl_event);
+    pal::logf(pal::LogLevel::Info, "overlay: VulkanOverlay constructing (event_proc=0x%llx)", static_cast<unsigned long long>(g_process_sdl_event_addr));
+    if (g_process_sdl_event_addr == 0)
+        pal::logf(pal::LogLevel::Warn, "overlay: process_sdl_event_addr == 0; input unavailable for this build (render-only mode)");
+    g_toggle_key = pal::parse_console_key<SDL_Keycode>(std::getenv("MTHAP_CONSOLE_KEY"), SDLK_F1, SDLK_BACKQUOTE);
+    pal::logf(pal::LogLevel::Info, "overlay: console toggle key = 0x%x (SDLK)", static_cast<int>(g_toggle_key));
+    g_login_key = pal::parse_login_key<SDL_Keycode>(std::getenv("MTHAP_LOGIN_KEY"), g_toggle_key, SDLK_F1, SDLK_BACKQUOTE);
+    pal::logf(pal::LogLevel::Info, "overlay: login toggle key = 0x%x (SDLK)", static_cast<int>(g_login_key));
+
+    // Fast path: libvulkan already loaded (native run, or loaded before us). Otherwise watch for
+    // libvulkan on a background thread and install the moment it maps (before the engine's inlined
+    // vkCreateInstance).
+    if (!try_install_vulkan_hooks())
     {
-        g_process_sdl_event_addr = resolve_game_symbol(mth::sym::process_sdl_event);
-        pal::logf(pal::LogLevel::Info, "overlay: VulkanOverlay constructing (event_proc=0x%llx)", static_cast<unsigned long long>(g_process_sdl_event_addr));
-        if (g_process_sdl_event_addr == 0)
-            pal::logf(pal::LogLevel::Warn, "overlay: process_sdl_event_addr == 0; input unavailable for this build (render-only mode)");
-        g_toggle_key = parse_console_key(std::getenv("MTHAP_CONSOLE_KEY"));
-        pal::logf(pal::LogLevel::Info, "overlay: console toggle key = 0x%x (SDLK)", static_cast<int>(g_toggle_key));
-        g_login_key = parse_console_key(std::getenv("MTHAP_LOGIN_KEY"));
-        if (g_login_key == g_toggle_key) // default MTHAP_LOGIN_KEY unset -> distinct F2, not the console default
-            g_login_key = SDLK_F2;
-        pal::logf(pal::LogLevel::Info, "overlay: login toggle key = 0x%x (SDLK)", static_cast<int>(g_login_key));
-
-        // Fast path: libvulkan already loaded (native run, or loaded before us).
-        if (try_install_vulkan_hooks())
-            return;
-
-        // Deferred path: watch for libvulkan on a background thread and install the moment
-        // it maps (before the engine's inlined vkCreateInstance).
         pal::logf(pal::LogLevel::Info, "overlay: libvulkan not loaded yet; watching for it");
         g_vk_watch_thread = std::thread(watch_for_libvulkan);
     }
+    g_ui.store(ui, std::memory_order_release);
+}
 
-    ~VulkanOverlay() override
-    {
-        g_vk_watch_stop.store(true, std::memory_order_release);
-        if (g_vk_watch_thread.joinable())
-            g_vk_watch_thread.join();
-
-        for (std::size_t i = 0; i < g_overlay_hook_count; ++i)
-            pal::hook_engine().remove_hook(g_overlay_hook_ids[i]);
-        g_overlay_hook_count = 0;
-        g_vk_hooks_installed.store(false, std::memory_order_release);
-
-        shutdown_imgui();
-        destroy_swapchain_resources();
-
-        g_ui.store(nullptr, std::memory_order_release);
-
-        if (g_libvulkan_handle != nullptr)
-        {
-            dlclose(g_libvulkan_handle);
-            g_libvulkan_handle = nullptr;
-        }
-        pal::logf(pal::LogLevel::Info, "overlay: VulkanOverlay destroyed");
-    }
-
-    void set_ui(IOverlayUi *ui) override
-    {
-        g_ui.store(ui, std::memory_order_release);
-    }
-
-  private:
-};
-
-} // namespace
-
-std::unique_ptr<IOverlay> make_overlay()
+void overlay_stop()
 {
-    return std::make_unique<VulkanOverlay>();
+    g_vk_watch_stop.store(true, std::memory_order_release);
+    if (g_vk_watch_thread.joinable())
+        g_vk_watch_thread.join();
+
+    for (ScopedHook *hook : {&g_create_swapchain_hook, &g_present_hook, &g_process_sdl_event_hook})
+        hook->reset();
+    g_vk_hooks_installed.store(false, std::memory_order_release);
+
+    shutdown_imgui();
+    destroy_swapchain_resources();
+
+    g_ui.store(nullptr, std::memory_order_release);
+
+    if (g_libvulkan_handle != nullptr)
+    {
+        dlclose(g_libvulkan_handle);
+        g_libvulkan_handle = nullptr;
+    }
+    pal::logf(pal::LogLevel::Info, "overlay: VulkanOverlay destroyed");
 }
 
 } // namespace pal

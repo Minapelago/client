@@ -20,11 +20,6 @@
 #include "mth/core/upgrade_state.hpp"
 #include "mth/core/wallet_cap_state.hpp"
 
-namespace pal
-{
-class IOverlay;
-}
-
 namespace mth
 {
 
@@ -149,7 +144,6 @@ class App : public ICommandSink
     std::string pending_server_;
     std::string pending_slot_;
     mth::ScoutRegistry scout_registry_;
-    std::unique_ptr<pal::IOverlay> overlay_;
     std::unique_ptr<OverlayRoot> overlay_root_;
 };
 

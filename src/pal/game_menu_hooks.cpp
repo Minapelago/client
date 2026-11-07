@@ -11,9 +11,9 @@
 #include "mth/core/data/game_symbols.hpp"
 #include "mth/core/fountain_lamps.hpp"
 #include "pal/pal_game.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace
 {
@@ -24,7 +24,7 @@ namespace
 constexpr unsigned kPawnInteractableQueryEvent = 0x1f;
 constexpr std::ptrdiff_t kPawnVetoFloatOff = 0x8; // InteractEventInfo veto float
 pal::PawnShopBlockFn g_pawn_disable;
-pal::HookId g_pawn_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_pawn_hook;
 void (*g_orig_pawn_npc)(void *, unsigned, void *) = nullptr;
 
 void repl_pawn_npc(void *self, unsigned event, void *info)
@@ -42,7 +42,7 @@ void repl_pawn_npc(void *self, unsigned event, void *info)
 // HubFountain::Bulb::Update(float dt, bool lit): forces lit=true for AP-granted generator lamps.
 // Prototype order (self, dt, lit) matches the mangled Update(float,bool) on both ABIs; never reorder.
 pal::FountainLampFn g_fountain_mask_fn;
-pal::HookId g_fountain_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_fountain_hook;
 void (*g_orig_bulb_update)(void *, float, bool) = nullptr;
 
 void repl_bulb_update(void *self, float dt, bool lit)
@@ -61,7 +61,7 @@ void repl_bulb_update(void *self, float dt, bool lit)
 // AND the confirm dispatch in the same call, so correcting the cursor after the original returns is
 // too late once StartGame has already run; suppress it outright while disconnected instead.
 pal::StartGameSuppressFn g_start_game_suppress_fn;
-pal::HookId g_start_game_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_start_game_hook;
 void (*g_orig_title_start_game)(void *) = nullptr;
 
 void repl_title_start_game(void *self)
@@ -82,7 +82,7 @@ constexpr std::ptrdiff_t kTrinketUpgOff = 0x950; // Trinket_Upgrade (itemType 0x
 // AP vial count via the mod API each tick instead, which also survives the run re-seeding the base (#171).
 
 pal::NewfileKitSuppressFn g_kit_suppress = nullptr;
-pal::HookId g_kit_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_kit_hook;
 void (*g_orig_save_slot_clear)(void *, bool) = nullptr;
 void repl_save_slot_clear(void *self, bool arg)
 {
@@ -114,23 +114,20 @@ bool install_pawn_shop_hook(PawnShopBlockFn disable)
         g_pawn_disable = nullptr;
         return false;
     }
-    g_pawn_hook =
-        hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_pawn_npc), reinterpret_cast<void **>(&g_orig_pawn_npc));
-    if (g_pawn_hook == kInvalidHookId)
+    g_pawn_hook = ScopedHook(addr, &repl_pawn_npc, &g_orig_pawn_npc);
+    if (!g_pawn_hook.installed())
     {
         logf(LogLevel::Error, "pawnty: failed to hook PawnShopNPC::OnNPCEvent");
         g_pawn_disable = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "pawnty: hooked PawnShopNPC::OnNPCEvent (id=%llu)", static_cast<unsigned long long>(g_pawn_hook));
+    logf(LogLevel::Info, "pawnty: hooked PawnShopNPC::OnNPCEvent at %p", g_pawn_hook.target());
     return true;
 }
 
 void remove_pawn_shop_hook()
 {
-    if (g_pawn_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_pawn_hook);
-    g_pawn_hook = kInvalidHookId;
+    g_pawn_hook.reset();
     g_pawn_disable = nullptr;
 }
 
@@ -144,23 +141,20 @@ bool install_fountain_lamp_hook(FountainLampFn lit_mask)
         g_fountain_mask_fn = nullptr;
         return false;
     }
-    g_fountain_hook =
-        hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_bulb_update), reinterpret_cast<void **>(&g_orig_bulb_update));
-    if (g_fountain_hook == kInvalidHookId)
+    g_fountain_hook = ScopedHook(addr, &repl_bulb_update, &g_orig_bulb_update);
+    if (!g_fountain_hook.installed())
     {
         logf(LogLevel::Error, "fountain: failed to hook HubFountain::Bulb::Update");
         g_fountain_mask_fn = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "fountain: hooked HubFountain::Bulb::Update (id=%llu)", static_cast<unsigned long long>(g_fountain_hook));
+    logf(LogLevel::Info, "fountain: hooked HubFountain::Bulb::Update at %p", g_fountain_hook.target());
     return true;
 }
 
 void remove_fountain_lamp_hook()
 {
-    if (g_fountain_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_fountain_hook);
-    g_fountain_hook = kInvalidHookId;
+    g_fountain_hook.reset();
     g_fountain_mask_fn = nullptr;
 }
 
@@ -174,23 +168,20 @@ bool install_start_game_suppress_hook(StartGameSuppressFn suppress)
         g_start_game_suppress_fn = nullptr;
         return false;
     }
-    g_start_game_hook = hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_title_start_game),
-                                                   reinterpret_cast<void **>(&g_orig_title_start_game));
-    if (g_start_game_hook == kInvalidHookId)
+    g_start_game_hook = ScopedHook(addr, &repl_title_start_game, &g_orig_title_start_game);
+    if (!g_start_game_hook.installed())
     {
         logf(LogLevel::Error, "title: failed to hook TitleScreen::StartGame");
         g_start_game_suppress_fn = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "title: hooked TitleScreen::StartGame (id=%llu)", static_cast<unsigned long long>(g_start_game_hook));
+    logf(LogLevel::Info, "title: hooked TitleScreen::StartGame at %p", g_start_game_hook.target());
     return true;
 }
 
 void remove_start_game_suppress_hook()
 {
-    if (g_start_game_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_start_game_hook);
-    g_start_game_hook = kInvalidHookId;
+    g_start_game_hook.reset();
     g_start_game_suppress_fn = nullptr;
 }
 
@@ -203,23 +194,20 @@ bool install_newfile_kit_suppressor(NewfileKitSuppressFn should_suppress)
         return false;
     }
     g_kit_suppress = std::move(should_suppress);
-    g_kit_hook = hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_save_slot_clear),
-                                            reinterpret_cast<void **>(&g_orig_save_slot_clear));
-    if (g_kit_hook == kInvalidHookId)
+    g_kit_hook = ScopedHook(addr, &repl_save_slot_clear, &g_orig_save_slot_clear);
+    if (!g_kit_hook.installed())
     {
         logf(LogLevel::Error, "newfile-kit: failed to hook SaveSlot::Clear");
         g_kit_suppress = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "newfile-kit: hooked SaveSlot::Clear (id=%llu)", static_cast<unsigned long long>(g_kit_hook));
+    logf(LogLevel::Info, "newfile-kit: hooked SaveSlot::Clear at %p", g_kit_hook.target());
     return true;
 }
 
 void remove_newfile_kit_suppressor()
 {
-    if (g_kit_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_kit_hook);
-    g_kit_hook = kInvalidHookId;
+    g_kit_hook.reset();
     g_kit_suppress = nullptr;
 }
 

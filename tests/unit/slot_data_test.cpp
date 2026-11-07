@@ -31,9 +31,6 @@ class CapturingLog final : public pal::ILog
         std::lock_guard<std::mutex> lock(mu_);
         lines_.emplace_back(level, std::string(message));
     }
-    void flush() override
-    {
-    }
 
     // An empty needle matches any line of that level, so `count(Warn) == 0` reads as "nothing was
     // reported" without pinning how much the parser traces at other levels.

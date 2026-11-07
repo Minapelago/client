@@ -2,7 +2,7 @@
 //
 // Feature-parity counterpart to the Linux Vulkan overlay (overlay_linux.cpp),
 // built on the stock imgui_impl_dx12 + imgui_impl_win32 backends. Hooks are
-// installed via the shared pal::hook_engine() (MinHook):
+// installed via pal::install_hook (MinHook):
 //   - IDXGISwapChain::Present / IDXGISwapChain1::Present1  -> composite ImGui
 //   - IDXGISwapChain::ResizeBuffers                        -> rebuild RTVs
 //   - ID3D12CommandQueue::ExecuteCommandLists             -> capture DIRECT queue
@@ -19,7 +19,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
-#include <string_view>
 #include <vector>
 
 #include <d3d12.h>
@@ -29,10 +28,11 @@
 #include <imgui_impl_win32.h>
 #include <psapi.h>
 
+#include "pal/overlay_keys.hpp"
 #include "pal/overlay_scale.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_overlay.hpp"
+#include "pal/scoped_hook.hpp"
 
 // Provided by imgui_impl_win32 (also declared in its header; repeated for clarity).
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -103,40 +103,7 @@ std::vector<Win32Msg> g_msg_queue; // guarded by g_msg_mu
 std::atomic<bool> g_want_keyboard{false};
 std::atomic<bool> g_want_mouse{false};
 
-// MTHAP_CONSOLE_KEY env string to a Win32 virtual-key code.
-static UINT parse_console_key(const char *name)
-{
-    if (name == nullptr || name[0] == '\0')
-        return VK_F1;
-    std::string_view sv{name};
-    if (sv == "F1")
-        return VK_F1;
-    if (sv == "F2")
-        return VK_F2;
-    if (sv == "F3")
-        return VK_F3;
-    if (sv == "F4")
-        return VK_F4;
-    if (sv == "F5")
-        return VK_F5;
-    if (sv == "F6")
-        return VK_F6;
-    if (sv == "F7")
-        return VK_F7;
-    if (sv == "F8")
-        return VK_F8;
-    if (sv == "F9")
-        return VK_F9;
-    if (sv == "F10")
-        return VK_F10;
-    if (sv == "F11")
-        return VK_F11;
-    if (sv == "F12")
-        return VK_F12;
-    if (sv == "BACKQUOTE" || sv == "GRAVE" || sv == "`")
-        return VK_OEM_3;
-    return VK_F1;
-}
+static_assert(VK_F12 - VK_F1 == 11 && VK_F2 == VK_F1 + 1, "pal::parse_console_key assumes contiguous F keys");
 
 // ---------------------------------------------------------------------------
 // Stall diagnostics. Everything below the Present detour fails silently, so a
@@ -328,9 +295,10 @@ static void render_overlay(IDXGISwapChain3 *swap);
 // Defined below; blocks until the last overlay submit completes on the GPU.
 static void wait_for_gpu();
 
-HRESULT STDMETHODCALLTYPE repl_present(IDXGISwapChain *self, UINT sync, UINT flags)
+// Shared body of the Present and Present1 detours: render the overlay, then call the original.
+template <class Swap, class CallOriginal> HRESULT present_with_overlay(Swap *self, std::atomic<unsigned long long> &calls, CallOriginal call_original)
 {
-    g_present_calls.fetch_add(1, std::memory_order_relaxed);
+    calls.fetch_add(1, std::memory_order_relaxed);
     IDXGISwapChain3 *swap3 = nullptr;
     const bool qi_ok = SUCCEEDED(self->QueryInterface(IID_PPV_ARGS(&swap3)));
     if (qi_ok)
@@ -342,27 +310,20 @@ HRESULT STDMETHODCALLTYPE repl_present(IDXGISwapChain *self, UINT sync, UINT fla
     // Present first: the dump makes hundreds of flushed writes and walks the
     // loader list, with DXGI's swapchain lock held. Own latch so a failing QI
     // does not re-enter it every frame.
-    const HRESULT hr = g_orig_present(self, sync, flags);
+    const HRESULT hr = call_original();
     if (!qi_ok && !g_qi_warned.exchange(true, std::memory_order_relaxed))
         report_overlay_stall("swapchain does not implement IDXGISwapChain3; cannot render");
     return hr;
 }
 
+HRESULT STDMETHODCALLTYPE repl_present(IDXGISwapChain *self, UINT sync, UINT flags)
+{
+    return present_with_overlay(self, g_present_calls, [&] { return g_orig_present(self, sync, flags); });
+}
+
 HRESULT STDMETHODCALLTYPE repl_present1(IDXGISwapChain1 *self, UINT sync, UINT flags, const DXGI_PRESENT_PARAMETERS *params)
 {
-    g_present1_calls.fetch_add(1, std::memory_order_relaxed);
-    IDXGISwapChain3 *swap3 = nullptr;
-    const bool qi_ok = SUCCEEDED(self->QueryInterface(IID_PPV_ARGS(&swap3)));
-    if (qi_ok)
-    {
-        render_overlay(swap3);
-        swap3->Release();
-    }
-
-    const HRESULT hr = g_orig_present1(self, sync, flags, params);
-    if (!qi_ok && !g_qi_warned.exchange(true, std::memory_order_relaxed))
-        report_overlay_stall("swapchain does not implement IDXGISwapChain3; cannot render");
-    return hr;
+    return present_with_overlay(self, g_present1_calls, [&] { return g_orig_present1(self, sync, flags, params); });
 }
 
 HRESULT STDMETHODCALLTYPE repl_resize(IDXGISwapChain *self, UINT count, UINT w, UINT h, DXGI_FORMAT fmt, UINT flags)
@@ -892,125 +853,88 @@ static void render_overlay(IDXGISwapChain3 *swap)
     queue->Signal(g_fence, ++g_fence_last_signaled);
 }
 
-// ---------------------------------------------------------------------------
-// Overlay object.
-// ---------------------------------------------------------------------------
+constexpr std::size_t kHookCount = 4;
+[[clang::no_destroy]] ScopedHook g_overlay_hooks[kHookCount];
 
-class D3D12Overlay final : public IOverlay
+void install_overlay_hooks()
 {
-  public:
-    D3D12Overlay()
+    void *addrs[4];
+    if (!discover_vtable_addrs(addrs))
     {
-        g_toggle_vk = parse_console_key(std::getenv("MTHAP_CONSOLE_KEY"));
-        pal::logf(pal::LogLevel::Info, "overlay: D3D12Overlay constructing (toggle vk=0x%x)", static_cast<unsigned>(g_toggle_vk));
-        g_login_vk = parse_console_key(std::getenv("MTHAP_LOGIN_KEY"));
-        if (g_login_vk == g_toggle_vk) // default MTHAP_LOGIN_KEY unset -> distinct F2, not the console default
-            g_login_vk = VK_F2;
-        pal::logf(pal::LogLevel::Info, "overlay: login toggle vk=0x%x", static_cast<unsigned>(g_login_vk));
-
-        void *addrs[4];
-        if (!discover_vtable_addrs(addrs))
-        {
-            pal::logf(pal::LogLevel::Error, "overlay: vtable discovery failed; overlay inert");
-            return;
-        }
-
-        struct Spec
-        {
-            void *target;
-            void *replacement;
-            void **trampoline;
-            const char *name;
-        };
-        const Spec specs[kHookCount] = {
-            {addrs[0], reinterpret_cast<void *>(&repl_present), reinterpret_cast<void **>(&g_orig_present), "Present"},
-            {addrs[1], reinterpret_cast<void *>(&repl_present1), reinterpret_cast<void **>(&g_orig_present1), "Present1"},
-            {addrs[2], reinterpret_cast<void *>(&repl_resize), reinterpret_cast<void **>(&g_orig_resize), "ResizeBuffers"},
-            {addrs[3], reinterpret_cast<void *>(&repl_execute), reinterpret_cast<void **>(&g_orig_execute), "ExecuteCommandLists"},
-        };
-
-        for (std::size_t i = 0; i < kHookCount; ++i)
-        {
-            HookId id = pal::hook_engine().install_hook(specs[i].target, specs[i].replacement, specs[i].trampoline);
-            if (id == pal::kInvalidHookId)
-            {
-                pal::logf(pal::LogLevel::Error, "overlay: failed to hook %s at %p", specs[i].name, specs[i].target);
-            }
-            else
-            {
-                g_hook_targets[i] = specs[i].target; // installed only; an unpatched prologue reads as a stolen hook
-                ids_[installed_++] = id;
-                pal::logf(pal::LogLevel::Info, "overlay: hooked %s at %p (id=%llu)", specs[i].name, specs[i].target, static_cast<unsigned long long>(id));
-            }
-        }
+        pal::logf(pal::LogLevel::Error, "overlay: vtable discovery failed; overlay inert");
+        return;
     }
 
-    ~D3D12Overlay() override
+    struct Spec
     {
-        // Relies on the render/message threads being quiesced at teardown (the App
-        // is destroyed at process shutdown). MinHook does not drain in-flight
-        // detours, so a present racing this dtor would touch freed GPU state.
-        for (std::size_t i = 0; i < installed_; ++i)
-            pal::hook_engine().remove_hook(ids_[i]);
-        installed_ = 0;
-        g_orig_present = nullptr;
-        g_orig_present1 = nullptr;
-        g_orig_resize = nullptr;
-        g_orig_execute = nullptr;
+        void *target;
+        void *replacement;
+        void **trampoline;
+        const char *name;
+    };
+    const Spec specs[kHookCount] = {
+        {addrs[0], reinterpret_cast<void *>(&repl_present), reinterpret_cast<void **>(&g_orig_present), "Present"},
+        {addrs[1], reinterpret_cast<void *>(&repl_present1), reinterpret_cast<void **>(&g_orig_present1), "Present1"},
+        {addrs[2], reinterpret_cast<void *>(&repl_resize), reinterpret_cast<void **>(&g_orig_resize), "ResizeBuffers"},
+        {addrs[3], reinterpret_cast<void *>(&repl_execute), reinterpret_cast<void **>(&g_orig_execute), "ExecuteCommandLists"},
+    };
 
-        if (g_orig_wndproc != nullptr && g_hwnd != nullptr)
-        {
-            SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_orig_wndproc));
-            g_orig_wndproc = nullptr;
-        }
-
-        if (g_imgui_inited)
-        {
-            wait_for_gpu(); // drain the last overlay submit before releasing GPU objects
-            ImGui_ImplDX12_Shutdown();
-            ImGui_ImplWin32_Shutdown();
-            ImGui::DestroyContext();
-            g_imgui_inited = false;
-        }
-        destroy_render_resources();
-
-        // Return the scattered globals to a clean slate so a fresh overlay (were
-        // one ever constructed) re-inits correctly rather than inheriting a stale
-        // inert flag or a released queue pointer.
-        g_init_failed.store(false, std::memory_order_relaxed);
-        g_swapchain_mismatch_warned = false;
-        g_render_inited.store(false, std::memory_order_relaxed);
-        g_diag_done.store(false, std::memory_order_relaxed);
-        g_qi_warned.store(false, std::memory_order_relaxed);
-        g_present_calls.store(0, std::memory_order_relaxed);
-        g_present1_calls.store(0, std::memory_order_relaxed);
-        g_direct_submits.store(0, std::memory_order_relaxed);
-        g_queue_ms.store(0, std::memory_order_relaxed);
-        for (void *&target : g_hook_targets)
-            target = nullptr;
-        g_command_queue.store(nullptr, std::memory_order_release);
-        g_console_open.store(false, std::memory_order_relaxed);
-        g_login_open.store(false, std::memory_order_relaxed);
-        g_ui.store(nullptr, std::memory_order_release);
-        pal::logf(pal::LogLevel::Info, "overlay: D3D12Overlay destroyed");
-    }
-
-    void set_ui(IOverlayUi *ui) override
+    for (std::size_t i = 0; i < kHookCount; ++i)
     {
-        g_ui.store(ui, std::memory_order_release);
+        g_overlay_hooks[i] = ScopedHook(reinterpret_cast<std::uintptr_t>(specs[i].target), specs[i].replacement, specs[i].trampoline);
+        if (!g_overlay_hooks[i].installed())
+        {
+            pal::logf(pal::LogLevel::Error, "overlay: failed to hook %s at %p", specs[i].name, specs[i].target);
+        }
+        else
+        {
+            g_hook_targets[i] = specs[i].target; // installed only; an unpatched prologue reads as a stolen hook
+            pal::logf(pal::LogLevel::Info, "overlay: hooked %s at %p", specs[i].name, specs[i].target);
+        }
     }
-
-  private:
-    static constexpr std::size_t kHookCount = 4;
-    HookId ids_[kHookCount]{};
-    std::size_t installed_ = 0;
-};
+}
 
 } // namespace
 
-std::unique_ptr<IOverlay> make_overlay()
+void overlay_start(IOverlayUi *ui)
 {
-    return std::make_unique<D3D12Overlay>();
+    g_toggle_vk = pal::parse_console_key<UINT>(std::getenv("MTHAP_CONSOLE_KEY"), VK_F1, VK_OEM_3);
+    pal::logf(pal::LogLevel::Info, "overlay: D3D12Overlay constructing (toggle vk=0x%x)", static_cast<unsigned>(g_toggle_vk));
+    g_login_vk = pal::parse_login_key<UINT>(std::getenv("MTHAP_LOGIN_KEY"), g_toggle_vk, VK_F1, VK_OEM_3);
+    pal::logf(pal::LogLevel::Info, "overlay: login toggle vk=0x%x", static_cast<unsigned>(g_login_vk));
+    install_overlay_hooks();
+    g_ui.store(ui, std::memory_order_release);
+}
+
+void overlay_stop()
+{
+    // Relies on the render/message threads being quiesced at teardown (the App
+    // is destroyed at process shutdown). MinHook does not drain in-flight
+    // detours, so a present racing this would touch freed GPU state.
+    for (ScopedHook &hook : g_overlay_hooks)
+        hook.reset();
+    g_orig_present = nullptr;
+    g_orig_present1 = nullptr;
+    g_orig_resize = nullptr;
+    g_orig_execute = nullptr;
+
+    if (g_orig_wndproc != nullptr && g_hwnd != nullptr)
+    {
+        SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_orig_wndproc));
+        g_orig_wndproc = nullptr;
+    }
+
+    if (g_imgui_inited)
+    {
+        wait_for_gpu(); // drain the last overlay submit before releasing GPU objects
+        ImGui_ImplDX12_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+        g_imgui_inited = false;
+    }
+    destroy_render_resources();
+
+    pal::logf(pal::LogLevel::Info, "overlay: D3D12Overlay destroyed");
 }
 
 } // namespace pal

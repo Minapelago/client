@@ -5,16 +5,15 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "mod/mod_api.hpp"
 #include "mth/core/data/game_layout.hpp"
 #include "mth/core/data/game_symbols.hpp"
 #include "mth/core/shop_boxes.hpp"
 #include "mth/core/shop_flatten.hpp"
 #include "pal/pal_game.hpp"
-#include "pal/pal_hook.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
 #include "pal/pal_module.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace
 {
@@ -23,7 +22,7 @@ namespace
 // def*), +0xec (stock count), ShopItemDef+0x48 (cached GetCollectionIndex == loc_idx) all match Linux.
 
 pal::ShopFlattenFn g_shop_flatten_cb = nullptr;
-pal::HookId g_shop_flatten_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_shop_flatten_hook;
 // Shop::Get takes a 64-bit name hash. Use a fixed-width type: `unsigned long` is 32-bit under Windows
 // LLP64 and would truncate the hash, so the forwarded lookup finds no shop and returns null.
 void *(*g_orig_shop_get)(std::uint64_t name_hash) = nullptr; // Shop::Get(uint64_t) -> ShopDef*
@@ -44,7 +43,7 @@ void *repl_shop_get(std::uint64_t name_hash)
 // ShopMenu::SetCursor post-hook: rewrites the selected box's name+description text from scouted AP data.
 // Standalone on Windows (not inlined), so this is a direct post-hook exactly like Linux.
 pal::ShopTextFn g_shop_text_cb = nullptr;
-pal::HookId g_shop_text_hook = pal::kInvalidHookId;
+[[clang::no_destroy]] pal::ScopedHook g_shop_text_hook;
 void (*g_orig_set_cursor)(void *, int, bool) = nullptr;
 
 // ShopMenu instance fields (box list + selection); distinct from the InitState frame offsets above.
@@ -107,23 +106,20 @@ bool install_shop_flatten_hook(ShopFlattenFn active)
         g_shop_flatten_cb = nullptr;
         return false;
     }
-    g_shop_flatten_hook =
-        hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_shop_get), reinterpret_cast<void **>(&g_orig_shop_get));
-    if (g_shop_flatten_hook == kInvalidHookId)
+    g_shop_flatten_hook = ScopedHook(addr, &repl_shop_get, &g_orig_shop_get);
+    if (!g_shop_flatten_hook.installed())
     {
         logf(LogLevel::Error, "shop: failed to hook Shop::Get");
         g_shop_flatten_cb = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "shop: hooked Shop::Get for flattening (id=%llu)", static_cast<unsigned long long>(g_shop_flatten_hook));
+    logf(LogLevel::Info, "shop: hooked Shop::Get for flattening at %p", g_shop_flatten_hook.target());
     return true;
 }
 
 void remove_shop_flatten_hook()
 {
-    if (g_shop_flatten_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_shop_flatten_hook);
-    g_shop_flatten_hook = kInvalidHookId;
+    g_shop_flatten_hook.reset();
     g_shop_flatten_cb = nullptr;
     g_orig_shop_get = nullptr;
 }
@@ -183,11 +179,6 @@ void *shop_desc_widget(void *shop_menu)
     return shop_menu != nullptr ? *reinterpret_cast<void **>(static_cast<char *>(shop_menu) + kShopDescWidgetOff) : nullptr;
 }
 
-void shop_set_text(void *widget, const char *utf8)
-{
-    mod::set_text(widget, utf8);
-}
-
 bool install_shop_text_hook(ShopTextFn on_set_cursor)
 {
     const std::uintptr_t addr = resolve_game_symbol(mth::sym::shop_set_cursor);
@@ -197,23 +188,20 @@ bool install_shop_text_hook(ShopTextFn on_set_cursor)
         return false;
     }
     g_shop_text_cb = on_set_cursor;
-    g_shop_text_hook =
-        hook_engine().install_hook(reinterpret_cast<void *>(addr), reinterpret_cast<void *>(&repl_set_cursor), reinterpret_cast<void **>(&g_orig_set_cursor));
-    if (g_shop_text_hook == kInvalidHookId)
+    g_shop_text_hook = ScopedHook(addr, &repl_set_cursor, &g_orig_set_cursor);
+    if (!g_shop_text_hook.installed())
     {
         logf(LogLevel::Error, "shop: failed to hook ShopMenu::SetCursor");
         g_shop_text_cb = nullptr;
         return false;
     }
-    logf(LogLevel::Info, "shop: hooked ShopMenu::SetCursor for text override (id=%llu)", static_cast<unsigned long long>(g_shop_text_hook));
+    logf(LogLevel::Info, "shop: hooked ShopMenu::SetCursor for text override at %p", g_shop_text_hook.target());
     return true;
 }
 
 void remove_shop_text_hook()
 {
-    if (g_shop_text_hook != kInvalidHookId)
-        hook_engine().remove_hook(g_shop_text_hook);
-    g_shop_text_hook = kInvalidHookId;
+    g_shop_text_hook.reset();
     g_shop_text_cb = nullptr;
     g_orig_set_cursor = nullptr;
 }

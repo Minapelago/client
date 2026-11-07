@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mth/hooks/scoped_hook.hpp"
+#include "pal/scoped_hook.hpp"
 
 namespace mth
 {
@@ -18,7 +18,7 @@ class GameHooks
     GameHooks &operator=(const GameHooks &) = delete;
 
   private:
-    ScopedHook fixed_update_; // World::Update is not here: it uses the native "WorldUpdate" mod hook (see .cpp)
+    pal::ScopedHook fixed_update_; // World::Update is not here: it uses the native "WorldUpdate" mod hook (see .cpp)
 };
 
 } // namespace mth

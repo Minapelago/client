@@ -107,7 +107,7 @@ std::uintptr_t scan_resolve(const char *mangled_name)
         return 0;
 
     // Not thread-safe; symbol resolution runs single-threaded during init,
-    // matching the other PAL globals (g_custom, hook-engine globals).
+    // matching the other PAL globals (hook-engine globals).
     static std::unordered_map<std::string, std::uintptr_t> cache;
     if (auto it = cache.find(mangled_name); it != cache.end())
         return it->second;

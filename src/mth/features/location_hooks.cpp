@@ -465,7 +465,7 @@ void on_shop_set_cursor(void *shop_menu)
     if (name_w != nullptr)
     {
         const std::uint32_t color = mth::banner_color("item_id", "", si->item_flags, 0, si->is_self);
-        pal::shop_set_text(name_w, si->item_name.c_str());
+        mod::set_text(name_w, si->item_name.c_str());
         // SetCursor rebinds the widget's palette on every cursor move, so this re-applies each
         // time. SetColor last: it raises the dirty flag that forces the re-resolve. Only on a
         // successful swap, since an untouched palette would resolve color to entry 0.
@@ -473,7 +473,7 @@ void on_shop_set_cursor(void *shop_menu)
             mod::set_text_color(name_w, color);
     }
     if (desc_w != nullptr)
-        pal::shop_set_text(desc_w, mth::format_scout_desc(*si).c_str());
+        mod::set_text(desc_w, mth::format_scout_desc(*si).c_str());
 }
 
 // Items::IsItemCollected override for locations whose vanilla collected-state aliases item-ownership, so
@@ -559,9 +559,8 @@ LocationHooks::LocationHooks(RandoBridge &bridge, ScoutRegistry *scout)
     if (g_save_manager == 0)
         pal::logf(pal::LogLevel::Warn, "LocationHooks: g_saveManager not resolved; kear_rando key-grant neutralization disabled");
 
-    pickup_init_ = ScopedHook(sym::pickup_init, reinterpret_cast<void *>(&repl_pickup_init), reinterpret_cast<void **>(&g_orig_pickup_init), "Pickup::Init");
-    shop_oos_ = ScopedHook(sym::shop_is_out_of_stock, reinterpret_cast<void *>(&repl_shop_is_out_of_stock), reinterpret_cast<void **>(&g_orig_shop_oos),
-                           "Shop::IsOutOfStock");
+    pickup_init_ = pal::ScopedHook(sym::pickup_init, &repl_pickup_init, &g_orig_pickup_init, "Pickup::Init");
+    shop_oos_ = pal::ScopedHook(sym::shop_is_out_of_stock, &repl_shop_is_out_of_stock, &g_orig_shop_oos, "Shop::IsOutOfStock");
     pal::install_shop_purchase_hook(&on_shop_buy);
     pal::install_shop_flatten_hook(&on_shop_flatten);
     pal::install_shop_text_hook(&on_shop_set_cursor);

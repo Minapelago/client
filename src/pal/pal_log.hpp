@@ -21,11 +21,9 @@ class ILog
   public:
     virtual ~ILog() = default;
     virtual void write(LogLevel, std::string_view message) = 0;
-    virtual void flush() = 0;
 };
 
 void log_init(std::string_view stem = "mthap");
-void log_shutdown();
 
 // printf-style format checking. Clang only supports the printf archetype (it
 // ignores gnu_printf on every target with -Wignored-attributes); GCC needs

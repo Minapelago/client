@@ -1,7 +1,3 @@
-#include <atomic>
-#include <mutex>
-#include <unordered_map>
-
 #include <frida-gum.h>
 
 #include "pal/pal_hook.hpp"
@@ -11,79 +7,6 @@ namespace
 {
 
 bool g_initialized = false;
-
-class FridaHookEngine final : public pal::IHookEngine
-{
-  public:
-    pal::HookId install_hook(void *target, void *replacement, void **trampoline) override
-    {
-        GumInterceptor *ic = gum_interceptor_obtain();
-        gpointer original = nullptr;
-        // Bracket in a transaction so the replacement is not activated until end_transaction:
-        // replace() yields the trampoline immediately, but a detour that goes live before the
-        // trampoline is published calls through a null pointer from whatever thread hits it first.
-        gum_interceptor_begin_transaction(ic);
-        const auto rc = gum_interceptor_replace(ic, target, replacement, nullptr, &original);
-        if (rc != GUM_REPLACE_OK)
-        {
-            gum_interceptor_end_transaction(ic);
-            pal::logf(pal::LogLevel::Error, "FridaHookEngine: replace failed at %p (rc=%d)", target, rc);
-            return pal::kInvalidHookId;
-        }
-        if (trampoline)
-            *trampoline = original;
-        gum_interceptor_end_transaction(ic);
-        const auto id = next_id_.fetch_add(1, std::memory_order_relaxed);
-        std::lock_guard<std::mutex> lock(mu_);
-        targets_[id] = target;
-        return id;
-    }
-
-    void remove_hook(pal::HookId id) override
-    {
-        void *target = nullptr;
-        {
-            std::lock_guard<std::mutex> lock(mu_);
-            auto it = targets_.find(id);
-            if (it == targets_.end())
-                return;
-            target = it->second;
-            targets_.erase(it);
-        }
-        gum_interceptor_revert(gum_interceptor_obtain(), target);
-    }
-
-  private:
-    std::atomic<pal::HookId> next_id_{1};
-    std::mutex mu_;
-    std::unordered_map<pal::HookId, void *> targets_;
-};
-
-FridaHookEngine &default_engine()
-{
-    static FridaHookEngine e;
-    return e;
-}
-
-pal::IHookEngine *g_engine_override = nullptr;
-
-struct EnumState
-{
-    int count{0};
-    int sample_logged{0};
-};
-
-gboolean on_module(const GumModuleDetails *m, gpointer ud)
-{
-    auto *st = static_cast<EnumState *>(ud);
-    ++st->count;
-    if (st->sample_logged < 5 && m && m->name)
-    {
-        pal::logf(pal::LogLevel::Debug, "hook_engine: module[%d] name=%s", st->count - 1, m->name);
-        ++st->sample_logged;
-    }
-    return TRUE;
-}
 
 } // namespace
 
@@ -98,10 +21,8 @@ void init_hook_engine()
     g_initialized = true;
     logf(LogLevel::Info, "hook_engine: frida-gum initialized");
 
-    EnumState state{};
-    gum_process_enumerate_modules(&on_module, &state);
     const auto *main_mod = gum_process_get_main_module();
-    logf(LogLevel::Info, "hook_engine: %d modules loaded, main=%s", state.count, (main_mod && main_mod->name) ? main_mod->name : "?");
+    logf(LogLevel::Info, "hook_engine: main=%s", (main_mod && main_mod->name) ? main_mod->name : "?");
 }
 
 void shutdown_hook_engine()
@@ -113,14 +34,32 @@ void shutdown_hook_engine()
     logf(LogLevel::Info, "hook_engine: frida-gum shutdown");
 }
 
-IHookEngine &hook_engine()
+bool install_hook(void *target, void *replacement, void **trampoline)
 {
-    return g_engine_override ? *g_engine_override : default_engine();
+    GumInterceptor *ic = gum_interceptor_obtain();
+    gpointer original = nullptr;
+    // Bracket in a transaction so the replacement is not activated until end_transaction:
+    // replace() yields the trampoline immediately, but a detour that goes live before the
+    // trampoline is published calls through a null pointer from whatever thread hits it first.
+    gum_interceptor_begin_transaction(ic);
+    const auto rc = gum_interceptor_replace(ic, target, replacement, nullptr, &original);
+    if (rc != GUM_REPLACE_OK)
+    {
+        gum_interceptor_end_transaction(ic);
+        logf(LogLevel::Error, "FridaHookEngine: replace failed at %p (rc=%d)", target, rc);
+        return false;
+    }
+    if (trampoline)
+        *trampoline = original;
+    gum_interceptor_end_transaction(ic);
+    return true;
 }
 
-void set_hook_engine(IHookEngine *e)
+// Reverting a target that holds no replacement is a no-op.
+void remove_hook(void *target)
 {
-    g_engine_override = e;
+    if (target != nullptr)
+        gum_interceptor_revert(gum_interceptor_obtain(), target);
 }
 
 } // namespace pal

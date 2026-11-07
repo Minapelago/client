@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 
 namespace pal
 {
@@ -21,17 +20,11 @@ class IOverlayUi
     virtual void draw(const OverlayVisibility &vis) = 0;
 };
 
-// Owns platform render/input hooks and the ImGui context. RAII.
-class IOverlay
-{
-  public:
-    virtual ~IOverlay() = default;
-    virtual void set_ui(IOverlayUi *) = 0;
-};
-
-// Linux: Vulkan/SDL overlay. Windows: D3D12/Win32 overlay. Never returns null.
+// Linux: Vulkan/SDL overlay. Windows: D3D12/Win32 overlay. overlay_start installs the render and input
+// hooks and draws ui every frame; overlay_stop removes the hooks and releases the ImGui context and GPU state.
 // Each platform resolves whatever game symbols it needs itself: ProcessSDLEvent is Linux-only, and
 // routing it through here made Windows carry a signature for a symbol it never reads.
-std::unique_ptr<IOverlay> make_overlay();
+void overlay_start(IOverlayUi *ui);
+void overlay_stop();
 
 } // namespace pal

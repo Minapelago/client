@@ -1,10 +1,10 @@
-// File logger shared by both platforms. Only log_dir() differs enough to justify its own TU, so it
-// stays in linux/ and windows/; the two CRT spellings below are the whole rest of the divergence.
+// File logger shared by both platforms.
 
 #include <atomic>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <mutex>
@@ -92,13 +92,6 @@ class FileLog final : public pal::ILog
         std::fflush(fp_);
     }
 
-    void flush() override
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        if (fp_)
-            std::fflush(fp_);
-    }
-
     int fd() const
     {
         return descriptor_of(fp_);
@@ -115,9 +108,6 @@ class NullLog final : public pal::ILog
     void write(pal::LogLevel, std::string_view) override
     {
     }
-    void flush() override
-    {
-    }
 };
 
 NullLog g_null_log;
@@ -132,6 +122,24 @@ pal::LogObserver g_observer; // guarded by g_observer_mu
 namespace pal
 {
 
+fs::path log_dir()
+{
+#if defined(_WIN32)
+    if (const char *appdata = std::getenv("LOCALAPPDATA"); appdata && *appdata)
+        return fs::path(appdata) / "mth-apclient";
+    if (const char *tmp = std::getenv("TEMP"); tmp && *tmp)
+        return fs::path(tmp) / "mth-apclient";
+#else
+    const char *xdg = std::getenv("XDG_DATA_HOME");
+    if (xdg && *xdg)
+        return fs::path(xdg) / "mth-apclient";
+    const char *home = std::getenv("HOME");
+    if (home && *home)
+        return fs::path(home) / ".local/share/mth-apclient";
+#endif
+    return fs::temp_directory_path() / "mth-apclient";
+}
+
 void log_init(std::string_view stem)
 {
     if (g_file_log)
@@ -142,16 +150,6 @@ void log_init(std::string_view stem)
     std::snprintf(fname, sizeof(fname), "%.*s_%s.log", static_cast<int>(stem.size()), stem.data(), ts);
     g_file_log = new FileLog(log_dir() / fname);
     g_log.store(g_file_log, std::memory_order_release);
-}
-
-void log_shutdown()
-{
-    ILog *prev = g_log.exchange(&g_null_log, std::memory_order_acq_rel);
-    if (prev == g_file_log)
-    {
-        delete g_file_log;
-        g_file_log = nullptr;
-    }
 }
 
 int log_fd()
