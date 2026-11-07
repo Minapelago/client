@@ -292,6 +292,25 @@ TEST_CASE("ApLink: ReceivedItems at an index the client already holds is not red
     REQUIRE(items[2]->item.index == 2);
 }
 
+TEST_CASE("ApLink: ReceivedItems that skip an index trigger a Sync and the resent list fills the gap", "[net][ap_link]")
+{
+    LinkFixture f;
+    f.server.reply_to("Connect", {connected(1, json::object()), received_items(0, {10})});
+    f.server.reply_to("Sync", {received_items(0, {10, 11, 12})});
+    f.connect();
+    f.wait_for<mth::ApItemReceived>("the first item");
+
+    f.server.push(received_items(2, {12}));
+    f.wait_for_sent("Sync");
+    f.wait_for<mth::ApItemReceived>("the resynced items", 3);
+
+    REQUIRE(f.server.received("Sync").size() == 1);
+    const auto items = f.all<mth::ApItemReceived>();
+    REQUIRE(item_ids(items) == std::vector<std::int64_t>{10, 11, 12});
+    REQUIRE(items[1]->item.index == 1);
+    REQUIRE(items[2]->item.index == 2);
+}
+
 TEST_CASE("ApLink: our own deathlink echo is dropped and another player's death is delivered", "[net][ap_link]")
 {
     LinkFixture f;

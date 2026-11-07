@@ -410,6 +410,14 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
         {
             if (teardown_pending_)
                 return;
+            // A packet starting past the cursor skipped items; the server answers Sync with the full list from index 0, which the cursor dedups.
+            if (!items.empty() && items.front().index > last_item_index_ + 1)
+            {
+                pal::logf(pal::LogLevel::Warn, "ApLink: ReceivedItems starts at %d but the next expected index is %d; resyncing", items.front().index,
+                          last_item_index_ + 1);
+                client_->Sync();
+                return;
+            }
             for (const auto &item : items)
             {
                 if (item.index <= last_item_index_)
