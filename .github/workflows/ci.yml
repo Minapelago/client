@@ -6,6 +6,10 @@ on:
     branches: [master]
   workflow_call:
 
+permissions:
+  contents: read
+  actions: read # build.yml looks up the base commit's release run
+
 jobs:
   format:
     name: clang-format check

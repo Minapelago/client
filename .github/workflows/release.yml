@@ -11,7 +11,8 @@ name: release
 # which restarts the beta counter from the new base.
 #
 # Nothing is tagged or published unless the ci gate (format check, tests, both builds) is green. On a release commit the gate's builds are the
-# release builds, and its tests are skipped when the parent commit's run already passed them on the same code (see build.yml).
+# release builds. Commits whose code matches a parent that already passed the gate skip its tests, and its builds too unless they release
+# (see build.yml).
 
 on:
   push:
