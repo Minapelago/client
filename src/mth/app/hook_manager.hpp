@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <string>
 #include <vector>
@@ -49,7 +48,7 @@ class HookManager
     bool vendor_locked(const ApState &state); // arms vendor_lockout_ while connected, then reports it
 
     // Set the first time a save sees an AP session and cleared only on save load, so a mid-run disconnect cannot reopen the off-logic vendors.
-    std::atomic<bool> vendor_lockout_{false};
+    bool vendor_lockout_{false};
 
     RandoBridge &rando_;                 // checked-location state; the donation machine reads it (#162)
     std::function<void *()> get_player_; // live Player* accessor for the burrow tick
@@ -64,7 +63,7 @@ class HookManager
     AbilityHooks ability_hooks_;
     SewerCatGate sewer_cat_gate_; // reads vendor_lockout_
     IntroChestGate intro_chest_gate_;
-    ModifierHooks modifier_hooks_; // its save-loaded callback reads location_hooks_, boss_tracker_ and vendor_lockout_
+    ModifierHooks modifier_hooks_; // its save-loaded callback uses location_hooks_, boss_tracker_ and vendor_lockout_
     LevelCapHooks level_cap_hooks_;
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it

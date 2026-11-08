@@ -52,7 +52,4 @@ using LevelCapFn = std::function<int(int stat, int vanilla_cap)>;
 using LevelUpMenuFn = void (*)(void *level_up_menu);
 void set_level_cap_provider(LevelCapFn cap, LevelUpMenuFn after_update);
 
-// Removes the level-cap hooks and clears the callback.
-void remove_level_cap_hook();
-
 } // namespace pal

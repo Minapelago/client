@@ -1,6 +1,5 @@
 #include "mth/features/trap_hooks.hpp"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -18,14 +17,14 @@ namespace mth
 namespace
 {
 
-// Written by the named FixedUpdate hook at the top of the frame, read by tick() after the original runs. Same thread today; the atomic is free.
-std::atomic<float> g_frame_delta{0.0f};
-std::atomic<bool> g_frame_delta_seen{false};
+// Written by the named FixedUpdate hook at the top of the frame, read by tick() after the original runs, both on the game thread.
+float g_frame_delta{0.0f};
+bool g_frame_delta_seen{false};
 
 void on_fixed_update_delta(float elapsed)
 {
-    g_frame_delta.store(elapsed, std::memory_order_relaxed);
-    g_frame_delta_seen.store(true, std::memory_order_relaxed);
+    g_frame_delta = elapsed;
+    g_frame_delta_seen = true;
 }
 
 // Used only when the named hook never fires. FixedUpdate runs at 60 or 120 Hz with nothing to tell them apart, so assume the faster rate: a trap that overstays
@@ -68,8 +67,7 @@ std::uint64_t *cheat_mask_at(void *candidate)
     return mask;
 }
 
-// Resolves g_cheatManager through the game's GetSymAddr, caching only a hit. A miss retries every call: a caller in its own constructor can race App publishing
-// the game's text range (mod::sym_addr fails closed until then). The miss log is one-shot.
+// Resolves g_cheatManager through the game's GetSymAddr, caching only a hit, so a miss retries on the next call. The miss log is one-shot.
 void ensure_cheat_mgr_symbol()
 {
     if (g_cheat_mgr_sym != nullptr)
@@ -106,7 +104,7 @@ CheatManagerView cheat_manager()
 }
 
 // True once g_cheatManager resolves through GetSymAddr (it is not in the Linux symbol table, so resolve_game_symbol cannot find it). A false is not final:
-// resolution can wait on the game's text range being published.
+// Game::PostGlobalInit sets the pointer when the intro cinematic ends, after the mod has started.
 bool runtime_modifiers_available()
 {
     ensure_cheat_mgr_symbol();
@@ -285,7 +283,7 @@ bool TrapHooks::gameplay_advanced()
 
 float TrapHooks::take_delta()
 {
-    const bool have = g_frame_delta_seen.load(std::memory_order_relaxed);
+    const bool have = g_frame_delta_seen;
     if (!timing_source_logged_)
     {
         timing_source_logged_ = true;
@@ -294,7 +292,7 @@ float TrapHooks::take_delta()
         else
             pal::logf(pal::LogLevel::Warn, "traps: no FixedUpdate delta on this build; timing at an assumed %d Hz", kMaxFixedUpdateHz);
     }
-    return have ? g_frame_delta.load(std::memory_order_relaxed) : kFallbackDelta;
+    return have ? g_frame_delta : kFallbackDelta;
 }
 
 std::vector<std::string> TrapHooks::status_lines() const

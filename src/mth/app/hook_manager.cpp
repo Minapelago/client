@@ -42,7 +42,7 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
           [this]
           {
               boss_tracker_.on_save_loaded();
-              vendor_lockout_.store(false, std::memory_order_relaxed);
+              vendor_lockout_ = false;
               location_hooks_.reset_native_bits();
           }),
       status_menu_caps_(level_cap_hooks_), save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); })
@@ -59,8 +59,8 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
 bool HookManager::vendor_locked(const ApState &state)
 {
     if (state.phase() == ConnectionPhase::Connected)
-        vendor_lockout_.store(true, std::memory_order_relaxed);
-    return vendor_lockout_.load(std::memory_order_relaxed);
+        vendor_lockout_ = true;
+    return vendor_lockout_;
 }
 
 void HookManager::tick(ApState &state, const SessionPolicy &policy, int save_game_slot)

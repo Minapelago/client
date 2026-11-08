@@ -204,7 +204,7 @@ void App::drive_tick()
     }
     ensure_inbound_ready();
     reconcile_server_checked();
-    if (session_ && session_->resend.fire(link_->is_connected(), /*inbound_ready=*/true))
+    if (session_ && session_->resend.fire(link_->is_connected()))
     {
         rando_->flush(); // (re)connect: resend the full persisted checked set; server dedups
         pal::logf(pal::LogLevel::Info, "outbound: (re)connect -> flushed checked-set");

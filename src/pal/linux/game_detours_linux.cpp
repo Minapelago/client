@@ -74,6 +74,16 @@ int repl_max_level(int a, int b, void *slot)
     return capped;
 }
 
+// Rolls back a partial install: removes both level-cap hooks and clears the callbacks.
+void remove_level_cap_hook()
+{
+    for (pal::ScopedHook *hook : {&g_lvlup_update_hook, &g_max_level_hook})
+        hook->reset();
+    g_cap_fn = nullptr;
+    g_lvlup_after_update = nullptr;
+    g_active_lvlup_menu = nullptr;
+}
+
 } // namespace
 
 namespace pal
@@ -129,15 +139,6 @@ void set_level_cap_provider(LevelCapFn cap, LevelUpMenuFn after_update)
     }
     logf(LogLevel::Info, "levelcap: hooks installed (update=0x%llx maxlevel=0x%llx)", static_cast<unsigned long long>(g_addr_lvlup_update),
          static_cast<unsigned long long>(g_addr_max_level));
-}
-
-void remove_level_cap_hook()
-{
-    for (ScopedHook *hook : {&g_lvlup_update_hook, &g_max_level_hook})
-        hook->reset();
-    g_cap_fn = nullptr;
-    g_lvlup_after_update = nullptr;
-    g_active_lvlup_menu = nullptr;
 }
 
 } // namespace pal

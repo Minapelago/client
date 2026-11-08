@@ -27,7 +27,7 @@ class TrapHooks
     // Game thread, once per frame. Ages the running traps, lifts what ran out, re-asserts the rest.
     void tick();
 
-    // Lifts every running trap. Session change and teardown call it so no modifier is stranded on.
+    // Lifts every running trap. Session change and leaving gameplay call it so no modifier is stranded on.
     void clear();
 
     [[nodiscard]] std::vector<std::string> status_lines() const;

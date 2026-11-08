@@ -116,7 +116,7 @@ bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb);
 // it needs YC_TOUCH_COUNT, which upstream does not publish. input_suppress_hooks_fired() shows dispatch.
 bool install_input_suppress_hooks();
 
-// Atomic because the hooks dispatch from ycGameThread::ThreadMain, the engine's input thread (unrelated to the overlay's ProcessSDLEvent hook).
+// Game thread only: ycGameThread::ThreadMain dispatches both hooks right after Game::FixedUpdate.
 void set_input_suppressed(bool suppressed);
 
 // Whether both input hooks have dispatched. They run every input frame, so false past startup means the build does not know the names.

@@ -1,7 +1,6 @@
 #include "mth/features/menus/title_gate.hpp"
 
 #include <cstdint>
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -26,7 +25,6 @@ void (*g_orig_title_update)(void *) = nullptr;
 
 // Desired "Start Game" label, re-applied every UpdateState because the localization refresh re-sets it. Empty restores the cached original.
 std::string g_title_start_text;
-std::mutex g_title_start_text_mutex;
 
 // The localized "Start Game" from first sight, so restoring it after a reconnect keeps the player's language.
 std::string g_title_start_original;
@@ -61,12 +59,7 @@ void apply_title_start_text(void *base)
         }
     }
 
-    std::string want;
-    {
-        std::lock_guard<std::mutex> lk(g_title_start_text_mutex);
-        want = g_title_start_text;
-    }
-
+    const std::string &want = g_title_start_text;
     if (!want.empty())
     {
         if (current != want && mod::set_text(widget, want.c_str()))
@@ -137,7 +130,6 @@ bool install_title_gate_hook(std::function<bool()> connected)
 // the cached original.
 void set_title_start_option_text(const char *text)
 {
-    std::lock_guard<std::mutex> lk(g_title_start_text_mutex);
     g_title_start_text = (text != nullptr) ? text : "";
 }
 

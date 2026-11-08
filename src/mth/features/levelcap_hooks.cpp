@@ -108,12 +108,12 @@ void LevelCapHooks::set_counts(int attack, int defense, int sidearm)
 
 void LevelCapHooks::set_enforce_live(bool on)
 {
-    enforce_live_.store(on);
+    enforce_live_ = on;
 }
 
 int LevelCapHooks::provide(int stat, int vanilla_cap)
 {
-    if (!enforce_live_.load())
+    if (!enforce_live_)
         return vanilla_cap; // vanilla play: not connected, not test mode
     // Per-stat ceiling (slot_data max for real stats, native for the bone bank), then cap-up gating.
     return caps_.enforced_cap(stat, stat_cap_ceiling(stat, max_stat_level_, vanilla_cap));
@@ -121,7 +121,7 @@ int LevelCapHooks::provide(int stat, int vanilla_cap)
 
 int LevelCapHooks::display_cap_for(int stat) const
 {
-    if (!enforce_live_.load() || stat < 0 || stat >= kStatCount)
+    if (!enforce_live_ || stat < 0 || stat >= kStatCount)
         return -1;
     return boneup_display_cap(caps_.enforced_cap(stat, max_stat_level_));
 }

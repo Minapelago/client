@@ -141,6 +141,14 @@ void repl_lvlup_update(void *self, void *ctx)
     if (g_lc_after_update != nullptr)
         g_lc_after_update(self);
 }
+
+// Rolls back a failed install: removes the level-cap hook and clears the callbacks.
+void remove_level_cap_hook()
+{
+    g_lc_update_hook.reset();
+    g_lc_cap_fn = nullptr;
+    g_lc_after_update = nullptr;
+}
 } // namespace
 
 namespace pal
@@ -177,13 +185,6 @@ void set_level_cap_provider(LevelCapFn cap, LevelUpMenuFn after_update)
         return;
     }
     logf(LogLevel::Info, "levelcap: Windows hook installed (LevelUpMenu::Update=0x%llx)", static_cast<unsigned long long>(g_lc_addr_update));
-}
-
-void remove_level_cap_hook()
-{
-    g_lc_update_hook.reset();
-    g_lc_cap_fn = nullptr;
-    g_lc_after_update = nullptr;
 }
 
 } // namespace pal

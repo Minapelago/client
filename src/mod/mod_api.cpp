@@ -233,7 +233,7 @@ void shop_item_refresh_trampoline(void *pctx)
         g_shop_item_refresh_cb(static_cast<void *>(c->shopItem));
 }
 
-std::atomic<bool> g_input_suppressed{false};
+bool g_input_suppressed = false;
 
 // keysDown is sized [(YC_KEY_COUNT+31)/32] and upstream publishes no YC_KEY_COUNT. The engine's pack and unpack loops cover keys 0..136 (YC_KEY_META, the
 // highest in MinaModEnums.h), which ends in bit-word 4.
@@ -243,7 +243,7 @@ void keyboard_update_trampoline(void *pctx)
 {
     note_fired(kHookKeyboardUpdate);
     auto *c = static_cast<ycKeyboardUpdateCtx *>(pctx);
-    if (c == nullptr || !g_input_suppressed.load(std::memory_order_relaxed))
+    if (c == nullptr || !g_input_suppressed)
         return;
     if (c->keysDown != nullptr)
         std::memset(c->keysDown, 0, kKeyWordCount * sizeof(std::uint32_t));
@@ -255,7 +255,7 @@ void controller_update_trampoline(void *pctx)
 {
     note_fired(kHookControllerUpdate);
     auto *c = static_cast<ycControllerUpdateCtx *>(pctx);
-    if (c == nullptr || !g_input_suppressed.load(std::memory_order_relaxed))
+    if (c == nullptr || !g_input_suppressed)
         return;
     // exists is left alone: clearing it would read as an unplugged pad and swap the on-screen prompts.
     if (c->buttonDown != nullptr)
@@ -654,7 +654,7 @@ bool install_input_suppress_hooks()
 
 void set_input_suppressed(bool suppressed)
 {
-    g_input_suppressed.store(suppressed, std::memory_order_relaxed);
+    g_input_suppressed = suppressed;
 }
 
 bool input_suppress_hooks_fired()
@@ -664,7 +664,7 @@ bool input_suppress_hooks_fired()
 
 void remove_all_hooks()
 {
-    g_input_suppressed.store(false, std::memory_order_relaxed);
+    g_input_suppressed = false;
     g_items_on_pickup_cb = nullptr;
     g_items_on_pickup_done_cb = nullptr;
     g_pickup_on_pickup_cb = nullptr;

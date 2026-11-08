@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <string>
 #include <vector>
 
@@ -12,7 +11,7 @@ class ApState;
 
 // twin: mth/core/rules/progression.hpp (pure cap policy).
 // Owns the level-cap PAL hook and the StatCapState policy. Installs whenever the PAL has the feature; the provider returns the vanilla cap until enforcement is
-// live (AP session or offline test mode). Game thread only, except the atomic enforce_live_.
+// live (AP session or offline test mode). Game thread only.
 class LevelCapHooks
 {
   public:
@@ -35,7 +34,7 @@ class LevelCapHooks
 
     StatCapState caps_;
     int max_stat_level_{99}; // slot_data ceiling for the real stats; replaces the game's native max (game thread)
-    std::atomic<bool> enforce_live_{false};
+    bool enforce_live_{false};
 };
 
 } // namespace mth
