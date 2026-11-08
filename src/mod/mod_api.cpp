@@ -155,22 +155,19 @@ void is_item_collected_trampoline(void *pctx)
 
 mod::WorldUpdatePreFn g_world_update_cb = nullptr;
 
-void world_update_trampoline(void * /*pctx*/)
+// The World hooks fire for every running World, so the callbacks get the ctx's World* to tell them apart. It is also the route to a menu world's scene
+// graph, where PlayerGetWorld() is null.
+void world_update_trampoline(void *pctx)
 {
     note_fired(kHookWorldUpdate);
+    auto *c = static_cast<WorldUpdateCtx *>(pctx);
     if (g_world_update_cb != nullptr)
-        g_world_update_cb();
+        g_world_update_cb(c != nullptr ? c->world : nullptr);
 }
-
-// WorldUpdateEnd shares WorldUpdateCtx with WorldUpdate and forwards the World*, the only one in a menu world, where PlayerGetWorld() is null.
-struct WorldUpdateCtx
-{
-    void *world;
-    float elapsed;
-};
 
 mod::WorldUpdateEndFn g_world_update_end_cb = nullptr;
 
+// WorldUpdateEnd shares WorldUpdateCtx with WorldUpdate.
 void world_update_end_trampoline(void *pctx)
 {
     note_fired(kHookWorldUpdateEnd);
@@ -181,11 +178,12 @@ void world_update_end_trampoline(void *pctx)
 
 mod::WorldDestroyFn g_world_destroy_cb = nullptr;
 
-void world_destroy_trampoline(void * /*pctx*/)
+void world_destroy_trampoline(void *pctx)
 {
     note_fired(kHookWorldDestroy);
+    auto *c = static_cast<WorldDestroyCtx *>(pctx);
     if (g_world_destroy_cb != nullptr)
-        g_world_destroy_cb();
+        g_world_destroy_cb(c != nullptr ? c->world : nullptr);
 }
 
 mod::ItemsOnPickupFn g_items_on_pickup_cb = nullptr;

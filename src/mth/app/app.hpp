@@ -61,7 +61,8 @@ class App
     void drain_grants();                   // called from the World::Update pre-hook
     void on_world_update_end(void *world); // called after World::Update
     void on_world_destroy();               // called on World teardown; drops the cached Player*
-    void gate_note_worldupdate();          // called on the native WorldUpdate; proves the mod-hook path is live
+    // Called on every native WorldUpdate; proves the mod-hook path is live and, for a gamestate World, that the World flag still reads.
+    void gate_note_worldupdate(bool gamestate_world);
 
     // Console and login-window commands. Called on the overlay render thread; must not block.
     void connect(const std::string &server, const std::string &slot, const std::string &password);

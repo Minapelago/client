@@ -33,9 +33,10 @@ int current_game_state();
 using ItemCollectedFn = int (*)(int loc_idx, bool ownership_query);
 bool install_item_collected_hook(ItemCollectedFn query);
 
-// "WorldUpdate" hook at the top of World::Update, the spawn window where grants and lock seeds must run to avoid update-queue hangs. on_pre runs on the
-// game thread; install returns false without the modding API.
-using WorldUpdatePreFn = void (*)();
+// "WorldUpdate" hook at the top of World::Update, the spawn window where grants and lock seeds must run to avoid update-queue hangs. It fires once for
+// each running World, including the popup, dialogue and overlay Worlds, so callers filter on world. on_pre runs on the game thread; install returns false
+// without the modding API.
+using WorldUpdatePreFn = void (*)(void *world);
 bool install_world_update_hook(WorldUpdatePreFn on_pre);
 
 // "WorldUpdateEnd" hook after the other systems have run. The ctx's World* is the only route to a menu world's scene graph, since PlayerGetWorld() is null
@@ -43,9 +44,9 @@ bool install_world_update_hook(WorldUpdatePreFn on_pre);
 using WorldUpdateEndFn = void (*)(void *world);
 bool install_world_update_end_hook(WorldUpdateEndFn on_end);
 
-// "WorldDestroy" hook (exit to menu, save reload, shutdown): drop cached per-world pointers such as the live Player* here before the game frees them.
-// on_destroy runs on the game thread; install returns false without the modding API.
-using WorldDestroyFn = void (*)();
+// "WorldDestroy" hook (a gamestate change, an overlay ending, a system prompt closing, shutdown): drop cached per-world pointers such as the live
+// Player* here before the game frees that World. on_destroy runs on the game thread; install returns false without the modding API.
+using WorldDestroyFn = void (*)(void *world);
 bool install_world_destroy_hook(WorldDestroyFn on_destroy);
 
 // Vial (health-flask) capacity and count through the native Player accessors, which find the live player and slot themselves. Capacity writes set the

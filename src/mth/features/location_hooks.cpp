@@ -189,7 +189,7 @@ void collect_ap_location(int loc_idx)
 // it. Waits for a resolved collection and a bound save slot; the title/profile-select screen already binds one, so this can run before a profile is chosen.
 // Game thread, per tick.
 int g_native_last_checked_count = -1;
-// Log filter only: WorldDestroy fires per room, so the re-arm replays the same set on every transition.
+// Log filter only: the re-arm runs on every save load and every door or warp, and replays the same set each time.
 std::set<int> g_native_applied_last;
 
 void enforce_checked_native_bits()

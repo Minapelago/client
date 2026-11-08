@@ -27,6 +27,8 @@ mth::GateInputs healthy_clear()
 {
     mth::GateInputs in = healthy_pending();
     in.worldupdate_observed = true;
+    in.gamestate_world_observed = true;
+    in.other_world_observed = true;
     return in;
 }
 
@@ -154,7 +156,7 @@ TEST_CASE("gate: refusal_reason is non-empty exactly when refused, and distinct 
     REQUIRE(mth::refusal_reason(both) == mth::refusal_reason(api_only));
 }
 
-TEST_CASE("gate latch: Clear and Refused are terminal", "[gate]")
+TEST_CASE("gate latch: Clear is terminal, and a static failure keeps evaluating to Refused", "[gate]")
 {
     mth::GateLatch latch;
     REQUIRE(latch.verdict() == mth::GateVerdict::Pending);
@@ -168,11 +170,13 @@ TEST_CASE("gate latch: Clear and Refused are terminal", "[gate]")
     broken.symbols_resolved = false;
     REQUIRE(latch.update(broken) == mth::GateVerdict::Clear);
 
-    // No retry: a refusal holds for the process lifetime.
+    // The static inputs never change at runtime, so a failed probe still refuses once every World observation is in.
+    mth::GateInputs broken_pending = healthy_pending();
+    broken_pending.symbols_resolved = false;
     mth::GateLatch refused;
-    REQUIRE(refused.update(broken) == mth::GateVerdict::Refused);
+    REQUIRE(refused.update(broken_pending) == mth::GateVerdict::Refused);
     REQUIRE(refused.settled());
-    REQUIRE(refused.update(healthy_clear()) == mth::GateVerdict::Refused);
+    REQUIRE(refused.update(broken) == mth::GateVerdict::Refused);
 }
 
 TEST_CASE("gate latch: stays Pending across repeated updates until an input settles it", "[gate]")
@@ -186,6 +190,8 @@ TEST_CASE("gate latch: stays Pending across repeated updates until an input sett
     REQUIRE_FALSE(latch.settled());
 
     in.worldupdate_observed = true;
+    in.gamestate_world_observed = true;
+    in.other_world_observed = true;
     REQUIRE(latch.update(in) == mth::GateVerdict::Clear);
 }
 
@@ -203,7 +209,6 @@ TEST_CASE("safety gate: a refusal is reported once, only while enforcing, and re
     const mth::GateStatus refused = gate.status();
     REQUIRE(refused.verdict == mth::GateVerdict::Refused);
     REQUIRE_FALSE(refused.reason.empty());
-    REQUIRE_FALSE(gate.note_worldupdate()); // terminal: a late liveness proof neither clears nor re-reports
 
     // Observe-only still refuses but never asks the caller to drop the session.
     mth::SafetyGate lax;
@@ -216,9 +221,79 @@ TEST_CASE("safety gate: a refusal is reported once, only while enforcing, and re
 
     mth::SafetyGate live;
     live.begin(healthy_pending());
-    REQUIRE_FALSE(live.note_worldupdate());
+    REQUIRE_FALSE(live.note_worldupdate(false));
+    REQUIRE_FALSE(live.note_worldupdate(true));
     REQUIRE(live.status().verdict == mth::GateVerdict::Clear);
     REQUIRE(live.status().reason.empty());
+}
+
+// The deadline counts fixed updates, which run on through auto-pause, a system prompt and the boot load, so a liveness refusal can be early.
+TEST_CASE("safety gate: a liveness refusal clears once the World observations arrive, a static-probe refusal never does", "[gate]")
+{
+    mth::SafetyGate late;
+    late.begin(healthy_pending());
+    for (int i = 0; i < mth::kLivenessTimeoutTicks; ++i)
+        (void)late.tick();
+    REQUIRE(late.status().verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(late.note_worldupdate(false));
+    REQUIRE(late.status().verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(late.note_worldupdate(true));
+    REQUIRE(late.status().verdict == mth::GateVerdict::Clear);
+    REQUIRE(late.status().reason.empty());
+
+    mth::GateInputs broken = healthy_pending();
+    broken.symbols_resolved = false;
+    mth::SafetyGate refused;
+    refused.begin(broken);
+    REQUIRE(refused.status().verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(refused.note_worldupdate(false));
+    REQUIRE_FALSE(refused.note_worldupdate(true));
+    REQUIRE(refused.status().verdict == mth::GateVerdict::Refused);
+}
+
+// The World hooks act only on a World that carries the gamestate flag. If the flag's offset moves, WorldUpdate still fires but every grant and check stops.
+TEST_CASE("safety gate: WorldUpdate with no gamestate World refuses at the deadline, with its own reason", "[gate]")
+{
+    mth::SafetyGate flagless;
+    flagless.begin(healthy_pending());
+    REQUIRE_FALSE(flagless.note_worldupdate(false));
+    REQUIRE(flagless.status().verdict == mth::GateVerdict::Pending);
+    for (int i = 0; i < mth::kLivenessTimeoutTicks; ++i)
+        (void)flagless.tick();
+    const mth::GateStatus refused = flagless.status();
+    REQUIRE(refused.verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(refused.reason.empty());
+    mth::GateInputs silent = healthy_pending();
+    silent.ticks_since_probe_installed = mth::kLivenessTimeoutTicks;
+    REQUIRE(refused.reason != mth::refusal_reason(silent));
+
+    mth::SafetyGate live;
+    live.begin(healthy_pending());
+    REQUIRE_FALSE(live.note_worldupdate(false));
+    REQUIRE(live.status().verdict == mth::GateVerdict::Pending);
+    REQUIRE_FALSE(live.note_worldupdate(true));
+    REQUIRE(live.status().verdict == mth::GateVerdict::Clear);
+}
+
+// A flag that moved onto a neighbouring byte reading 1 on every running World would let every World through the World hooks' filter.
+TEST_CASE("safety gate: only flagged Worlds seen never clears, and refuses with the layout reason", "[gate]")
+{
+    mth::SafetyGate gate;
+    gate.begin(healthy_pending());
+    REQUIRE_FALSE(gate.note_worldupdate(true));
+    REQUIRE(gate.status().verdict == mth::GateVerdict::Pending);
+    for (int i = 0; i < mth::kLivenessTimeoutTicks; ++i)
+        (void)gate.tick();
+    const mth::GateStatus refused = gate.status();
+    REQUIRE(refused.verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(refused.reason.empty());
+
+    // A gamestate World that has not updated yet is a wait, not a layout change, and reads differently.
+    mth::GateInputs waiting = healthy_pending();
+    waiting.worldupdate_observed = true;
+    waiting.other_world_observed = true;
+    waiting.ticks_since_probe_installed = mth::kLivenessTimeoutTicks;
+    REQUIRE(refused.reason != mth::refusal_reason(waiting));
 }
 
 TEST_CASE("gate: connect is refused only when enforcing and refused", "[gate]")

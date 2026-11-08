@@ -40,7 +40,7 @@ class LocationHooks
     // marks our .state. Game thread, per tick; no-op without an active save.
     void enforce_native_bits();
 
-    // Re-arms enforce_native_bits after world teardown, since a save reload discards our in-memory writes.
+    // Re-arms enforce_native_bits after the active SaveSlot is replaced, which discards the bits written into it.
     void reset_native_bits();
 
   private:

@@ -1,18 +1,21 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "MinaModAPI.h"
+#include "MinaModHooks.h"
 #include "mod/mod_api.hpp"
 #include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/game_state_ids.hpp"
@@ -47,8 +50,9 @@ struct FakeScene
     }
 };
 
-// The game behind MinaModAPI: a player in a room, the world's pause and transition states, the death sequence, save slots and a scene graph. `log`
-// collects what a player would observe. Constructing one installs its API; destruction restores the previous API and the published .text range.
+// The game behind MinaModAPI: a player in a room, the world's pause and transition states, the death sequence, save slots, a scene graph and the Worlds
+// the native World hooks fire for. `log` collects what a player would observe. Constructing one installs its API; destruction restores the previous API
+// and the published .text range.
 class FakeGame
 {
   public:
@@ -65,6 +69,7 @@ class FakeGame
     FakeScene scene;
     std::vector<std::string> log;
     std::function<void()> on_tick; // the mod's per-tick work, run after the game's own update
+    int fixed_hz{60};              // Game::FixedUpdate steps per second; the MaxFPS option makes it 120
     MinaModAPI api;
 
     FakeGame() : api(make_api()), previous_api_(mod::set_api(&api)), previous_range_(pal::text_range_storage())
@@ -96,11 +101,21 @@ class FakeGame
         return present_ ? player_bytes_.data() : nullptr;
     }
 
+    // Rebuilt at a new address by every transition.
+    [[nodiscard]] void *gamestate_world()
+    {
+        return gamestate_;
+    }
+
+    // One fixed step. Each World in the update queue fires WorldUpdate and WorldUpdateEnd in turn: the popup and dialogue Worlds, then the gamestate
+    // World. The mod's tick runs after Game::FixedUpdate returns.
     void tick()
     {
+        for (World *w : {popup_, dialogue_, gamestate_})
+            update_world(w);
         const bool gameplay = !menu_open_ && !game_paused_ && !room_changing_ && death_screen_ticks_ == 0;
         if (gameplay)
-            room_time_ += 1.0f / kTicksPerSecond;
+            room_time_ += 1.0f / static_cast<float>(fixed_hz);
         if (gameplay && present_)
             advance_requested_deaths();
         advance_death(gameplay && present_);
@@ -109,7 +124,7 @@ class FakeGame
     }
     void play_for(double seconds)
     {
-        for (int i = 0; i < static_cast<int>(seconds * kTicksPerSecond); ++i)
+        for (int i = 0; i < static_cast<int>(seconds * fixed_hz); ++i)
             tick();
     }
 
@@ -174,15 +189,27 @@ class FakeGame
         area_bound_ = true;
     }
 
+    // A door, warp, death or return to title destroys the gamestate World and builds the next one at a new address.
+    void transition()
+    {
+        destroy_world(gamestate_);
+        gamestate_ = new_world(true);
+    }
+
   private:
     // Model values, none measured in game: the 0.7s register delay, the 1.5s sequence and its 0.3s guard-byte pulse, the 2s death screen.
     // Also unverified: the death sequence advances only on room-clock ticks, and the room clock runs with no player.
-    static constexpr int kTicksPerSecond = 120;
-    static constexpr int kDeathRegisterTicks = kTicksPerSecond * 7 / 10;
-    static constexpr int kDeathSequenceTicks = kTicksPerSecond * 3 / 2;
-    static constexpr int kDeathPulseTicks = kTicksPerSecond * 3 / 10;
-    static constexpr int kDeathScreenTicks = kTicksPerSecond * 2;
+    static constexpr int kDeathRegisterTenths = 7;
+    static constexpr int kDeathSequenceTenths = 15;
+    static constexpr int kDeathPulseTenths = 3;
+    static constexpr int kDeathScreenTenths = 20;
+    [[nodiscard]] int ticks(int tenths_of_a_second) const
+    {
+        return fixed_hz * tenths_of_a_second / 10;
+    }
     static constexpr int kAreaChangeState = 7;
+    // sizeof(World) on both platforms.
+    static constexpr std::size_t kWorldSize = 0x1878;
 
     static FakeGame *&current()
     {
@@ -216,7 +243,7 @@ class FakeGame
         set_dying(true);
         health_ = 0.0f;
         sparks = 0;
-        dying_ticks_ = kDeathSequenceTicks;
+        dying_ticks_ = ticks(kDeathSequenceTenths);
     }
     void player_die()
     {
@@ -232,7 +259,7 @@ class FakeGame
             note("crashed");
             return;
         }
-        requested_deaths_.push_back(kDeathRegisterTicks);
+        requested_deaths_.push_back(ticks(kDeathRegisterTenths));
     }
     void advance_requested_deaths()
     {
@@ -253,8 +280,8 @@ class FakeGame
         if (dying_ticks_ > 0 && gameplay)
         {
             --dying_ticks_;
-            const int pulse_end = (kDeathSequenceTicks - kDeathPulseTicks) / 2;
-            set_dying(dying_ticks_ >= pulse_end + kDeathPulseTicks || dying_ticks_ < pulse_end);
+            const int pulse_end = (ticks(kDeathSequenceTenths) - ticks(kDeathPulseTenths)) / 2;
+            set_dying(dying_ticks_ >= pulse_end + ticks(kDeathPulseTenths) || dying_ticks_ < pulse_end);
             if (dying_ticks_ > 0)
                 return;
             if (proto_spark)
@@ -267,7 +294,7 @@ class FakeGame
             }
             present_ = false;
             game_state = kGameStateDeath;
-            death_screen_ticks_ = kDeathScreenTicks;
+            death_screen_ticks_ = ticks(kDeathScreenTenths);
             note("death screen");
         }
         else if (death_screen_ticks_ > 0 && --death_screen_ticks_ == 0)
@@ -278,19 +305,51 @@ class FakeGame
         }
     }
 
-    // Carries the AreaManager slot Player::InitDeath walks, where only non-null matters. Null without a player.
+    // The player's World is the gamestate World. It carries the AreaManager slot Player::InitDeath walks, where only non-null matters. Null without a
+    // player.
     World *world()
     {
         void *area = area_bound_ ? static_cast<void *>(this) : nullptr;
-        std::memcpy(world_bytes_.data() + layout::kWorldAreaManagerOff, &area, sizeof(area));
-        return present_ ? reinterpret_cast<World *>(world_bytes_.data()) : nullptr;
+        std::memcpy(reinterpret_cast<unsigned char *>(gamestate_) + layout::kWorldAreaManagerOff, &area, sizeof(area));
+        return present_ ? gamestate_ : nullptr;
+    }
+
+    // No two Worlds share an address: a deque keeps its elements in place and nothing is ever erased.
+    World *new_world(bool gamestate)
+    {
+        auto &bytes = world_bytes_.emplace_back();
+        bytes[static_cast<std::size_t>(layout::kWorldGamestateFlagOff)] = gamestate ? 1 : 0;
+        return reinterpret_cast<World *>(bytes.data());
+    }
+    void dispatch(const char *hook, void *ctx)
+    {
+        const auto it = hooks_.find(hook);
+        if (it != hooks_.end())
+            it->second(ctx);
+    }
+    void update_world(World *w)
+    {
+        WorldUpdateCtx ctx{w, 1.0f / static_cast<float>(fixed_hz)};
+        dispatch("WorldUpdate", &ctx);
+        dispatch("WorldUpdateEnd", &ctx);
+    }
+    void destroy_world(World *w)
+    {
+        WorldDestroyCtx ctx{w};
+        dispatch("WorldDestroy", &ctx);
     }
 
     static MinaModAPI make_api()
     {
         MinaModAPI mm{};
         mm.APIVersion = MinaModAPI_Version;
-        mm.InstallHook = [](const char *, std::int32_t, MM_HookCallback) -> void * { return current()->install_fails ? nullptr : &current()->api; };
+        mm.InstallHook = [](const char *name, std::int32_t, MM_HookCallback cb) -> void *
+        {
+            if (current()->install_fails)
+                return nullptr;
+            current()->hooks_[name] = cb;
+            return &current()->api;
+        };
         mm.RemoveHook = [](void *) {};
         mm.GetGameRevision = [] { return current()->revision; };
         mm.GetCurrentGameState = [] { return static_cast<std::int32_t>(current()->game_state); };
@@ -378,7 +437,11 @@ class FakeGame
     }
 
     std::vector<unsigned char> player_bytes_ = std::vector<unsigned char>(layout::kPlayerDeathGuardOff + 16, 0);
-    std::vector<unsigned char> world_bytes_ = std::vector<unsigned char>(layout::kWorldAreaManagerOff + sizeof(void *), 0);
+    std::map<std::string, MM_HookCallback> hooks_;
+    std::deque<std::array<unsigned char, kWorldSize>> world_bytes_;
+    World *popup_ = new_world(false);
+    World *dialogue_ = new_world(false);
+    World *gamestate_ = new_world(true);
     bool present_{true};
     float health_{1.0f};
     bool menu_open_{false};

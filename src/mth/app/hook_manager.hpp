@@ -42,7 +42,7 @@ class HookManager
     void clear_session_state();
     void drain();                          // World::Update pre-hook window
     void on_world_update_end(void *world); // menu-world scene walk for the save takeover
-    void on_world_destroy();               // re-arm native collected-bit enforcement (save reload clears it)
+    void on_world_destroy();               // the gamestate World is going away: drop handles into it
     void append_status_lines(std::vector<std::string> &out) const;
 
   private:
@@ -64,7 +64,7 @@ class HookManager
     AbilityHooks ability_hooks_;
     SewerCatGate sewer_cat_gate_; // reads vendor_lockout_
     IntroChestGate intro_chest_gate_;
-    ModifierHooks modifier_hooks_; // its save-loaded callback reads boss_tracker_ and vendor_lockout_
+    ModifierHooks modifier_hooks_; // its save-loaded callback reads location_hooks_, boss_tracker_ and vendor_lockout_
     LevelCapHooks level_cap_hooks_;
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it

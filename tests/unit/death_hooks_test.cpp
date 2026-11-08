@@ -25,6 +25,8 @@ struct Deathlink
 
     Deathlink()
     {
+        // DeathBroadcastGate and DeathHooks size their windows at 120 Hz, where a short grace window re-opens the echo storm (#125).
+        game.fixed_hz = 120;
         game.on_tick = [this] { hooks.poll(); };
         game.play_for(1.0);
     }

@@ -15,9 +15,14 @@ bool static_checks_passed(const GateInputs &in)
     return in.mod_api_present && in.symbols_resolved && in.item_table_shape_ok && in.layout_probes_ok;
 }
 
+bool live(const GateInputs &in)
+{
+    return in.worldupdate_observed && in.gamestate_world_observed && in.other_world_observed;
+}
+
 bool liveness_expired(const GateInputs &in)
 {
-    return !in.worldupdate_observed && in.ticks_since_probe_installed >= kLivenessTimeoutTicks;
+    return !live(in) && in.ticks_since_probe_installed >= kLivenessTimeoutTicks;
 }
 
 } // namespace
@@ -26,7 +31,7 @@ GateVerdict evaluate(const GateInputs &in)
 {
     if (!static_checks_passed(in))
         return GateVerdict::Refused;
-    if (in.worldupdate_observed)
+    if (live(in))
         return GateVerdict::Clear;
     if (liveness_expired(in))
         return GateVerdict::Refused;
@@ -58,9 +63,15 @@ std::string refusal_reason(const GateInputs &in)
         return "the game's item table does not match the expected layout (game updated?)";
     if (!in.layout_probes_ok)
         return "a game struct layout probe failed (game updated?)";
-    if (liveness_expired(in))
+    if (!liveness_expired(in))
+        return std::string();
+    if (!in.worldupdate_observed)
         return "the game never ran the mod's WorldUpdate hook";
-    return std::string();
+    // Usually a slow boot load, an auto-pause or a system prompt, which clears by itself.
+    if (!in.gamestate_world_observed)
+        return "no gamestate World has updated yet (still loading, paused, or a system prompt is up); if this never clears, the game's World layout may have "
+               "changed";
+    return "the gamestate flag (World+0x1864) was set on every World; the game's World layout may have changed";
 }
 
 bool should_refuse_connect(bool enforcing, GateVerdict v)
@@ -70,7 +81,7 @@ bool should_refuse_connect(bool enforcing, GateVerdict v)
 
 GateVerdict GateLatch::update(const GateInputs &in)
 {
-    if (settled())
+    if (verdict_ == GateVerdict::Clear)
         return verdict_;
     verdict_ = evaluate(in);
     return verdict_;
@@ -86,18 +97,25 @@ void SafetyGate::begin(const GateInputs &static_inputs)
 
 bool SafetyGate::tick()
 {
-    if (latch_.settled())
+    if (latch_.verdict() == GateVerdict::Clear)
         return false;
     ++inputs_.ticks_since_probe_installed;
     return update();
 }
 
-bool SafetyGate::note_worldupdate()
+bool SafetyGate::note_worldupdate(bool gamestate_world)
 {
-    if (inputs_.worldupdate_observed)
+    bool &seen = gamestate_world ? inputs_.gamestate_world_observed : inputs_.other_world_observed;
+    if (seen)
         return false;
-    inputs_.worldupdate_observed = true;
-    pal::logf(pal::LogLevel::Info, "gate: WorldUpdate observed after %d tick(s); native mod hooks are live", inputs_.ticks_since_probe_installed);
+    seen = true;
+    if (!inputs_.worldupdate_observed)
+    {
+        inputs_.worldupdate_observed = true;
+        pal::logf(pal::LogLevel::Info, "gate: WorldUpdate observed after %d tick(s); native mod hooks are live", inputs_.ticks_since_probe_installed);
+    }
+    pal::logf(pal::LogLevel::Info, "gate: a World with the gamestate flag %s updated after %d tick(s)", gamestate_world ? "set" : "clear",
+              inputs_.ticks_since_probe_installed);
     return update();
 }
 
@@ -120,6 +138,8 @@ bool SafetyGate::update()
     }
     else if (after == GateVerdict::Clear)
     {
+        if (before == GateVerdict::Refused)
+            pal::logf(pal::LogLevel::Warn, "gate: the missing World observations arrived after the deadline; lifting the refusal");
         pal::logf(pal::LogLevel::Info, "gate: CLEAR after %d tick(s); AP behavior permitted", inputs_.ticks_since_probe_installed);
         if (!inputs_.revision_known)
             pal::logf(pal::LogLevel::Warn, "gate: this game build is outside the validated revision range; proceeding because every probe passed");

@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -53,6 +55,23 @@ const Entry kEntries[] = {
     {"CheatManagerSetCheatApplied", true, [] { return mod::cheat_manager_set_cheat_applied(0, true); }},
     {"CheatManagerIsCheatApplied", true, [] { return mod::cheat_manager_is_cheat_applied(0); }},
 };
+
+// The Worlds each World hook was called with, in order.
+struct WorldHookCalls
+{
+    std::vector<void *> updates;
+    std::vector<void *> ends;
+    std::vector<void *> destroys;
+};
+WorldHookCalls g_world_calls;
+
+void install_world_hooks()
+{
+    g_world_calls = {};
+    REQUIRE(mod::install_world_update_hook([](void *world) { g_world_calls.updates.push_back(world); }));
+    REQUIRE(mod::install_world_update_end_hook([](void *world) { g_world_calls.ends.push_back(world); }));
+    REQUIRE(mod::install_world_destroy_hook([](void *world) { g_world_calls.destroys.push_back(world); }));
+}
 } // namespace
 
 // An entry appended after the running build's API struct lies past its end, so the revision is checked before the field is read.
@@ -187,4 +206,19 @@ TEST_CASE("mod: a cheat query outside 0..0xfd never reaches the game", "[mod][sa
     REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(0xfe));
     REQUIRE(mod::cheat_manager_is_cheat_applied(0xfd));
     REQUIRE_FALSE(mod::cheat_manager_is_cheat_applied(100));
+}
+
+TEST_CASE("mod: the World hooks pass on the World they fire for", "[mod][world]")
+{
+    mth::test::FakeGame game;
+    install_world_hooks();
+
+    game.tick();
+    void *const level = game.gamestate_world();
+    REQUIRE(std::count(g_world_calls.updates.begin(), g_world_calls.updates.end(), level) == 1);
+    REQUIRE(std::set<void *>(g_world_calls.updates.begin(), g_world_calls.updates.end()).size() == g_world_calls.updates.size());
+    REQUIRE(g_world_calls.ends == g_world_calls.updates);
+
+    game.transition();
+    REQUIRE(g_world_calls.destroys == std::vector<void *>{level});
 }

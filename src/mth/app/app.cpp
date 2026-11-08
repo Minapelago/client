@@ -16,6 +16,7 @@
 #include "mth/core/ap/area_reporter.hpp"
 #include "mth/core/ap/broadcast.hpp"
 #include "mth/core/ap/rando_bridge.hpp"
+#include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/game_symbols.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "mth/features/room_tracker.hpp"
@@ -44,26 +45,35 @@ void repl_game_fixed_update()
         app->drive_tick();
 }
 
-// The native "WorldUpdate" hook delivers the spawn window at the top of World::Update, so there is no original to forward.
-void world_update_notify()
+// The native World hooks also fire for the popup, dialogue, prompt and overlay Worlds. The consumers past the liveness note count polls or walk menus
+// once per call, so they run only for the gamestate World. "WorldUpdate" delivers the spawn window at the top of World::Update, so there is no original
+// to forward.
+void world_update_notify(void *world)
 {
     mth::App *app = g_app.load(std::memory_order_acquire);
     if (app == nullptr)
         return;
-    // Liveness first: this callback firing proves the native mod-hook path works, and the gate verdict waits on it.
-    app->gate_note_worldupdate();
-    app->drain_grants();
+    // Liveness first: any World's callback proves the native mod-hook path works, a gamestate World proves the flag still reads, and the gate verdict
+    // waits on both.
+    const bool gamestate = mth::layout::is_gamestate_world(world);
+    app->gate_note_worldupdate(gamestate);
+    if (gamestate)
+        app->drain_grants();
 }
 
 void world_update_end_notify(void *world)
 {
+    if (!mth::layout::is_gamestate_world(world))
+        return;
     if (mth::App *app = g_app.load(std::memory_order_acquire))
         app->on_world_update_end(world);
 }
 
-// Delivered by the native "WorldDestroy" hook, so there is no original to forward.
-void world_destroy_notify()
+// An overlay ending or a system prompt closing destroys its own World while the gamestate World and its entities live on.
+void world_destroy_notify(void *world)
 {
+    if (!mth::layout::is_gamestate_world(world))
+        return;
     if (mth::App *app = g_app.load(std::memory_order_acquire))
         app->on_world_destroy();
 }
@@ -219,9 +229,9 @@ void App::drain_grants()
     granter_->drain();
 }
 
-void App::gate_note_worldupdate()
+void App::gate_note_worldupdate(bool gamestate_world)
 {
-    if (gate_.note_worldupdate())
+    if (gate_.note_worldupdate(gamestate_world))
         drop_refused_session();
 }
 
@@ -242,7 +252,6 @@ void App::on_world_destroy()
 {
     // The Player is freed with the world; drop the cached pointer so the next upgrade re-apply cannot write through it.
     player_tracker::invalidate_player();
-    // A save reload wipes the mod's collected-bit writes from s_rItemCollection; re-arm so the next in-game tick re-applies them.
     hooks_->on_world_destroy();
 }
 

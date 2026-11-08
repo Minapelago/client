@@ -199,7 +199,7 @@ void set_mirror_switches_override_flag(bool on)
 
 void mirror_switches_on_world_destroy()
 {
-    forget(); // every room is its own World, and a switch does not outlive one
+    forget(); // a door or warp rebuilds the World, and a switch does not outlive it
 }
 
 void tick_mirror_switches(const ApState &state, bool slot_ok)

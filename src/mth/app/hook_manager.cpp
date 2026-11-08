@@ -35,12 +35,15 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
     : rando_(rando), get_player_(get_player), location_hooks_(rando, &scout), boss_tracker_(rando), goal_tracker_(rando),
       death_hooks_(std::move(send_death), std::move(get_player)), ability_hooks_([&state](std::int64_t id) { return state.has_received(id); }),
       sewer_cat_gate_([this, &state] { return vendor_locked(state); }),
-      // Save load is the vendor lockout's only reset point. boss_tracker_ and vendor_lockout_ are declared earlier, so they outlive the hook.
+      // Save load is the vendor lockout's only reset point. Every save load and new file replaces the active SaveSlot and then calls ActivateSaveSlot(true),
+      // including the in-place new-file start that destroys no World, so the collected bits are re-armed here. The members it touches are declared earlier
+      // and outlive the hook.
       modifier_hooks_(
           [this]
           {
               boss_tracker_.on_save_loaded();
               vendor_lockout_.store(false, std::memory_order_relaxed);
+              location_hooks_.reset_native_bits();
           }),
       status_menu_caps_(level_cap_hooks_), save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); })
 {
@@ -156,7 +159,7 @@ void HookManager::on_world_update_end(void *world)
 
 void HookManager::on_world_destroy()
 {
-    location_hooks_.reset_native_bits(); // a save reload clears s_rItemCollection; re-apply on the next load
+    location_hooks_.reset_native_bits(); // backstop for a build where ModifierHooks' ActivateSaveSlot detour does not resolve
     ability_hooks_.on_world_destroy();
     lock_hooks_.on_world_destroy(); // the tracked chests died with the world
     sewer_cat_gate_.on_world_destroy();

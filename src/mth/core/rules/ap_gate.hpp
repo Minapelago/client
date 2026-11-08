@@ -15,7 +15,7 @@ enum class GateVerdict
     Refused
 };
 
-// Only worldupdate_observed changes at runtime; the rest are properties of the loaded binary (the mod hooks no heap addresses).
+// Only the observed flags change at runtime; the rest are properties of the loaded binary (the mod hooks no heap addresses).
 struct GateInputs
 {
     bool mod_api_present{false};
@@ -25,6 +25,11 @@ struct GateInputs
     bool revision_known{false};   // informational: drives a banner, never the verdict
     bool mod_api_shape_ok{false}; // informational: drives a banner, never the verdict
     bool worldupdate_observed{false};
+    // The World hooks act only on Worlds with the gamestate flag set. Seeing the flag both set and clear catches an offset that reads the same on every
+    // World. It misses a shift onto +0x1863 (isGameWorld), which is 0 on the process Worlds and 1 on the boot World, so boot looks the same and overlays
+    // would then pass the filters.
+    bool gamestate_world_observed{false}; // a WorldUpdate World had the flag set
+    bool other_world_observed{false};     // a WorldUpdate World had it clear; s_popupWorld always does
     int ticks_since_probe_installed{0};
 };
 
@@ -42,8 +47,8 @@ inline constexpr int kLivenessTimeoutTicks = 600;
 // WorldUpdate liveness proof, which can't fire until the game runs, and every static probe predicting it has passed.
 [[nodiscard]] bool should_refuse_connect(bool enforcing, GateVerdict v);
 
-// Terminal: once the verdict leaves Pending it never changes, so a late input cannot re-arm AP
-// behavior that was already refused.
+// Clear is terminal. A static-probe failure keeps evaluating to Refused because the loaded binary cannot change, while a liveness refusal moves to Clear
+// once the missing observations arrive: the deadline counts fixed updates, which keep running through auto-pause, a system prompt and the boot load.
 class GateLatch
 {
   public:
@@ -78,11 +83,12 @@ class SafetyGate
   public:
     // Game thread, once, before anything touches game memory. No AP session can exist yet, so a refusal here has nothing to drop.
     void begin(const GateInputs &static_inputs);
-    // Game thread, each fixed update: advances the liveness deadline until the verdict settles. True when this call refused while enforcing, so the caller
+    // Game thread, each fixed update: advances the liveness deadline until the verdict clears. True when this call refused while enforcing, so the caller
     // drops any session that connected before the verdict settled.
     [[nodiscard]] bool tick();
-    // Game thread, on the native WorldUpdate, which proves the mod-hook path is live. Returns as tick() does.
-    [[nodiscard]] bool note_worldupdate();
+    // Game thread, on every native WorldUpdate, which proves the mod-hook path is live. gamestate_world says whether that World had the gamestate flag
+    // set. Returns as tick() does.
+    [[nodiscard]] bool note_worldupdate(bool gamestate_world);
 
     [[nodiscard]] GateStatus status() const;
     void set_enforcing(bool on); // dev override of the default-on enforcement

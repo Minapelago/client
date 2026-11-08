@@ -55,6 +55,14 @@ inline constexpr std::ptrdiff_t kEntityWorldOff = 0x50;
 // worlds bind none either but carry no live player. Player::InitDeath dereferences it without a null check, so a death requested while it is
 // null faults on the tick the state machine flushes.
 inline constexpr std::ptrdiff_t kWorldAreaManagerOff = 0x1758;
+// u8. World::World sets it only for the first game World built on an empty world stack, which is the gamestate World (title, menus, levels, death
+// screen); popup, dialogue, prompt and overlay Worlds read 0. Same offset in the Windows exe.
+inline constexpr std::ptrdiff_t kWorldGamestateFlagOff = 0x1864;
+
+[[nodiscard]] inline bool is_gamestate_world(const void *world)
+{
+    return world != nullptr && static_cast<const std::uint8_t *>(world)[kWorldGamestateFlagOff] != 0;
+}
 
 // Pickup entity (verified by the startup self-check in the Pickup::Init hook).
 inline constexpr std::ptrdiff_t kPickupLocIdxOff = 0x380;
