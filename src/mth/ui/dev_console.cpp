@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 
@@ -31,6 +32,13 @@ template <typename T> bool parse_num(const std::string &s, T &out)
 bool parse_on(const std::string &arg)
 {
     return arg == "on" || arg == "1" || arg == "true";
+}
+
+// Runs on the game thread, so the lines reach the output pane through the log it mirrors.
+void log_lines(const std::vector<std::string> &lines)
+{
+    for (const auto &l : lines)
+        pal::logf(pal::LogLevel::Info, "%s", l.c_str());
 }
 
 void textOutlined(const char *text, ImU32 textCol = IM_COL32_WHITE, ImU32 outlineCol = IM_COL32_BLACK)
@@ -182,8 +190,7 @@ void DevConsole::run_input()
         log_.clear();
         break;
     case CommandKind::Status:
-        for (const auto &l : app_.status_lines())
-            println(l);
+        app_.commands_.post([this] { log_lines(app_.status_lines()); });
         break;
     case CommandKind::Gate:
     {
@@ -205,8 +212,7 @@ void DevConsole::run_input()
         break;
     }
     case CommandKind::Items:
-        for (const auto &l : app_.item_lines())
-            println(l);
+        app_.commands_.post([this] { log_lines(app_.item_lines()); });
         break;
     case CommandKind::GiveItem:
         if (cmd.args.empty())
@@ -217,7 +223,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], id))
                 println("giveapitem: '" + cmd.args[0] + "' is not a number");
             else
-                app_.give_item(id);
+                app_.commands_.post([this, id] { app_.give_item(id); });
         }
         break;
     case CommandKind::RemoveLock:
@@ -229,7 +235,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], slot))
                 println("removelock: '" + cmd.args[0] + "' is not a number");
             else
-                app_.remove_lock(slot);
+                app_.commands_.post([this, slot] { app_.remove_lock(slot); });
         }
         break;
     case CommandKind::Modifier:
@@ -241,17 +247,14 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], idx))
                 println("modifier: '" + cmd.args[0] + "' is not a number");
             else
-                app_.set_modifier(idx, parse_on(cmd.args[1]));
+                app_.commands_.post([this, idx, on = parse_on(cmd.args[1])] { app_.set_modifier(idx, on); });
         }
         break;
     case CommandKind::ModifierLock:
         if (cmd.args.empty())
-        {
-            for (const auto &l : app_.status_lines())
-                println(l);
-        }
+            app_.commands_.post([this] { log_lines(app_.status_lines()); });
         else
-            app_.lock_modifiers(cmd.args[0] == "lock" || cmd.args[0] == "on" || cmd.args[0] == "1");
+            app_.commands_.post([this, armed = cmd.args[0] == "lock" || cmd.args[0] == "on" || cmd.args[0] == "1"] { app_.lock_modifiers(armed); });
         break;
     case CommandKind::Connect:
         if (cmd.args.size() < 2)
@@ -275,7 +278,7 @@ void DevConsole::run_input()
             if (!parse_num(cmd.args[0], attack) || !parse_num(cmd.args[1], defense) || !parse_num(cmd.args[2], sidearm))
                 println("caps: expected three numbers");
             else
-                app_.set_stat_caps(attack, defense, sidearm);
+                app_.commands_.post([this, attack, defense, sidearm] { app_.set_stat_caps(attack, defense, sidearm); });
         }
         break;
     case CommandKind::Ability:
@@ -290,7 +293,7 @@ void DevConsole::run_input()
                 println("usage: ability <name> on|off  (names: burrow swim rope puff spring carry train)");
             }
             else
-                app_.set_ability_randomized(*ab, parse_on(cmd.args[1]));
+                app_.commands_.post([this, a = *ab, on = parse_on(cmd.args[1])] { app_.set_ability_randomized(a, on); });
         }
         break;
     case CommandKind::Disconnect:
@@ -301,7 +304,7 @@ void DevConsole::run_input()
         if (cmd.args.empty())
             println("usage: deathlink on|off");
         else
-            app_.enable_deathlink(parse_on(cmd.args[0]));
+            app_.commands_.post([this, on = parse_on(cmd.args[0])] { app_.enable_deathlink(on); });
         break;
     case CommandKind::LitLamps:
     {
@@ -316,20 +319,20 @@ void DevConsole::run_input()
             else
                 println("litlamps: ignoring non-numeric arg '" + a + "'");
         }
-        app_.set_lit_lamps(mth::lit_mask_from_indices(indices));
+        app_.commands_.post([this, mask = mth::lit_mask_from_indices(indices)] { app_.set_lit_lamps(mask); });
         break;
     }
     case CommandKind::Switches:
         if (cmd.args.empty())
-            app_.probe_switches();
+            app_.commands_.post([this] { app_.probe_switches(); });
         else
-            app_.set_mirror_switch_override(parse_on(cmd.args[0]));
+            app_.commands_.post([this, on = parse_on(cmd.args[0])] { app_.set_mirror_switch_override(on); });
         break;
     case CommandKind::SaveTest:
         if (cmd.args.empty())
             println("usage: savetest dump|write|noflush|flush");
         else
-            app_.save_test(cmd.args[0]);
+            app_.commands_.post([this, op = cmd.args[0]] { app_.save_test(op); });
         break;
     case CommandKind::Trap:
         if (cmd.args.empty())
@@ -343,7 +346,7 @@ void DevConsole::run_input()
             else if (cmd.args.size() > 1 && !parse_num(cmd.args[1], secs))
                 println("trap: '" + cmd.args[1] + "' is not a number");
             else
-                app_.fire_trap(idx, static_cast<float>(secs));
+                app_.commands_.post([this, idx, secs] { app_.fire_trap(idx, static_cast<float>(secs)); });
         }
         break;
     case CommandKind::Unknown:

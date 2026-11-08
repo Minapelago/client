@@ -20,7 +20,6 @@ void ApState::set_phase(ConnectionPhase p)
 
 void ApState::set_status(std::string text)
 {
-    std::lock_guard<std::mutex> lk(text_mutex_);
     status_ = std::move(text);
 }
 

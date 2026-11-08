@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <mutex>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/game/game_state_ids.hpp"
@@ -198,16 +197,8 @@ TrapArm TrapHooks::arm(int modifier_index, float seconds_override)
     return TrapArm::Armed;
 }
 
-void TrapHooks::queue_arm(int modifier_index, float seconds_override)
-{
-    std::lock_guard<std::mutex> lk(mtx_);
-    pending_arm_.emplace_back(modifier_index, seconds_override);
-}
-
 void TrapHooks::tick()
 {
-    // Drained unconditionally: arm() refuses outside gameplay, so a queued console trap comes back NotReady.
-    drain_pending_arm();
     // Retried before the gameplay check so a refused lift keeps trying at a menu, or the modifier stays forced on.
     retry_pending_off();
     if (!is_gameplay_game_state(mod::current_game_state()))
@@ -217,28 +208,9 @@ void TrapHooks::tick()
         // warning repeat each frame.
         if (!state_.empty())
             clear();
-        publish_active();
         return;
     }
     advance_frame();
-    publish_active();
-}
-
-void TrapHooks::drain_pending_arm()
-{
-    std::vector<std::pair<int, float>> batch;
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        batch.swap(pending_arm_);
-    }
-    for (auto [idx, seconds] : batch)
-        arm(idx, seconds);
-}
-
-void TrapHooks::publish_active()
-{
-    std::lock_guard<std::mutex> lk(mtx_);
-    snapshot_ = state_.traps();
 }
 
 void TrapHooks::advance_frame()
@@ -327,11 +299,7 @@ float TrapHooks::take_delta()
 
 std::vector<std::string> TrapHooks::status_lines() const
 {
-    std::vector<ActiveTrap> running;
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        running = snapshot_;
-    }
+    const std::vector<ActiveTrap> &running = state_.traps();
     std::vector<std::string> out;
     if (running.empty())
     {

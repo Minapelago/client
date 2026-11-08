@@ -15,6 +15,7 @@
 #include "mth/core/ap/broadcast.hpp"
 #include "mth/core/ap/connect_resend_gate.hpp"
 #include "mth/core/ap/inbound_granter.hpp"
+#include "mth/core/console/command_queue.hpp"
 #include "mth/core/console/login_prefs.hpp"
 #include "mth/core/rules/ap_gate.hpp"
 #include "mth/core/rules/progression.hpp"
@@ -70,6 +71,8 @@ class App
     void disconnect();
     [[nodiscard]] ConnectionStatus connection_status() const;
     [[nodiscard]] SavedLogin saved_login() const;
+
+    // Console-only commands. Game thread: the console posts them to commands_.
     [[nodiscard]] std::vector<std::string> status_lines() const;
     [[nodiscard]] std::vector<std::string> item_lines() const;
     void give_item(std::int64_t ap_item_id);                       // manual test path; bypasses dedup
@@ -81,15 +84,17 @@ class App
     void enable_deathlink(bool on);                                // enable/disable deathlink
     void set_lit_lamps(std::uint32_t lamp_mask);                   // offline test: force Ossex fountain lamps lit (bit i = lamp i)
     void save_test(const std::string &op);                         // save-takeover validation; dev only
-    // offline test: queue one AP trap for the next tick; seconds <= 0 uses the trap table's duration. The outcome goes to the log.
+    // offline test: arm one AP trap; seconds <= 0 uses the trap table's duration. The outcome goes to the log.
     void fire_trap(int modifier_index, float seconds);
-    // dev probe: log every rainbow switch in the player's room (#28). Results go to the log because the walk runs on the game thread.
+    // dev probe: log every rainbow switch in the player's room (#28) from this tick's mirror-switch pass.
     void probe_switches();
     // offline test: drive the Mirrors End switches with no AP session. It skips the bound-save check on the durable write, so use a scratch save.
     void set_mirror_switch_override(bool on);
 
     // The overlay reads status() every frame and `gate enforce` calls set_enforcing(), both on the render thread.
     SafetyGate gate_;
+    // The dev console posts here from the render thread; drive_tick drains it on the game thread.
+    CommandQueue commands_;
 
   private:
     // One AP (seed, slot). Built on the authenticating tick and dropped whole when a different seed or slot authenticates. inbound references save, so it

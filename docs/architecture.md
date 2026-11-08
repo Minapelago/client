@@ -109,6 +109,8 @@ platform-agnostic console:
 - **Windows**: hooks the DXGI swap-chain `Present` and the D3D12 command queue, with input via a
   window-procedure subclass.
 
+Both run the console on the game's render thread. Every command that reaches `App`, apart from `connect`, `disconnect` and `gate`, is posted to `App::commands_`, a `CommandQueue` that `App::drive_tick` drains on the game thread. Queued commands answer through the log, which the console mirrors.
+
 ## Linux runtime constraint
 
 The mod is injected into the game's runtime, which may use an older glibc than the build host. If
@@ -127,7 +129,7 @@ src/mth/core/game/     game data tables: layout offsets, symbols, component and 
                        modifiers, shop/title constants, pure game_tables predicates
 src/mth/core/rules/    enforcement policy: gates, burrow boundary, progression (level caps, upgrades, wallet),
                        goal and kear completion, traps, lock registry
-src/mth/core/console/  dev command parser, log ring, login prefs
+src/mth/core/console/  dev command parser, command queue, log ring, login prefs
 src/mth/app/           composition root: App, HookManager, startup gate probes
 src/mth/features/      per-feature game hooks (pickups, bosses, locks, player tracking, item grants, save takeover);
                        game_table_access.* reads and patches s_rItems / s_rItemCollection

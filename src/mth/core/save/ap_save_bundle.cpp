@@ -113,7 +113,6 @@ void ApSaveBundleStore::ensure_loaded(std::string_view seed, std::string_view sl
     if (cache_.loaded && cache_.seed == seed && cache_.slot == slot)
         return;
 
-    state_staged_.store(false, std::memory_order_relaxed);
     cache_ = Cache{};
     cache_.loaded = true;
     cache_.seed = std::string(seed);
@@ -320,7 +319,7 @@ bool ApSaveBundleStore::store(std::string_view seed, std::string_view slot, std:
         return false;
     }
     cache_.game_save = std::make_shared<const std::string>(blob);
-    state_staged_.store(false, std::memory_order_relaxed);
+    cache_.state_staged = false;
     // The game saving is the durability point, since the mod never runs its destructor. This runs under a native game hook with no catch before the
     // game's C ABI, so a throwing write reports as failed.
     try
@@ -348,7 +347,7 @@ std::optional<std::string> ApSaveBundleStore::load_state(std::string_view seed, 
 
 bool ApSaveBundleStore::state_staged() const
 {
-    return state_staged_.load(std::memory_order_relaxed);
+    return cache_.state_staged;
 }
 
 bool ApSaveBundleStore::stage_state(std::string_view seed, std::string_view slot, std::string_view text)
@@ -361,7 +360,7 @@ bool ApSaveBundleStore::stage_state(std::string_view seed, std::string_view slot
     }
     // No write: store() publishes the container, so the AP state that lands is the one true when the game captured its save blob.
     cache_.ap_state = std::make_shared<const std::string>(text);
-    state_staged_.store(true, std::memory_order_relaxed);
+    cache_.state_staged = true;
     return true;
 }
 

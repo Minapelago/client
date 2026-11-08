@@ -1,4 +1,4 @@
-// Console-only App commands. They run on the overlay render thread.
+// Console-only App commands. DevConsole posts them to commands_, so they run on the game thread.
 
 #include <cstdint>
 #include <string>
@@ -91,16 +91,19 @@ void App::set_modifier(int idx, bool on)
 
 void App::fire_trap(int modifier_index, float seconds)
 {
-    // Render thread: the game thread walks TrapHooks' countdown lists every tick, so queue the request. The arm logs its outcome.
-    hooks_->traps_.queue_arm(modifier_index, seconds);
-    pal::logf(pal::LogLevel::Info, "console: trap %d queued for the next game tick", modifier_index);
+    // arm() warns about NotReady only once per index, and the console never retries, so report every attempt here.
+    const TrapArm r = hooks_->traps_.arm(modifier_index, seconds);
+    const char *what = r == TrapArm::Armed      ? "armed"
+                       : r == TrapArm::Skipped  ? "skipped, the modifier is already on"
+                       : r == TrapArm::NotReady ? "not ready and not retried; run it again once in a room"
+                                                : "unavailable on this build";
+    pal::logf(pal::LogLevel::Info, "console: trap %d %s", modifier_index, what);
 }
 
 void App::probe_switches()
 {
-    // Render thread: the walk calls into the game per node, so it runs on the next tick.
+    // The walk rides tick_mirror_switches, which runs later in this tick and logs what it finds.
     request_switch_probe();
-    pal::logf(pal::LogLevel::Info, "console: switch probe queued for the next game tick");
 }
 
 void App::set_mirror_switch_override(bool on)

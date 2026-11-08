@@ -15,7 +15,7 @@ void tick_mirror_switches(const ApState &state, bool slot_ok);
 void mirror_switches_on_world_destroy();
 
 // Dev probe: log every rainbow switch in the room, with the level-data fields that tell them apart.
-// Console verb `switches`, applied on the next tick because the walk calls into the game.
+// Console verb `switches`; the next tick_mirror_switches pass does the walk.
 void request_switch_probe();
 
 // Offline test: drives the switches without an AP session or the bound-save check. The clamp writes the save, so use a scratch save.

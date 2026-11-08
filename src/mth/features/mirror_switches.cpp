@@ -1,9 +1,9 @@
 #include "mth/features/mirror_switches.hpp"
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <string>
+#include <utility>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
@@ -66,8 +66,8 @@ const char *color_name(std::uint32_t c)
     }
 }
 
-std::atomic<bool> g_probe_requested{false};
-std::atomic<bool> g_console_override{false};
+bool g_probe_requested{false};
+bool g_console_override{false};
 std::uint32_t g_logged_granted{0xffffffffu}; // impossible mask, so the first pass always logs
 bool g_logged_inert{false};
 // One switch in the room, through which apply() reaches the SwitchManager all of the room's switches share. Held through the game's weak pointer so its death
@@ -189,12 +189,12 @@ namespace mth
 
 void request_switch_probe()
 {
-    g_probe_requested.store(true);
+    g_probe_requested = true;
 }
 
 void set_mirror_switches_override_flag(bool on)
 {
-    g_console_override.store(on);
+    g_console_override = on;
 }
 
 void mirror_switches_on_world_destroy()
@@ -204,11 +204,11 @@ void mirror_switches_on_world_destroy()
 
 void tick_mirror_switches(const ApState &state, bool slot_ok)
 {
-    const bool probe = g_probe_requested.exchange(false);
+    const bool probe = std::exchange(g_probe_requested, false);
     // Confined to the switches' area, so elsewhere this costs a comparison. The clamp drives a state entry the switch persists, so it waits for the bound AP
     // save like every durable write. The console override replaces the session gate, since the seed flag cannot be set by hand offline; it only turns
     // enforcement on. The gamestate test applies either way.
-    const bool console = g_console_override.load();
+    const bool console = g_console_override;
     const bool armed = console || (state.authenticated() && slot_ok && state.config().mirror_switch_rando);
     const bool in_hub = mod::current_game_state() == kGameStateMirrorHub && mod::room_index() != kGameStateMirrorHubPathToAO;
     const bool wanted = armed && in_hub;

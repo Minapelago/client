@@ -220,11 +220,9 @@ ModifierHooks::ModifierHooks(std::function<void()> on_save_loaded)
 
 void ModifierHooks::seed(int slot_index, std::uint32_t words[8])
 {
-    if (!enforce_live_.load())
+    if (!enforce_live_)
         return; // not an AP session (or test mode): never touch a save the mod doesn't own
-    std::lock_guard<std::mutex> lk(mtx_);
-    const bool scoped = ap_scoped_.load();
-    if (scoped)
+    if (ap_scoped_)
     {
         // AP session: enforce only the AP game's slot, captured on the first load.
         if (ap_slot_ >= 0 && slot_index != ap_slot_)
@@ -245,34 +243,32 @@ void ModifierHooks::seed(int slot_index, std::uint32_t words[8])
             if (is_ap_denied(idx))
                 words[idx >> 5] &= ~(1u << (static_cast<unsigned>(idx) & 31u));
     }
-    if (scoped) // additive: force the AP baseline on without disturbing the player's other modifiers
+    if (ap_scoped_) // additive: force the AP baseline on without disturbing the player's other modifiers
         for (int idx : force_on_)
             words[idx >> 5] |= 1u << (static_cast<unsigned>(idx) & 31u);
 }
 
 bool ModifierHooks::block(int idx) const
 {
-    if (!enforce_live_.load())
+    if (!enforce_live_)
         return false; // vanilla play (not connected): leave the player's cheat menu alone
-    std::lock_guard<std::mutex> lk(mtx_);
-    if (ap_scoped_.load() && force_on_.count(idx) != 0)
+    if (ap_scoped_ && force_on_.count(idx) != 0)
         return true; // a force-on baseline modifier can't be toggled off
     return armed_ && is_ap_denied(idx);
 }
 
 void ModifierHooks::set_enforce_live(bool on)
 {
-    enforce_live_.store(on);
+    enforce_live_ = on;
 }
 
 void ModifierHooks::set_ap_scoped(bool on)
 {
-    ap_scoped_.store(on);
+    ap_scoped_ = on;
 }
 
 void ModifierHooks::set_ossex_start(bool on)
 {
-    std::lock_guard<std::mutex> lk(mtx_);
     if (on)
         force_on_.insert(kCheatLandingDone);
     else
@@ -281,22 +277,17 @@ void ModifierHooks::set_ossex_start(bool on)
 
 void ModifierHooks::set_ap_slot(int slot)
 {
-    std::lock_guard<std::mutex> lk(mtx_);
     ap_slot_ = slot; // -1 re-arms capture for the next seed
 }
 
 int ModifierHooks::captured_ap_slot() const
 {
-    std::lock_guard<std::mutex> lk(mtx_);
     return ap_slot_;
 }
 
 void ModifierHooks::set_armed(bool on)
 {
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        armed_ = on;
-    }
+    armed_ = on;
     pal::logf(pal::LogLevel::Info, "modifiers: %s", on ? "armed (locked)" : "disarmed (unlocked)");
 }
 
@@ -307,24 +298,11 @@ void ModifierHooks::set_live(int idx, bool on)
         pal::logf(pal::LogLevel::Warn, "modifiers: live set idx=%d refused (not a continuous modifier)", idx);
         return;
     }
-    std::lock_guard<std::mutex> lk(mtx_);
-    pending_live_.emplace_back(idx, on);
-}
-
-void ModifierHooks::drain_live()
-{
-    std::vector<std::pair<int, bool>> batch;
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        batch.swap(pending_live_);
-    }
-    for (auto [idx, on] : batch)
-        apply_live_modifier(idx, on);
+    apply_live_modifier(idx, on);
 }
 
 std::vector<std::string> ModifierHooks::status_lines() const
 {
-    std::lock_guard<std::mutex> lk(mtx_);
     std::vector<std::string> out;
     out.push_back(std::string("modifiers armed: ") + (armed_ ? "yes" : "no"));
     return out;

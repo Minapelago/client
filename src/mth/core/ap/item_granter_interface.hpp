@@ -35,7 +35,7 @@ class IItemGranter
   protected:
     void notify_applied(int receipt)
     {
-        // Receipt check first: a kNoReceipt grant can come from the overlay thread, which must not read the sink while the game thread swaps it.
+        // A kNoReceipt grant (the console's giveapitem) has nothing durable to record, so it never reaches the sink.
         if (receipt != kNoReceipt && applied_sink_)
             applied_sink_(receipt);
     }

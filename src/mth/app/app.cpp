@@ -177,6 +177,7 @@ void App::drive_tick()
 {
     if (gate_.tick())
         drop_refused_session();
+    commands_.drain();
     if (!first_tick_logged_)
     {
         first_tick_logged_ = true;

@@ -1,6 +1,5 @@
 #include "mth/features/fountain_lamp_hooks.hpp"
 
-#include <atomic>
 #include <cstdint>
 
 #include "mth/core/game/game_layout.hpp"
@@ -16,8 +15,8 @@ namespace
 
 // HubFountain::Bulb::Update(float dt, bool lit): forces lit for AP-granted generator lamps (bit i of either mask lights lamp i), read per bulb per frame. The
 // prototype order (self, dt, lit) matches the mangled Update(float,bool) on both ABIs; keep it.
-std::atomic<std::uint32_t> g_slot_mask{0};    // slot_data lamps, from the game-thread tick
-std::atomic<std::uint32_t> g_console_mask{0}; // sticky console override, from the render thread
+std::uint32_t g_slot_mask{0};    // slot_data lamps
+std::uint32_t g_console_mask{0}; // sticky console override
 [[clang::no_destroy]] pal::ScopedHook g_fountain_hook;
 void (*g_orig_bulb_update)(void *, float, bool) = nullptr;
 
@@ -25,7 +24,7 @@ void repl_bulb_update(void *self, float dt, bool lit)
 {
     if (self != nullptr)
     {
-        const std::uint32_t mask = g_slot_mask.load(std::memory_order_relaxed) | g_console_mask.load(std::memory_order_relaxed);
+        const std::uint32_t mask = g_slot_mask | g_console_mask;
         const std::uint32_t idx = pal::at<std::uint32_t>(self, mth::layout::kBulbIndexOff);
         if (idx < static_cast<std::uint32_t>(mth::kGeneratorCount) && ((mask >> idx) & 1u))
             lit = true; // force this generator lamp lit; never writes SaveSlot+0x290
@@ -58,12 +57,12 @@ void install_fountain_lamp_hook()
 
 void set_fountain_slot_mask(std::uint32_t mask)
 {
-    g_slot_mask.store(mask, std::memory_order_relaxed);
+    g_slot_mask = mask;
 }
 
 void set_fountain_console_mask(std::uint32_t mask)
 {
-    g_console_mask.store(mask, std::memory_order_relaxed);
+    g_console_mask = mask;
 }
 
 } // namespace mth

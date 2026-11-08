@@ -287,7 +287,7 @@ void LockHooks::seed_removed_locks()
     if (saveslot == nullptr)
         return; // no active save (e.g. title/menus)
 
-    const std::vector<int> slots = locks_.removed_slots();
+    const std::set<int> &slots = locks_.removed_slots();
     if (slots.empty())
         return;
 

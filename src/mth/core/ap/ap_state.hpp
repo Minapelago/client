@@ -35,12 +35,11 @@ class ApState
     {
         return authenticated_;
     }
-    // By value under the lock: the overlay render thread reads this while the game thread reassigns it.
-    [[nodiscard]] std::string status() const
+    [[nodiscard]] const std::string &status() const
     {
-        std::lock_guard<std::mutex> lk(text_mutex_);
         return status_;
     }
+    // phase() and detail() are what the login window reads from the render thread.
     [[nodiscard]] ConnectionPhase phase() const
     {
         return phase_.load(std::memory_order_relaxed);
@@ -112,7 +111,7 @@ class ApState
     std::string status_{"Idle"};
     std::atomic<ConnectionPhase> phase_{ConnectionPhase::Disconnected};
     std::string detail_{};          // human-readable error/status detail for the login window
-    mutable std::mutex text_mutex_; // guards detail_ and status_ across the game/render thread boundary
+    mutable std::mutex text_mutex_; // guards detail_ across the game/render thread boundary
     std::string seed_{};
     int player_slot_{-1};
     SlotDataConfig config_{}; // pre-connection defaults; every reader gates on authenticated() first

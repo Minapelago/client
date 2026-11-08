@@ -71,7 +71,6 @@ void HookManager::tick(ApState &state, const SessionPolicy &policy, int save_gam
     modifier_hooks_.set_enforce_live(authed || policy.console_modifiers);
     modifier_hooks_.set_ap_scoped(authed);
     modifier_hooks_.set_ossex_start(state.config().ossex_start); // force Landing Done when slot_data requests it
-    modifier_hooks_.drain_live();
 
     level_cap_hooks_.set_enforce_live(authed || policy.forced_caps);
     if (!policy.forced_caps)
