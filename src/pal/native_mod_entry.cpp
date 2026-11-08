@@ -1,4 +1,5 @@
-#include <thread>
+#include <cstdlib>
+#include <exception>
 
 #include "MinaModAPI.h"
 #include "mod/mod_api.hpp"
@@ -6,57 +7,8 @@
 #include "pal/pal_entry.hpp"
 #include "pal/pal_log.hpp"
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <pthread.h>
-#endif
-
-namespace
-{
-
-#ifdef _WIN32
-// Raw CreateThread: the MSVC STL thread wrapper is noexcept, so an exception escaping apclient_main would __fastfail past the crash handler's filter
-// (no log, no minidump). A plain thread proc reaches RtlUserThreadStart's filter.
-DWORD WINAPI apclient_thread_proc(LPVOID)
-{
-    SetThreadDescription(GetCurrentThread(), L"mthap-main");
-    pal::apclient_main();
-    return 0;
-}
-#endif
-
-void start_apclient_thread()
-{
-#ifdef _WIN32
-    HANDLE h = CreateThread(nullptr, 0, &apclient_thread_proc, nullptr, 0, nullptr);
-    if (h)
-        CloseHandle(h);
-    else
-        pal::logf(pal::LogLevel::Error, "failed to start the apclient thread (error %lu)", static_cast<unsigned long>(GetLastError()));
-#else
-    try
-    {
-        std::thread(
-            []
-            {
-                pthread_setname_np(pthread_self(), "mthap-main");
-                pal::apclient_main();
-            })
-            .detach();
-    }
-    catch (const std::system_error &e)
-    {
-        pal::logf(pal::LogLevel::Error, "failed to start the apclient thread: %s", e.what());
-    }
-#endif
-}
-
-} // namespace
-
-// Entry point the native mod loader calls. MM_EXPORT carries the extern "C"
-// linkage and the default-visibility attribute the hidden-by-default build needs.
+// Entry point the native mod loader calls on the game thread, before Game::Init and before any World exists. MM_EXPORT carries the extern "C" linkage and
+// the default-visibility attribute the hidden-by-default build needs.
 MM_EXPORT void MinaMod_Init(MinaModAPI *mm)
 {
     mod::set_api(mm);
@@ -65,5 +17,14 @@ MM_EXPORT void MinaMod_Init(MinaModAPI *mm)
     if (mm && mm->APIVersion != MinaModAPI_Version)
         pal::logf(pal::LogLevel::Warn, "MinaModAPI version mismatch (expected %u, got %zu); proceeding anyway", static_cast<unsigned>(MinaModAPI_Version),
                   static_cast<size_t>(mm->APIVersion));
-    start_apclient_thread();
+    // An exception unwinding out of this extern "C" entry into the game's frames can fast-fail past the crash handler, so log it before aborting.
+    try
+    {
+        pal::apclient_main();
+    }
+    catch (const std::exception &e)
+    {
+        pal::logf(pal::LogLevel::Error, "apclient startup threw: %s", e.what());
+        std::abort();
+    }
 }

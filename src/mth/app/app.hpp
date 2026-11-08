@@ -51,6 +51,7 @@ struct SavedLogin
 class App
 {
   public:
+    // Runs on the game thread inside MinaMod_Init, before the first frame, so it must never wait for a tick or a World.
     App();
     ~App() = delete; // leaked on purpose, see entry.cpp
 

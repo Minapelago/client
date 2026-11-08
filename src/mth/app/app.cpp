@@ -1,6 +1,5 @@
 #include "mth/app/app.hpp"
 
-#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -33,7 +32,7 @@
 namespace
 {
 
-std::atomic<mth::App *> g_app{nullptr};
+mth::App *g_app = nullptr;
 
 void (*g_orig_game_fixed_update)() = nullptr;
 
@@ -41,7 +40,7 @@ void repl_game_fixed_update()
 {
     if (g_orig_game_fixed_update)
         g_orig_game_fixed_update();
-    if (mth::App *app = g_app.load(std::memory_order_acquire))
+    if (mth::App *app = g_app)
         app->drive_tick();
 }
 
@@ -50,7 +49,7 @@ void repl_game_fixed_update()
 // to forward.
 void world_update_notify(void *world)
 {
-    mth::App *app = g_app.load(std::memory_order_acquire);
+    mth::App *app = g_app;
     if (app == nullptr)
         return;
     // Liveness first: any World's callback proves the native mod-hook path works, a gamestate World proves the flag still reads, and the gate verdict
@@ -65,7 +64,7 @@ void world_update_end_notify(void *world)
 {
     if (!mth::layout::is_gamestate_world(world))
         return;
-    if (mth::App *app = g_app.load(std::memory_order_acquire))
+    if (mth::App *app = g_app)
         app->on_world_update_end(world);
 }
 
@@ -74,7 +73,7 @@ void world_destroy_notify(void *world)
 {
     if (!mth::layout::is_gamestate_world(world))
         return;
-    if (mth::App *app = g_app.load(std::memory_order_acquire))
+    if (mth::App *app = g_app)
         app->on_world_destroy();
 }
 
@@ -165,8 +164,8 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         pal::logf(pal::LogLevel::Info, "overlay: dev console attached"); // overlay logs the resolved toggle key
     }
 
-    // Tick sources last. The ctor runs on its own thread, so this release store pairs with the trampolines' acquire loads to publish a fully built App.
-    g_app.store(this, std::memory_order_release);
+    // Tick sources last. No barrier: the ctor and the trampolines share the game thread.
+    g_app = this;
     fixed_update_hook_ = pal::ScopedHook(sym::game_fixed_update, &repl_game_fixed_update, &g_orig_game_fixed_update, "Game::FixedUpdate");
     mod::install_world_update_hook(&world_update_notify);
     mod::install_world_update_end_hook(&world_update_end_notify);
