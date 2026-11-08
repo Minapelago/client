@@ -1,12 +1,13 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "mth/core/ap/ability_ids.hpp"
@@ -32,7 +33,6 @@ class ApCoordinator;
 class AreaReporter;
 class RandoBridge;
 class OverlayRoot;
-class TrapHooks;
 
 struct ConnectionStatus
 {
@@ -45,14 +45,6 @@ struct SavedLogin
 {
     std::string server;
     std::string slot;
-};
-
-// Snapshot of the AP safety gate, copied by value because the UI reads it on the render thread while the game thread writes the gate.
-struct GateStatus
-{
-    GateVerdict verdict{GateVerdict::Pending};
-    bool enforcing{false};
-    std::string reason; // empty unless refused
 };
 
 // Composition root. Logger and hook engine are PAL globals; App owns everything else.
@@ -78,8 +70,6 @@ class App
     [[nodiscard]] SavedLogin saved_login() const;
     [[nodiscard]] std::vector<std::string> status_lines() const;
     [[nodiscard]] std::vector<std::string> item_lines() const;
-    [[nodiscard]] GateStatus gate_status() const;
-    void set_gate_enforcing(bool on);                              // dev override of the default-on enforcement
     void give_item(std::int64_t ap_item_id);                       // manual test path; bypasses dedup
     void remove_lock(int slot);                                    // pre-open/remove a KeyBlock by slot (AP runtime path)
     void set_modifier(int idx, bool on);                           // live toggle a continuous modifier
@@ -96,18 +86,44 @@ class App
     // offline test: drive the Mirrors End switches with no AP session. It skips the bound-save check on the durable write, so use a scratch save.
     void set_mirror_switch_override(bool on);
 
+    // The overlay reads status() every frame and `gate enforce` calls set_enforcing(), both on the render thread.
+    SafetyGate gate_;
+
   private:
+    // One AP (seed, slot). Built on the authenticating tick and dropped whole when a different seed or slot authenticates. inbound references save, so it
+    // is declared after it.
+    struct SeedSession
+    {
+        SeedSession(ApSaveState::LoadFn load, ApSaveState::StoreFn store, IItemGranter &granter, ApState &state, std::function<bool()> credit_kear_key,
+                    std::function<TrapArm(int)> arm_trap)
+            : save(std::move(load), std::move(store)), inbound(granter, state, save, std::move(credit_kear_key), std::move(arm_trap))
+        {
+        }
+
+        ApSaveState save;
+        InboundGranter inbound;
+        ConnectResendGate resend; // fires flush() once per (re)connection
+    };
+
+    // One AP connection, replaced by assignment on every ApConnected and ApDisconnected. Game thread only. LocationHooks holds the address of scouts, so this
+    // stays a plain member.
+    struct Connection
+    {
+        std::map<int, ScoutInfo> scouts; // by collection slot
+        bool pending_inbound_death{false};
+        std::string pending_death_text; // attribution for pending_inbound_death; read only while it is set
+    };
+
     void remember_successful_login(); // persist the attempted target once the server authenticates
     // Drops everything the previous AP session accumulated. Game thread, on the link's ApSessionEnded (a different seed/slot authenticated).
     void clear_session_state();
-    void ensure_inbound_ready(); // lazily builds save_state_ + inbound_ once connected
+    void ensure_inbound_ready(); // builds session_ on the first authenticated tick
     // Merges ApState's server-reported checked locations (Collect / coop) into the save-state checked set once inbound is ready. Never re-sends; persists
     // once per pass. Called each drive_tick.
     void reconcile_server_checked();
-    void enforce_vial_capacity(); // re-assert the AP vial count through the mod-API accessors (#171)
-    void enforce_wallet_cap();    // clamp live bones to the AP wallet cap (#112); no-op unless authed + wallet_cap
+    void drop_refused_session(); // the gate refused after connect() let a session through
     ApState state_;
-    // Declared before hooks_ and save_state_, which hold references into it.
+    // Declared before hooks_ and session_, which hold references into it.
     ApSaveBundleStore bundle_store_;
     // AP session. banner_queue_ is the net->render mailbox the coordinator pushes to and the overlay draws from, so it outlives both.
     BannerQueue banner_queue_;
@@ -118,34 +134,19 @@ class App
     // Game::FixedUpdate detour, the tick source; the World::Update/WorldUpdateEnd/WorldDestroy events come from native mod hooks.
     pal::ScopedHook fixed_update_hook_;
     std::unique_ptr<HookManager> hooks_;
-    std::optional<ApSaveState> save_state_;
-    // Received-item grant path, built once connected and dropped at a session boundary. inbound_ references granter_ and save_state_, so it dies first.
+    // Received-item grant path. session_->inbound references it, so it is declared first.
     std::optional<ItemGranter> granter_;
-    std::optional<InboundGranter> inbound_;
-    std::unique_ptr<TrapHooks> traps_;
-    std::atomic<bool> pending_inbound_death_{false};
-    // Attribution for the death pending_inbound_death_ arms, written and read in the same game-thread tick, so no lock. Read only when the flag is set.
-    std::string pending_death_text_;
-    // AP safety gate. Static inputs settle in the ctor; liveness arrives on the first native WorldUpdate (title screen). gate_verdict_ is atomic for the
-    // overlay's per-frame read on the render thread; gate_reason_ is copied out under its own lock.
-    GateInputs gate_inputs_;
-    GateLatch gate_latch_;
-    std::atomic<GateVerdict> gate_verdict_{GateVerdict::Pending};
-    std::atomic<bool> gate_enforcing_{true}; // `gate enforce off` clears it
-    mutable std::mutex gate_reason_mutex_;
-    std::string gate_reason_;
-    void gate_tick(); // game thread: advance the liveness deadline, latch, log transitions
+    std::optional<SeedSession> session_;
+    Connection connection_;
     bool first_tick_logged_{false};
     SessionPolicy policy_;
     UpgradeState upgrades_;
-    ConnectResendGate resend_gate_; // fires flush() once per (re)connection
     // Last connect target, auto-filled into the login window next launch. connect() stashes the attempt on the render thread and the game thread commits
     // it once the server authenticates, so the mutex covers the prefs and the pending pair.
     mutable std::mutex login_mutex_;
     LoginPrefs login_prefs_;
     std::string pending_server_;
     std::string pending_slot_;
-    std::map<int, mth::ScoutInfo> scouts_; // game thread only, by collection slot
     std::unique_ptr<OverlayRoot> overlay_root_;
 };
 

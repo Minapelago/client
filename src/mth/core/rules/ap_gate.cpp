@@ -1,5 +1,9 @@
 #include "mth/core/rules/ap_gate.hpp"
 
+#include <utility>
+
+#include "pal/pal_log.hpp"
+
 namespace mth
 {
 
@@ -70,6 +74,81 @@ GateVerdict GateLatch::update(const GateInputs &in)
         return verdict_;
     verdict_ = evaluate(in);
     return verdict_;
+}
+
+void SafetyGate::begin(const GateInputs &static_inputs)
+{
+    inputs_ = static_inputs;
+    update();
+    pal::logf(pal::LogLevel::Info, "gate: verdict=%s enforcing=%d (console: `gate enforce off` to override)", verdict_name(verdict_.load()),
+              enforcing_.load() ? 1 : 0);
+}
+
+bool SafetyGate::tick()
+{
+    if (latch_.settled())
+        return false;
+    ++inputs_.ticks_since_probe_installed;
+    return update();
+}
+
+bool SafetyGate::note_worldupdate()
+{
+    if (inputs_.worldupdate_observed)
+        return false;
+    inputs_.worldupdate_observed = true;
+    pal::logf(pal::LogLevel::Info, "gate: WorldUpdate observed after %d tick(s); native mod hooks are live", inputs_.ticks_since_probe_installed);
+    return update();
+}
+
+bool SafetyGate::update()
+{
+    const GateVerdict before = latch_.verdict();
+    const GateVerdict after = latch_.update(inputs_);
+    if (after == before)
+        return false;
+
+    verdict_.store(after);
+    std::string reason = refusal_reason(inputs_);
+    bool drop = false;
+    if (after == GateVerdict::Refused)
+    {
+        pal::logf(pal::LogLevel::Error, "gate: REFUSED - %s", reason.c_str());
+        drop = enforcing_.load();
+        if (!drop)
+            pal::logf(pal::LogLevel::Warn, "gate: enforcement is off, so AP behavior is NOT being blocked; run `gate enforce on` to enforce");
+    }
+    else if (after == GateVerdict::Clear)
+    {
+        pal::logf(pal::LogLevel::Info, "gate: CLEAR after %d tick(s); AP behavior permitted", inputs_.ticks_since_probe_installed);
+        if (!inputs_.revision_known)
+            pal::logf(pal::LogLevel::Warn, "gate: this game build is outside the validated revision range; proceeding because every probe passed");
+        if (!inputs_.mod_api_shape_ok)
+            pal::logf(pal::LogLevel::Error, "gate: the game's mod API version differs from the one this build expects; entries may be misaligned");
+    }
+    {
+        std::lock_guard<std::mutex> lk(reason_mutex_);
+        reason_ = std::move(reason);
+    }
+    return drop;
+}
+
+GateStatus SafetyGate::status() const
+{
+    GateStatus s;
+    s.verdict = verdict_.load();
+    s.enforcing = enforcing_.load();
+    {
+        std::lock_guard<std::mutex> lk(reason_mutex_);
+        s.reason = reason_;
+    }
+    return s;
+}
+
+void SafetyGate::set_enforcing(bool on)
+{
+    enforcing_.store(on);
+    pal::logf(pal::LogLevel::Info, "gate: enforcing=%d (verdict=%s)", on ? 1 : 0, verdict_name(verdict_.load()));
 }
 
 } // namespace mth

@@ -16,6 +16,7 @@
 #include "mth/features/save_takeover.hpp"
 #include "mth/features/scene_gates/intro_chest_gate.hpp"
 #include "mth/features/scene_gates/sewer_cat_gate.hpp"
+#include "mth/features/trap_hooks.hpp"
 
 namespace mth
 {
@@ -36,7 +37,8 @@ class HookManager
     HookManager &operator=(const HookManager &) = delete;
 
     void tick(ApState &state, const SessionPolicy &policy, int save_game_slot); // -1 when no save state
-    // Session boundary: drop the lock removals seeded from one connection's items and the captured AP-game slot, so neither reaches the next save.
+    // Seed boundary: drop the lock removals seeded from one connection's items and the captured AP-game slot so neither reaches the next save, lift any
+    // running trap and drop any latched death.
     void clear_session_state();
     void drain();                          // World::Update pre-hook window
     void on_world_update_end(void *world); // menu-world scene walk for the save takeover
@@ -66,6 +68,7 @@ class HookManager
     LevelCapHooks level_cap_hooks_;
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it
+    TrapHooks traps_;
 };
 
 } // namespace mth

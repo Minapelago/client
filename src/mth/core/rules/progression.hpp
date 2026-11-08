@@ -119,7 +119,7 @@ inline constexpr int kWalletFreeAt = 8;
     return kWalletBase + kWalletStep * count;
 }
 
-// twin: App::enforce_wallet_cap clamps live bones to this each frame.
+// twin: enforce_wallet_cap (features/upgrades.cpp) clamps live bones to this each frame.
 // The bone cap the received wallet items allow, or nullopt for "uncapped".
 [[nodiscard]] inline std::optional<int> wallet_cap(const ApState &state)
 {

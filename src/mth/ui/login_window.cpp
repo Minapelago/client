@@ -47,7 +47,7 @@ void LoginWindow::draw(bool login_open)
     ImGui::InputText("Password", password_.data(), password_.size(), ImGuiInputTextFlags_Password);
 
     const ConnectionStatus status = app_.connection_status();
-    const GateStatus gate = app_.gate_status();
+    const GateStatus gate = app_.gate_.status();
     const bool gate_blocks = should_refuse_connect(gate.enforcing, gate.verdict);
     switch (status.phase)
     {

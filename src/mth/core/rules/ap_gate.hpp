@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
 #include <string>
 
 namespace mth
@@ -59,6 +61,41 @@ class GateLatch
 
   private:
     GateVerdict verdict_{GateVerdict::Pending};
+};
+
+// Snapshot of the gate, copied by value because the UI reads it on the render thread while the game thread writes the gate.
+struct GateStatus
+{
+    GateVerdict verdict{GateVerdict::Pending};
+    bool enforcing{false};
+    std::string reason; // empty unless refused
+};
+
+// The gate's runtime state. The game thread drives it; status() and set_enforcing() are safe from the render thread because the verdict and the enforcing
+// flag are atomic and the reason is copied out under its own lock.
+class SafetyGate
+{
+  public:
+    // Game thread, once, before anything touches game memory. No AP session can exist yet, so a refusal here has nothing to drop.
+    void begin(const GateInputs &static_inputs);
+    // Game thread, each fixed update: advances the liveness deadline until the verdict settles. True when this call refused while enforcing, so the caller
+    // drops any session that connected before the verdict settled.
+    [[nodiscard]] bool tick();
+    // Game thread, on the native WorldUpdate, which proves the mod-hook path is live. Returns as tick() does.
+    [[nodiscard]] bool note_worldupdate();
+
+    [[nodiscard]] GateStatus status() const;
+    void set_enforcing(bool on); // dev override of the default-on enforcement
+
+  private:
+    bool update(); // latch, publish and log a transition; returns as tick() does
+
+    GateInputs inputs_;
+    GateLatch latch_;
+    std::atomic<GateVerdict> verdict_{GateVerdict::Pending};
+    std::atomic<bool> enforcing_{true}; // `gate enforce off` clears it
+    mutable std::mutex reason_mutex_;
+    std::string reason_;
 };
 
 } // namespace mth

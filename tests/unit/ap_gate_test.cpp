@@ -189,6 +189,38 @@ TEST_CASE("gate latch: stays Pending across repeated updates until an input sett
     REQUIRE(latch.update(in) == mth::GateVerdict::Clear);
 }
 
+TEST_CASE("safety gate: a refusal is reported once, only while enforcing, and reaches the snapshot", "[gate]")
+{
+    mth::SafetyGate gate;
+    gate.begin(healthy_pending());
+    REQUIRE(gate.status().verdict == mth::GateVerdict::Pending);
+    REQUIRE(gate.status().enforcing);
+
+    int drops = 0;
+    for (int i = 0; i < mth::kLivenessTimeoutTicks; ++i)
+        drops += gate.tick() ? 1 : 0;
+    REQUIRE(drops == 1);
+    const mth::GateStatus refused = gate.status();
+    REQUIRE(refused.verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(refused.reason.empty());
+    REQUIRE_FALSE(gate.note_worldupdate()); // terminal: a late liveness proof neither clears nor re-reports
+
+    // Observe-only still refuses but never asks the caller to drop the session.
+    mth::SafetyGate lax;
+    lax.set_enforcing(false);
+    lax.begin(healthy_pending());
+    for (int i = 0; i < mth::kLivenessTimeoutTicks; ++i)
+        REQUIRE_FALSE(lax.tick());
+    REQUIRE(lax.status().verdict == mth::GateVerdict::Refused);
+    REQUIRE_FALSE(lax.status().enforcing);
+
+    mth::SafetyGate live;
+    live.begin(healthy_pending());
+    REQUIRE_FALSE(live.note_worldupdate());
+    REQUIRE(live.status().verdict == mth::GateVerdict::Clear);
+    REQUIRE(live.status().reason.empty());
+}
+
 TEST_CASE("gate: connect is refused only when enforcing and refused", "[gate]")
 {
     REQUIRE(mth::should_refuse_connect(true, mth::GateVerdict::Refused));

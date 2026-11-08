@@ -4,11 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <utility>
 
 #include "mod/mod_api.hpp"
 #include "mth/core/ap/ap_ids.hpp"
+#include "mth/core/ap/ap_state.hpp"
 #include "mth/core/game/game_symbols.hpp"
+#include "mth/core/rules/progression.hpp"
+#include "mth/features/player_tracker.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
@@ -20,7 +24,7 @@
 
 // ---- capacity upgrades ----
 // Per-upgrade SaveSlot field (Magic, Health, Spark, Vial, Trinket); popcount = capacity, and UpdateStats recomputes the live maxima from them. Build-specific:
-// re-verify on the shipping build. The Vial entry (kVialUpgradeIndex) is a placeholder and never written; vials go through the mod API (see App).
+// re-verify on the shipping build. The Vial entry (kVialUpgradeIndex) is a placeholder and never written; enforce_vial_capacity sets vials via the mod API.
 namespace
 {
 constexpr std::ptrdiff_t kUpgradeFieldOff[5] = {0x170, 0x130, 0x54, 0x18c, 0x950};
@@ -36,7 +40,7 @@ constexpr std::ptrdiff_t kMagicCurOff = 0x117c; // Player, int
 constexpr std::ptrdiff_t kMagicMaxOff = 0x1180; // Player, int
 constexpr std::ptrdiff_t kSparkCurOff = 0x50;   // SaveSlot, int
 constexpr std::ptrdiff_t kSparkMaxOff = 0x230;  // CombatCore, int
-// Vials are not written here: their SaveSlot bitfield offset drifts between builds (#97), so App uses the offset-free mod::set_player_max_vials.
+// Vials are not written here: their SaveSlot bitfield offset drifts between builds (#97), so enforce_vial_capacity uses offset-free mod API setters.
 
 bool g_up_layout_ok = true; // cleared permanently if an upgrade field reads out of its plausible domain
 
@@ -45,7 +49,7 @@ constexpr std::ptrdiff_t kSparkUpgOff = 0x54;    // Spark_Upgrade   (itemType 0x
 constexpr std::ptrdiff_t kHealthUpgOff = 0x130;  // Health_Upgrade  (itemType 0x45) bitfield (0xff = 8)
 constexpr std::ptrdiff_t kMagicUpgOff = 0x170;   // Magic_Upgrade   (itemType 0x44)
 constexpr std::ptrdiff_t kTrinketUpgOff = 0x950; // Trinket_Upgrade (itemType 0x48)
-// Vials are not zeroed here (offset drifts, #97). App::enforce_vial_capacity re-asserts the AP vial count via the mod API each tick, which also survives the
+// Vials are not zeroed here (offset drifts, #97). enforce_vial_capacity re-asserts the AP vial count via the mod API each tick, which also survives the
 // run re-seeding the base (#171).
 
 std::function<bool()> g_kit_suppress = nullptr;
@@ -148,6 +152,57 @@ bool apply_upgrades(const int *counts, void *player)
 
     trace(0, "applied", slot);
     return true;
+}
+
+void tick_upgrades(UpgradeState &upgrades, const ApState &state)
+{
+    upgrades.recompute(state);
+    // Diagnostic (#46): apply_upgrades runs only while dirty, so its own trace can stay silent; log the gating on change to tell "never tried" from "failed".
+    static int s_last_gate = -1;
+    const int gate = !upgrades.dirty() ? 0 : (player_tracker::player() == nullptr ? 1 : 2);
+    if (gate != s_last_gate)
+    {
+        s_last_gate = gate;
+        const int *c = upgrades.counts();
+        const char *w = gate == 0 ? "idle (not dirty)" : gate == 1 ? "dirty, player null" : "dirty, attempting apply";
+        pal::logf(pal::LogLevel::Debug, "upgrades: drive_tick gate -> %s counts=[%d,%d,%d,%d,%d]", w, c[0], c[1], c[2], c[3], c[4]);
+    }
+    if (upgrades.dirty() && apply_upgrades(upgrades.counts(), player_tracker::player()))
+        upgrades.mark_applied(); // applied to the save; retry next tick if player not ready yet
+}
+
+void enforce_vial_capacity(const UpgradeState &upgrades, const ApState &state)
+{
+    // Vial capacity is the popcount of a SaveSlot bitfield whose offset drifts between builds (#97), so it goes through the mod API. It is re-asserted
+    // each tick (#171) because the healing-vial grant ORs the vanilla 3-bit base back in (Items::OnPickupDone -> Player::AddVialUpgrade), and an OR never
+    // reduces it (#83). Idempotent once the count matches, so held flasks stay put.
+    if (!state.authenticated() || !mod::vial_api_available())
+        return;
+    const int want = upgrades.counts()[kVialUpgradeIndex]; // clamped >= 0; the setter hangs on a negative
+    const int old_max = mod::player_max_vials();
+    const int old_held = mod::player_vials();
+    mod::set_player_max_vials(want);
+    // Re-read: the getter adds the trinket vial bonus the setter does not write, so comparing with `want` would fight an equipped trinket every tick.
+    const int new_max = mod::player_max_vials();
+    if (new_max == old_max)
+        return;
+    const int new_held = maintained_vial_held(old_max, old_held, new_max);
+    mod::set_player_vials(new_held);
+    // Unthrottled: a correction only happens when something re-seeded the bitfield, so the repeats are the signal (#171).
+    pal::logf(pal::LogLevel::Info, "vials: capacity %d -> %d (AP count %d, held %d -> %d)", old_max, new_max, want, old_held, new_held);
+}
+
+void enforce_wallet_cap(const ApState &state)
+{
+    // slot_data "wallet_cap": cap bones at 750 + 500 per received wallet item, uncapped at 8+. The game's cap field drifts between builds, so this clamps
+    // current bones through the mod API each frame. Inert unless authenticated with the flag set.
+    if (!state.authenticated() || !state.config().wallet_cap)
+        return;
+    const std::optional<int> cap = wallet_cap(state);
+    if (!cap || !mod::bones_api_available())
+        return;
+    if (mod::player_bones() > *cap)
+        mod::set_player_bones(*cap);
 }
 
 bool install_newfile_kit_suppressor(std::function<bool()> should_suppress)

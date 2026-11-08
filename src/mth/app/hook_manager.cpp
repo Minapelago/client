@@ -22,6 +22,7 @@
 #include "mth/features/save_takeover.hpp"
 #include "mth/features/scene_gates/intro_chest_gate.hpp"
 #include "mth/features/scene_gates/sewer_cat_gate.hpp"
+#include "mth/features/trap_hooks.hpp"
 #include "mth/features/weapon_grants.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
@@ -132,7 +133,9 @@ void HookManager::clear_session_state()
     // LockHooks::seed_kear_blocks() only adds, so the previous connection's kear-block removals would keep reaching the next game's unlock bitfield.
     lock_hooks_.locks().clear();
     modifier_hooks_.set_ap_slot(-1); // unknown again: the next AP game captures its own slot
-    death_hooks_.reset();            // a death latched for retry belongs to the connection being dropped
+    traps_.clear();                  // a running trap must not leak into the next seed
+    // A death latched before the seed change belongs to the old seed, even if the new ApConnected lands in a later tick.
+    death_hooks_.reset();
 }
 
 void HookManager::drain()
@@ -164,6 +167,8 @@ void HookManager::on_world_destroy()
 
 void HookManager::append_status_lines(std::vector<std::string> &out) const
 {
+    for (const auto &l : traps_.status_lines())
+        out.push_back(l);
     for (const auto &l : modifier_hooks_.status_lines())
         out.push_back(l);
     for (const auto &l : level_cap_hooks_.status_lines())

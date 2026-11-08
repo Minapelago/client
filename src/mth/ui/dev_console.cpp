@@ -90,7 +90,7 @@ void DevConsole::draw_version_hud()
 // The gate's annunciator. The overlay depends on the graphics API and no game symbols, so it still renders on builds where the game-side hooks failed.
 void DevConsole::draw_gate_banner()
 {
-    const GateStatus g = app_.gate_status();
+    const GateStatus g = app_.gate_.status();
     const GateVerdict verdict = g.verdict;
     if (verdict == GateVerdict::Clear)
         return;
@@ -189,7 +189,7 @@ void DevConsole::run_input()
     {
         if (cmd.args.size() >= 2 && cmd.args[0] == "enforce")
         {
-            app_.set_gate_enforcing(parse_on(cmd.args[1]));
+            app_.gate_.set_enforcing(parse_on(cmd.args[1]));
             break;
         }
         if (!cmd.args.empty())
@@ -198,7 +198,7 @@ void DevConsole::run_input()
             println("       gate enforce on|off");
             break;
         }
-        const GateStatus g = app_.gate_status();
+        const GateStatus g = app_.gate_.status();
         println(std::string("gate verdict: ") + verdict_name(g.verdict) + (g.enforcing ? " (enforcing)" : " (observe-only)"));
         if (!g.reason.empty())
             println("gate reason: " + g.reason);
