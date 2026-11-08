@@ -9,12 +9,10 @@ namespace mth
 // slots show one box per level. The bit is never cleared, so a touched shop stays flat until the game restarts.
 using ShopFlattenFn = bool (*)();
 bool install_shop_flatten_hook(ShopFlattenFn active);
-void remove_shop_flatten_hook();
 
 // Post-hook on ShopMenu::SetCursor. The callback uses the helpers below to read the selection, enumerate boxes and rewrite the name/desc widgets.
 using ShopTextFn = void (*)(void *shop_menu);
 bool install_shop_text_hook(ShopTextFn on_set_cursor);
-void remove_shop_text_hook();
 
 // ShopMenu accessors and text mutators.
 [[nodiscard]] int shop_selected_loc(void *shop_menu); // -1 if sold-out / itemType 0x65 / invalid

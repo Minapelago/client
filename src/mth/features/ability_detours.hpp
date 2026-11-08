@@ -15,7 +15,6 @@ using AbilityBlockFn = std::function<bool(Ability a)>;
 
 // Installs the ability detours; each suppresses its action when block(a) is true. Unresolved symbols are skipped; false if none installed.
 bool install_ability_hooks(AbilityBlockFn block);
-void remove_ability_hooks();
 
 // Forces the train-present save byte to 0 while blocked; the arrival event re-sets it when
 // unblocked. No-op if unavailable.
@@ -30,7 +29,7 @@ void enforce_train_boarding();
 void set_train_destination_gate(std::uint32_t granted_mask, bool rando_active);
 
 // Burrow lifetime observers (#163): on_commit(deep) when a burrow/swim commit passes (deep = classified as a swim), on_emerge() when the burrow ends. They
-// track the mode without reading the burrow-mode field, whose offset drifts between builds. Cleared by remove_ability_hooks().
+// track the mode without reading the burrow-mode field, whose offset drifts between builds.
 using BurrowCommitFn = std::function<void(bool deep)>;
 using BurrowEmergeFn = std::function<void()>;
 void set_burrow_observers(BurrowCommitFn on_commit, BurrowEmergeFn on_emerge);

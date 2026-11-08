@@ -201,15 +201,6 @@ bool apply_live_modifier(int idx, bool on)
     return true;
 }
 
-void remove_modifier_hooks()
-{
-    for (pal::ScopedHook *hook : {&g_activate_slot_hook, &g_toggle_hook, &g_set_applied_hook})
-        hook->reset();
-    g_seed_fn = nullptr;
-    g_save_loaded_fn = nullptr;
-    g_block_fn = nullptr;
-}
-
 } // namespace
 
 namespace mth
@@ -224,20 +215,7 @@ ModifierHooks::ModifierHooks(std::function<void()> on_save_loaded)
     }
     set_new_game_modifier_seed([this](int slot, std::uint32_t *w) { seed(slot, w); }, std::move(on_save_loaded));
     set_modifier_lockdown([this](int idx) { return block(idx); });
-    installed_ = true;
     pal::logf(pal::LogLevel::Info, "modifiers: ModifierHooks installed (armed=%d)", static_cast<int>(armed_));
-}
-
-ModifierHooks::~ModifierHooks()
-{
-    {
-        std::lock_guard<std::mutex> lk(mtx_);
-        armed_ = false; // disarm first so any in-flight seed/block bails before the hooks are removed
-    }
-    if (installed_)
-        remove_modifier_hooks(); // synchronous removal, same teardown contract as DeathHooks/LocationHooks
-    std::lock_guard<std::mutex> lk(mtx_);
-    pending_live_.clear();
 }
 
 void ModifierHooks::seed(int slot_index, std::uint32_t words[8])

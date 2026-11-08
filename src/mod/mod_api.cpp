@@ -108,13 +108,6 @@ void *install_named(HookId id, MM_HookCallback cb)
     return g_hook_handles[id];
 }
 
-void remove_named(HookId id)
-{
-    if (g_hook_handles[id] != nullptr && has(&MinaModAPI::RemoveHook))
-        g_mod_api->RemoveHook(g_hook_handles[id]);
-    g_hook_handles[id] = nullptr;
-}
-
 // Log lines for one hook. A null unavailable skips the up-front API check, so a missing API logs the failed line; a null ok logs nothing on success.
 struct InstallLogs
 {
@@ -142,12 +135,6 @@ template <class Fn> bool install_hook(HookId id, MM_HookCallback trampoline, Fn 
     if (logs.ok != nullptr)
         pal::logf(pal::LogLevel::Info, "%s", logs.ok);
     return true;
-}
-
-template <class Fn> void remove_hook(HookId id, Fn &slot)
-{
-    remove_named(id);
-    slot = nullptr;
 }
 
 mod::ItemCollectedFn g_item_collected_cb = nullptr;
@@ -353,21 +340,11 @@ bool install_item_collected_hook(ItemCollectedFn query)
                          "items: InstallHook(IsItemCollected) returned null; override disabled", "items: IsItemCollected override installed (modding hook)"});
 }
 
-void remove_item_collected_hook()
-{
-    remove_hook(kHookIsItemCollected, g_item_collected_cb);
-}
-
 bool install_world_update_hook(WorldUpdatePreFn on_pre)
 {
     return install_hook(kHookWorldUpdate, &world_update_trampoline, g_world_update_cb, on_pre,
                         {"world: modding API unavailable; World::Update pre-hook disabled", "world: InstallHook(WorldUpdate) returned null; pre-hook disabled",
                          "world: World::Update pre-hook installed (modding hook)"});
-}
-
-void remove_world_update_hook()
-{
-    remove_hook(kHookWorldUpdate, g_world_update_cb);
 }
 
 bool install_world_update_end_hook(WorldUpdateEndFn on_end)
@@ -377,21 +354,11 @@ bool install_world_update_end_hook(WorldUpdateEndFn on_end)
                          "world: InstallHook(WorldUpdateEnd) returned null; post-hook disabled", "world: World::Update post-hook installed (modding hook)"});
 }
 
-void remove_world_update_end_hook()
-{
-    remove_hook(kHookWorldUpdateEnd, g_world_update_end_cb);
-}
-
 bool install_world_destroy_hook(WorldDestroyFn on_destroy)
 {
     return install_hook(kHookWorldDestroy, &world_destroy_trampoline, g_world_destroy_cb, on_destroy,
                         {"world: modding API unavailable; World::Destroy hook disabled",
                          "world: InstallHook(WorldDestroy) returned null; teardown hook disabled", "world: World::Destroy hook installed (modding hook)"});
-}
-
-void remove_world_destroy_hook()
-{
-    remove_hook(kHookWorldDestroy, g_world_destroy_cb);
 }
 
 bool vial_api_available()
@@ -678,31 +645,6 @@ bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb)
     return true;
 }
 
-void remove_items_on_pickup_hook()
-{
-    remove_hook(kHookItemsOnPickup, g_items_on_pickup_cb);
-}
-
-void remove_items_on_pickup_done_hook()
-{
-    remove_hook(kHookItemsOnPickupDone, g_items_on_pickup_done_cb);
-}
-
-void remove_pickup_on_pickup_hook()
-{
-    remove_hook(kHookPickupOnPickup, g_pickup_on_pickup_cb);
-}
-
-void remove_shop_item_refresh_hook()
-{
-    remove_hook(kHookShopItemRefresh, g_shop_item_refresh_cb);
-}
-
-void remove_chest_construct_hook()
-{
-    remove_hook(kHookChestConstruct, g_chest_construct_cb);
-}
-
 bool install_input_suppress_hooks()
 {
     const bool keyboard = install_named(kHookKeyboardUpdate, &keyboard_update_trampoline) != nullptr;
@@ -710,13 +652,6 @@ bool install_input_suppress_hooks()
     if (!keyboard || !controller)
         pal::logf(pal::LogLevel::Warn, "input: InstallHook(keyboard=%d controller=%d) failed; input cannot be swallowed", keyboard, controller);
     return keyboard && controller;
-}
-
-void remove_input_suppress_hooks()
-{
-    g_input_suppressed.store(false, std::memory_order_relaxed);
-    remove_named(kHookKeyboardUpdate);
-    remove_named(kHookControllerUpdate);
 }
 
 void set_input_suppressed(bool suppressed)

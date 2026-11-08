@@ -1,5 +1,6 @@
 #include "mth/app/app.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -36,45 +37,40 @@
 namespace
 {
 
-mth::App *g_app = nullptr; // set by the ctor before the tick hooks go live
+std::atomic<mth::App *> g_app{nullptr};
 
 void (*g_orig_game_fixed_update)() = nullptr;
-
-// Gates every game-thread event on a fully built App, since the tick hooks go live mid-ctor; ready() is the release/acquire barrier.
-bool app_ready()
-{
-    return g_app != nullptr && g_app->ready();
-}
 
 void repl_game_fixed_update()
 {
     if (g_orig_game_fixed_update)
         g_orig_game_fixed_update();
-    if (app_ready())
-        g_app->drive_tick();
+    if (mth::App *app = g_app.load(std::memory_order_acquire))
+        app->drive_tick();
 }
 
 // The native "WorldUpdate" hook delivers the spawn window at the top of World::Update, so there is no original to forward.
 void world_update_notify()
 {
-    if (!app_ready())
+    mth::App *app = g_app.load(std::memory_order_acquire);
+    if (app == nullptr)
         return;
     // Liveness first: this callback firing proves the native mod-hook path works, and the gate verdict waits on it.
-    g_app->gate_note_worldupdate();
-    g_app->drain_grants();
+    app->gate_note_worldupdate();
+    app->drain_grants();
 }
 
 void world_update_end_notify(void *world)
 {
-    if (app_ready())
-        g_app->on_world_update_end(world);
+    if (mth::App *app = g_app.load(std::memory_order_acquire))
+        app->on_world_update_end(world);
 }
 
 // Delivered by the native "WorldDestroy" hook, so there is no original to forward.
 void world_destroy_notify()
 {
-    if (app_ready())
-        g_app->on_world_destroy();
+    if (mth::App *app = g_app.load(std::memory_order_acquire))
+        app->on_world_destroy();
 }
 
 } // namespace
@@ -162,12 +158,6 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             return true;
         });
 
-    // Tick sources, then the feature hooks they tick into; ready_ holds the trampolines off until the ctor finishes.
-    g_app = this;
-    fixed_update_hook_ = pal::ScopedHook(sym::game_fixed_update, &repl_game_fixed_update, &g_orig_game_fixed_update, "Game::FixedUpdate");
-    mod::install_world_update_hook(&world_update_notify);
-    mod::install_world_update_end_hook(&world_update_end_notify);
-    mod::install_world_destroy_hook(&world_destroy_notify);
     hooks_ = std::make_unique<HookManager>(
         *rando_, scouts_, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
     {
@@ -175,32 +165,14 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         pal::overlay_start(overlay_root_.get());
         pal::logf(pal::LogLevel::Info, "overlay: dev console attached"); // overlay logs the resolved toggle key
     }
-    ready_.store(true); // everything wired; the tick hooks may already be firing
-    pal::logf(pal::LogLevel::Info, "app: tick hooks installed, idling");
-}
 
-App::~App()
-{
-    ready_.store(false);   // stop ticking before any member is torn down
-    pal::overlay_stop();   // removes render/input hooks and stops drawing
-    overlay_root_.reset(); // then unregister the log observer
-    remove_newfile_kit_suppressor();
-    // Tick sources stop before the feature hooks they tick into. g_app is cleared before the detour goes,
-    // so a FixedUpdate already inside the trampoline only forwards to the original.
-    mod::remove_world_destroy_hook();
-    mod::remove_world_update_end_hook();
-    mod::remove_world_update_hook();
-    g_app = nullptr;
-    fixed_update_hook_.reset();
-    hooks_.reset();
-    inbound_.reset(); // references granter_; tear it down first
-    granter_.reset();
-    rando_.reset();
-    area_reporter_.reset();
-    coordinator_.reset();
-    link_.reset(); // stops the net thread last
-    pal::shutdown_hook_engine();
-    pal::logf(pal::LogLevel::Info, "mth-apclient unloading");
+    // Tick sources last. The ctor runs on its own thread, so this release store pairs with the trampolines' acquire loads to publish a fully built App.
+    g_app.store(this, std::memory_order_release);
+    fixed_update_hook_ = pal::ScopedHook(sym::game_fixed_update, &repl_game_fixed_update, &g_orig_game_fixed_update, "Game::FixedUpdate");
+    mod::install_world_update_hook(&world_update_notify);
+    mod::install_world_update_end_hook(&world_update_end_notify);
+    mod::install_world_destroy_hook(&world_destroy_notify);
+    pal::logf(pal::LogLevel::Info, "app: tick hooks installed, idling");
 }
 
 void App::drive_tick()

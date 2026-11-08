@@ -128,13 +128,6 @@ bool install_shop_flatten_hook(ShopFlattenFn active)
     return true;
 }
 
-void remove_shop_flatten_hook()
-{
-    g_shop_flatten_hook.reset();
-    g_shop_flatten_cb = nullptr;
-    g_orig_shop_get = nullptr;
-}
-
 int shop_selected_loc(void *shop_menu)
 {
     void **boxes = nullptr;
@@ -207,13 +200,6 @@ bool install_shop_text_hook(ShopTextFn on_set_cursor)
     }
     pal::logf(pal::LogLevel::Info, "shop: hooked ShopMenu::SetCursor for text override at %p", g_shop_text_hook.target());
     return true;
-}
-
-void remove_shop_text_hook()
-{
-    g_shop_text_hook.reset();
-    g_shop_text_cb = nullptr;
-    g_orig_set_cursor = nullptr;
 }
 
 bool shop_apply_name_palette(void *name_widget, std::uint32_t rgba)

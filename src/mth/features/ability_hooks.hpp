@@ -19,7 +19,6 @@ class AbilityHooks
 {
   public:
     explicit AbilityHooks(std::function<bool(std::int64_t item_id)> is_granted);
-    ~AbilityHooks();
     AbilityHooks(const AbilityHooks &) = delete;
     AbilityHooks &operator=(const AbilityHooks &) = delete;
 

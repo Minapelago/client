@@ -60,21 +60,15 @@ class App
 {
   public:
     App();
-    ~App();
+    ~App() = delete; // leaked on purpose, see entry.cpp
 
     App(const App &) = delete;
     App &operator=(const App &) = delete;
 
-    // False until the ctor has wired every member; the tick trampolines check it so a hook that goes live mid-construction never reaches a half-built App.
-    [[nodiscard]] bool ready() const noexcept
-    {
-        return ready_.load();
-    }
-
-    void drive_tick();                     // called each fixed update (only once ready())
-    void drain_grants();                   // called from the World::Update pre-hook (only once ready())
-    void on_world_update_end(void *world); // called after World::Update (only once ready())
-    void on_world_destroy();               // called on World teardown (only once ready()); drops the cached Player*
+    void drive_tick();                     // called each fixed update
+    void drain_grants();                   // called from the World::Update pre-hook
+    void on_world_update_end(void *world); // called after World::Update
+    void on_world_destroy();               // called on World teardown; drops the cached Player*
     void gate_note_worldupdate();          // called on the native WorldUpdate; proves the mod-hook path is live
 
     // Console and login-window commands. Called on the overlay render thread; must not block.
@@ -112,7 +106,6 @@ class App
     void reconcile_server_checked();
     void enforce_vial_capacity(); // re-assert the AP vial count through the mod-API accessors (#171)
     void enforce_wallet_cap();    // clamp live bones to the AP wallet cap (#112); no-op unless authed + wallet_cap
-    // ~App tears down in this order: overlay, tick hooks, hooks_, inbound_/granter_, then rando_ -> area_reporter_ -> coordinator_ -> link_ (net thread last).
     ApState state_;
     // Declared before hooks_ and save_state_, which hold references into it.
     ApSaveBundleStore bundle_store_;
@@ -133,9 +126,6 @@ class App
     std::atomic<bool> pending_inbound_death_{false};
     // Attribution for the death pending_inbound_death_ arms, written and read in the same game-thread tick, so no lock. Read only when the flag is set.
     std::string pending_death_text_;
-    // Gates the tick entry points: the tick hooks go live mid-ctor (FixedUpdate is detoured before hooks_ is assigned), so an early tick could hit a null
-    // member. Stored (release) on the last ctor line, loaded (acquire) at the top of each tick, and cleared first in the dtor.
-    std::atomic<bool> ready_{false};
     // AP safety gate. Static inputs settle in the ctor; liveness arrives on the first native WorldUpdate (title screen). gate_verdict_ is atomic for the
     // overlay's per-frame read on the render thread; gate_reason_ is copied out under its own lock.
     GateInputs gate_inputs_;

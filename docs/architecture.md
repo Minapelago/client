@@ -17,7 +17,7 @@ The build has a strict dependency direction (`core` <- `pal` <- `mthap`). Two ta
 
 `mth::App` owns the runtime. The logger is a PAL global behind `pal::ILog`, which tests swap with
 `pal::set_default_log`, so the core can be unit-tested without a real platform. The hook engine
-(`pal::install_hook` / `pal::remove_hook`) and the overlay (`pal::overlay_start` / `pal::overlay_stop`)
+(`pal::install_hook` / `pal::remove_hook`) and the overlay (`pal::overlay_start`)
 are plain functions implemented once per platform.
 
 The unit tests (`mthap_unit_tests`) link `mthap_core`, and additionally compile in the Linux

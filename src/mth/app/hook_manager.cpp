@@ -45,18 +45,9 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
 {
     install_pawn_shop_hook([this, &state] { return vendor_locked(state); });
     install_fountain_lamp_hook();
-    // The title gate owns the only StartGame detour, which calls into the takeover; the dtor removes it before the takeover dies.
+    // The title gate owns the only StartGame detour, which calls into the takeover.
     install_title_gate([&state] { return state.phase() == ConnectionPhase::Connected; }, [this] { return save_takeover_.begin(); });
     location_hooks_.set_player_getter(get_player_); // kear key edits mirror Player+0x11b0 (#130)
-}
-
-HookManager::~HookManager()
-{
-    // Unreached while App is leaked (see entry.cpp). These detours use `this`, so they go before any member. modifier_hooks_ removes its own hook and
-    // callback in its dtor, ahead of the earlier members the callback touches. App removes the tick hooks first.
-    remove_title_gate();
-    remove_pawn_shop_hook();
-    remove_fountain_lamp_hook();
 }
 
 // Pawnty and Panino sell outside AP logic, so they stay shut for the rest of the save once a session is seen. SewerCatGate::tick calls this every drain,

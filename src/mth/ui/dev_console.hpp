@@ -19,7 +19,6 @@ class DevConsole final
 {
   public:
     DevConsole(App &app, BannerQueue &banner_queue);
-    ~DevConsole();
 
     DevConsole(const DevConsole &) = delete;
     DevConsole &operator=(const DevConsole &) = delete;

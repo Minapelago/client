@@ -106,11 +106,6 @@ AbilityHooks::AbilityHooks(std::function<bool(std::int64_t item_id)> is_granted)
     set_burrow_observers([this](bool deep) { burrow_.arm(deep); }, [this] { burrow_.disarm(); });
 }
 
-AbilityHooks::~AbilityHooks()
-{
-    remove_ability_hooks();
-}
-
 void AbilityHooks::set_randomized(Ability a, bool on)
 {
     gate_.set_randomized(a, on);

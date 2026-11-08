@@ -9,6 +9,5 @@ bool install_hook(void *target, void *replacement, void **trampoline);
 void remove_hook(void *target);
 
 void init_hook_engine();
-void shutdown_hook_engine();
 
 } // namespace pal

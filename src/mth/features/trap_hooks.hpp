@@ -18,7 +18,6 @@ class TrapHooks
 {
   public:
     TrapHooks();
-    ~TrapHooks();
 
     TrapHooks(const TrapHooks &) = delete;
     TrapHooks &operator=(const TrapHooks &) = delete;
@@ -33,7 +32,7 @@ class TrapHooks
     // Game thread, once per frame. Ages the running traps, lifts what ran out, re-asserts the rest.
     void tick();
 
-    // Lifts every running trap. Session change, teardown and the destructor call it so no modifier is stranded on.
+    // Lifts every running trap. Session change and teardown call it so no modifier is stranded on.
     void clear();
 
     // Render thread. Reads the snapshot tick() publishes; state_ itself stays game-thread-only.

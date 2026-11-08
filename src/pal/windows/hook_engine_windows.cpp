@@ -32,15 +32,6 @@ void init_hook_engine()
     }
 }
 
-void shutdown_hook_engine()
-{
-    if (!g_initialized)
-        return;
-    MH_STATUS rc = MH_Uninitialize();
-    g_initialized = false;
-    logf(LogLevel::Info, "hook_engine: MinHook shutdown (%s)", MH_StatusToString(rc));
-}
-
 bool install_hook(void *target, void *replacement, void **trampoline)
 {
     void *original = nullptr;

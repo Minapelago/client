@@ -59,10 +59,4 @@ void install_pawn_shop_hook(std::function<bool()> disable)
     pal::logf(pal::LogLevel::Info, "pawnty: hooked PawnShopNPC::OnNPCEvent at %p", g_pawn_hook.target());
 }
 
-void remove_pawn_shop_hook()
-{
-    g_pawn_hook.reset();
-    g_pawn_disable = nullptr;
-}
-
 } // namespace mth

@@ -38,7 +38,6 @@ using ShopBuyFn = int (*)(int loc_idx, int item_type);
 // Shop-purchase detection. The platform owns the hooked function (ShopMenu::ItemPresent on Linux, ShopMenu::InitState on Windows), the field layout and
 // commit detection, and calls on_buy on a committed buy. False if not installed.
 bool install_shop_purchase_hook(ShopBuyFn on_buy);
-void remove_shop_purchase_hook();
 
 // ---- Per-stat level cap. Linux detours the cap function; Windows wraps LevelUpMenu::Update and
 // presents an at-cap stat as maxed. ----

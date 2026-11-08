@@ -22,7 +22,6 @@ class ItemGranter final : public IItemGranter
     // report_collected: sends the check (idempotent) when a suppressed grant is the player collecting an AP location straight through OnPickupDone with no
     // Pickup entity or ShopMenu, e.g. the train-ticket machine.
     ItemGranter(std::function<bool(int)> is_ap_location, std::function<void(int)> report_collected);
-    ~ItemGranter() override;
     ItemGranter(const ItemGranter &) = delete;
     ItemGranter &operator=(const ItemGranter &) = delete;
 

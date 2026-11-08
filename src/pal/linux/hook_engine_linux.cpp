@@ -25,15 +25,6 @@ void init_hook_engine()
     logf(LogLevel::Info, "hook_engine: main=%s", (main_mod && main_mod->name) ? main_mod->name : "?");
 }
 
-void shutdown_hook_engine()
-{
-    if (!g_initialized)
-        return;
-    gum_deinit_embedded();
-    g_initialized = false;
-    logf(LogLevel::Info, "hook_engine: frida-gum shutdown");
-}
-
 bool install_hook(void *target, void *replacement, void **trampoline)
 {
     GumInterceptor *ic = gum_interceptor_obtain();

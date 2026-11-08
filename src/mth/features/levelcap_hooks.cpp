@@ -92,18 +92,7 @@ LevelCapHooks::LevelCapHooks()
     }
     pal::set_level_cap_provider([this](int stat, int vanilla) { return provide(stat, vanilla); }, &boneup_annotate_description);
     g_boneup_cap = [this](int stat) { return display_cap_for(stat); };
-    installed_ = true;
     pal::logf(pal::LogLevel::Info, "levelcap: LevelCapHooks installed");
-}
-
-LevelCapHooks::~LevelCapHooks()
-{
-    enforce_live_.store(false); // stop restricting before the hook is torn down
-    if (installed_)
-    {
-        g_boneup_cap = nullptr; // drop the `this` capture before the hook can fire again
-        pal::remove_level_cap_hook();
-    }
 }
 
 void LevelCapHooks::recompute(const ApState &state)

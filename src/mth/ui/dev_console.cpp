@@ -59,11 +59,6 @@ DevConsole::DevConsole(App &app, BannerQueue &banner_queue) : app_(app), banner_
     println("mth dev console. type 'help'.");
 }
 
-DevConsole::~DevConsole()
-{
-    pal::set_log_observer(nullptr);
-}
-
 void DevConsole::println(const std::string &line)
 {
     log_.push(line);

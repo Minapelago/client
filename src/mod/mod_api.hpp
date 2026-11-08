@@ -32,25 +32,21 @@ int current_game_state();
 // and false for location queries; the mth side needs it to keep a received weapon visible to that chest.
 using ItemCollectedFn = int (*)(int loc_idx, bool ownership_query);
 bool install_item_collected_hook(ItemCollectedFn query);
-void remove_item_collected_hook();
 
 // "WorldUpdate" hook at the top of World::Update, the spawn window where grants and lock seeds must run to avoid update-queue hangs. on_pre runs on the
 // game thread; install returns false without the modding API.
 using WorldUpdatePreFn = void (*)();
 bool install_world_update_hook(WorldUpdatePreFn on_pre);
-void remove_world_update_hook();
 
 // "WorldUpdateEnd" hook after the other systems have run. The ctx's World* is the only route to a menu world's scene graph, since PlayerGetWorld() is null
 // without a player. on_end runs on the game thread and world may be null; install returns false without the modding API.
 using WorldUpdateEndFn = void (*)(void *world);
 bool install_world_update_end_hook(WorldUpdateEndFn on_end);
-void remove_world_update_end_hook();
 
 // "WorldDestroy" hook (exit to menu, save reload, shutdown): drop cached per-world pointers such as the live Player* here before the game frees them.
 // on_destroy runs on the game thread; install returns false without the modding API.
 using WorldDestroyFn = void (*)();
 bool install_world_destroy_hook(WorldDestroyFn on_destroy);
-void remove_world_destroy_hook();
 
 // Vial (health-flask) capacity and count through the native Player accessors, which find the live player and slot themselves. Capacity writes set the
 // vial bitfield UpdateStats re-reads, so they stick. No-op until a player exists; available() is false when the build lacks the vial setters.
@@ -92,27 +88,22 @@ bool save_write_enabled();
 // Items::OnPickup. Armor upgrades (0x4f/0x50) apply their effect here, before OnPickupDone, so they are suppressed here (#71). True skips the original.
 using ItemsOnPickupFn = bool (*)(int slot, int item_type, void *player);
 bool install_items_on_pickup_hook(ItemsOnPickupFn on_pickup);
-void remove_items_on_pickup_hook();
 
 // Items::OnPickupDone: suppresses the vanilla grant for an AP location. Inbound grants still need the function's address, which a hook cannot provide.
 using ItemsOnPickupDoneFn = bool (*)(int slot, int item_type, void *player);
 bool install_items_on_pickup_done_hook(ItemsOnPickupDoneFn on_done);
-void remove_items_on_pickup_done_hook();
 
 // Pickup::OnPickup with the real Pickup*; a detour on MSVC receives the PickupListener base.
 using PickupOnPickupFn = void (*)(void *pickup);
 bool install_pickup_on_pickup_hook(PickupOnPickupFn on_pickup);
-void remove_pickup_on_pickup_hook();
 
 // ShopItem::Refresh: rewrites the slot's stock count so checked AP locations read as sold out.
 using ShopItemRefreshFn = void (*)(void *shop_item);
 bool install_shop_item_refresh_hook(ShopItemRefreshFn on_refresh);
-void remove_shop_item_refresh_hook();
 
 // Chest ctor tail with the real Chest*. It is the only notice that a chest exists, so the kear-lock clear keeps a registry of these.
 using ChestConstructFn = void (*)(void *chest);
 bool install_chest_construct_hook(ChestConstructFn on_construct);
-void remove_chest_construct_hook();
 
 // Engine frame delta from the top of Game::FixedUpdate. The mod also detours that function for its post-original tick, since the hook fires before the
 // original and the detour cannot see the delta (the function takes void). True only means InstallHook took the name; watch the callback for dispatch.
@@ -123,7 +114,6 @@ bool set_fixed_update_delta_hook(FixedUpdateDeltaFn cb);
 // between gathering raw input and committing it, so menus and gameplay see the zeroed state. Mouse is left alone: no menu confirm uses it, and zeroing
 // it needs YC_TOUCH_COUNT, which upstream does not publish. input_suppress_hooks_fired() shows dispatch.
 bool install_input_suppress_hooks();
-void remove_input_suppress_hooks();
 
 // Atomic because the hooks dispatch from ycGameThread::ThreadMain, the engine's input thread (unrelated to the overlay's ProcessSDLEvent hook).
 void set_input_suppressed(bool suppressed);
@@ -131,7 +121,7 @@ void set_input_suppressed(bool suppressed);
 // Whether both input hooks have dispatched. They run every input frame, so false past startup means the build does not know the names.
 bool input_suppress_hooks_fired();
 
-// Drops every named hook above; one left armed past teardown faults on unload, since the callbacks live in this module.
+// Drops every named hook above and its callback. Tests use it to reset between cases; App is leaked and never unhooks.
 void remove_all_hooks();
 
 // Installed hook names that have never fired.

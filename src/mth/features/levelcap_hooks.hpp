@@ -17,7 +17,6 @@ class LevelCapHooks
 {
   public:
     LevelCapHooks();
-    ~LevelCapHooks();
     LevelCapHooks(const LevelCapHooks &) = delete;
     LevelCapHooks &operator=(const LevelCapHooks &) = delete;
 
@@ -37,7 +36,6 @@ class LevelCapHooks
     StatCapState caps_;
     int max_stat_level_{99}; // slot_data ceiling for the real stats; replaces the game's native max (game thread)
     std::atomic<bool> enforce_live_{false};
-    bool installed_{false};
 };
 
 } // namespace mth

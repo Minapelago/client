@@ -1018,11 +1018,7 @@ VKAPI_ATTR VkResult VKAPI_CALL repl_vkQueuePresentKHR(VkQueue queue, const VkPre
 
 std::mutex g_install_mtx;
 std::atomic<bool> g_vk_hooks_installed{false};
-void *g_libvulkan_handle = nullptr;
 std::uintptr_t g_process_sdl_event_addr = 0;
-
-std::thread g_vk_watch_thread;
-std::atomic<bool> g_vk_watch_stop{false};
 
 [[clang::no_destroy]] ScopedHook g_create_swapchain_hook;
 [[clang::no_destroy]] ScopedHook g_present_hook;
@@ -1072,7 +1068,6 @@ bool try_install_vulkan_hooks()
         return false;
     }
     g_vkGetInstanceProcAddr = gipa;
-    g_libvulkan_handle = vk;
 
     g_vk_hooks_installed.store(true, std::memory_order_release);
 
@@ -1121,7 +1116,7 @@ void watch_for_libvulkan()
 {
     using namespace std::chrono_literals;
     // Renderer init is within a couple seconds of launch; poll generously for slow loads.
-    for (int i = 0; i < 12000 && !g_vk_watch_stop.load(std::memory_order_relaxed); ++i) // ~60s @ 5ms
+    for (int i = 0; i < 12000; ++i) // ~60s @ 5ms
     {
         if (try_install_vulkan_hooks())
             return;
@@ -1148,32 +1143,9 @@ void overlay_start(IOverlayUi *ui)
     if (!try_install_vulkan_hooks())
     {
         pal::logf(pal::LogLevel::Info, "overlay: libvulkan not loaded yet; watching for it");
-        g_vk_watch_thread = std::thread(watch_for_libvulkan);
+        std::thread(watch_for_libvulkan).detach();
     }
     g_ui.store(ui, std::memory_order_release);
-}
-
-void overlay_stop()
-{
-    g_vk_watch_stop.store(true, std::memory_order_release);
-    if (g_vk_watch_thread.joinable())
-        g_vk_watch_thread.join();
-
-    for (ScopedHook *hook : {&g_create_swapchain_hook, &g_present_hook, &g_process_sdl_event_hook})
-        hook->reset();
-    g_vk_hooks_installed.store(false, std::memory_order_release);
-
-    shutdown_imgui();
-    destroy_swapchain_resources();
-
-    g_ui.store(nullptr, std::memory_order_release);
-
-    if (g_libvulkan_handle != nullptr)
-    {
-        dlclose(g_libvulkan_handle);
-        g_libvulkan_handle = nullptr;
-    }
-    pal::logf(pal::LogLevel::Info, "overlay: VulkanOverlay destroyed");
 }
 
 } // namespace pal

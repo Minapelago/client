@@ -19,7 +19,6 @@ class LocationHooks
   public:
     // `scout` may be null. When set, shop box text (name/desc/color) comes from scouted AP data; when null, the shop text hook is not installed.
     explicit LocationHooks(RandoBridge &bridge, const std::map<int, ScoutInfo> *scout = nullptr);
-    ~LocationHooks();
     LocationHooks(const LocationHooks &) = delete;
     LocationHooks &operator=(const LocationHooks &) = delete;
 

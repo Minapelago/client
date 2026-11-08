@@ -881,34 +881,4 @@ void overlay_start(IOverlayUi *ui)
     g_ui.store(ui, std::memory_order_release);
 }
 
-void overlay_stop()
-{
-    // Only ~App calls this, and App is leaked. It needs the render and message threads quiesced: MinHook does not drain in-flight detours, so a racing
-    // present would touch freed GPU state.
-    for (ScopedHook &hook : g_overlay_hooks)
-        hook.reset();
-    g_orig_present = nullptr;
-    g_orig_present1 = nullptr;
-    g_orig_resize = nullptr;
-    g_orig_execute = nullptr;
-
-    if (g_orig_wndproc != nullptr && g_hwnd != nullptr)
-    {
-        SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_orig_wndproc));
-        g_orig_wndproc = nullptr;
-    }
-
-    if (g_imgui_inited)
-    {
-        wait_for_gpu(); // drain the last overlay submit before releasing GPU objects
-        ImGui_ImplDX12_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-        g_imgui_inited = false;
-    }
-    destroy_render_resources();
-
-    pal::logf(pal::LogLevel::Info, "overlay: D3D12Overlay destroyed");
-}
-
 } // namespace pal

@@ -98,12 +98,6 @@ bool install_shop_purchase_hook(ShopBuyFn on_buy)
     return true;
 }
 
-void remove_shop_purchase_hook()
-{
-    g_shop_hook.reset();
-    g_on_shop_buy = nullptr;
-}
-
 bool level_cap_available()
 {
     if (g_lc_resolved)

@@ -204,12 +204,4 @@ void install_title_gate(std::function<bool()> connected, std::function<bool()> c
         pal::logf(pal::LogLevel::Warn, "title: start-game backstop inactive; Start Game not blocked if reached");
 }
 
-void remove_title_gate()
-{
-    g_start_game_hook.reset();
-    g_start_game_suppress_fn = nullptr;
-    g_title_gate_hook.reset();
-    g_title_gate_fn = nullptr;
-}
-
 } // namespace mth

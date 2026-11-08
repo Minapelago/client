@@ -538,17 +538,4 @@ void LocationHooks::reset_native_bits()
     reset_native_bit_enforcement();
 }
 
-LocationHooks::~LocationHooks()
-{
-    mod::remove_item_collected_hook();
-    mod::remove_pickup_on_pickup_hook();
-    mod::remove_shop_item_refresh_hook();
-    remove_shop_text_hook();
-    remove_shop_flatten_hook();
-    pal::remove_shop_purchase_hook();
-    // Nulled before the ScopedHook members remove the detours; the repls null-check them.
-    g_bridge = nullptr;
-    g_scout = nullptr;
-}
-
 } // namespace mth

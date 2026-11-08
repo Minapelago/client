@@ -147,11 +147,6 @@ TrapHooks::TrapHooks()
     mod::set_fixed_update_delta_hook(&on_fixed_update_delta);
 }
 
-TrapHooks::~TrapHooks()
-{
-    clear();
-}
-
 TrapArm TrapHooks::arm(int modifier_index, float seconds_override)
 {
     const TrapDef *def = trap_for_modifier(modifier_index);

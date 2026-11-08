@@ -222,19 +222,6 @@ LockHooks::LockHooks()
     mod::install_chest_construct_hook(&on_chest_construct);
 }
 
-LockHooks::~LockHooks()
-{
-    mod::remove_chest_construct_hook(); // stop the registration callback before the registry goes away
-    drop_all_chests();
-    g_logged_chest_slots.clear();
-    g_overflow_logged = false;
-    g_logged_lock_slots.clear();
-    g_logged_chain_slots.clear();
-    g_locks = nullptr; // the sweep handlers null-check it
-    g_seed_logged = false;
-    g_list_cap_logged = false;
-}
-
 LockRegistry &LockHooks::locks()
 {
     return locks_;

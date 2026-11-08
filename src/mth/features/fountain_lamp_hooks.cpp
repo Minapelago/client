@@ -56,11 +56,6 @@ void install_fountain_lamp_hook()
     pal::logf(pal::LogLevel::Info, "fountain: hooked HubFountain::Bulb::Update at %p", g_fountain_hook.target());
 }
 
-void remove_fountain_lamp_hook()
-{
-    g_fountain_hook.reset();
-}
-
 void set_fountain_slot_mask(std::uint32_t mask)
 {
     g_slot_mask.store(mask, std::memory_order_relaxed);

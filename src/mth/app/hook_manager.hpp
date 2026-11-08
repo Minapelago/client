@@ -31,7 +31,6 @@ class HookManager
   public:
     HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
                 std::function<void(const std::string &)> send_death, std::function<void *()> get_player);
-    ~HookManager();
 
     HookManager(const HookManager &) = delete;
     HookManager &operator=(const HookManager &) = delete;

@@ -11,6 +11,5 @@ namespace mth
 // `claim_start` runs on a connected StartGame confirm and returns whether something took ownership of the launch. false blocks the launch so it never reaches
 // the vanilla profile-select.
 void install_title_gate(std::function<bool()> connected, std::function<bool()> claim_start);
-void remove_title_gate();
 
 } // namespace mth

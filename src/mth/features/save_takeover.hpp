@@ -25,7 +25,6 @@ class SaveTakeover
 
     // The store outlives this: App owns it and declares it ahead of the hook manager.
     SaveTakeover(ApSaveBundleStore &store, IdentityFn identity);
-    ~SaveTakeover();
 
     SaveTakeover(const SaveTakeover &) = delete;
     SaveTakeover &operator=(const SaveTakeover &) = delete;

@@ -13,6 +13,5 @@ bool apply_upgrades(const int *counts, void *player);
 // Hooks SaveSlot::Clear (new-file creation only) to zero the default region-18 upgrade fields while should_suppress() is true, so AP supplies the starting kit.
 // false if unresolved.
 bool install_newfile_kit_suppressor(std::function<bool()> should_suppress);
-void remove_newfile_kit_suppressor();
 
 } // namespace mth

@@ -500,16 +500,6 @@ bool install_ability_hooks(AbilityBlockFn block)
     return any;
 }
 
-void remove_ability_hooks()
-{
-    for (pal::ScopedHook *hook : {&g_burrow_hook, &g_rope_hook, &g_puff_hook, &g_launch_hook, &g_on_bounce_hook, &g_spring_hook, &g_spring_listener_hook,
-                                  &g_carry_hook, &g_train_hook, &g_burrow_jump_hook})
-        hook->reset();
-    g_ability_block = nullptr;
-    g_burrow_commit = nullptr;
-    g_burrow_emerge = nullptr;
-}
-
 void set_burrow_observers(BurrowCommitFn on_commit, BurrowEmergeFn on_emerge)
 {
     g_burrow_commit = std::move(on_commit);

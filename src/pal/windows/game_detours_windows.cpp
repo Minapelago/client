@@ -84,12 +84,6 @@ bool install_shop_purchase_hook(ShopBuyFn on_buy)
     return true;
 }
 
-void remove_shop_purchase_hook()
-{
-    g_shop_hook.reset();
-    g_on_shop_buy = nullptr;
-}
-
 } // namespace pal
 
 // ---- per-stat level cap (Windows). The cap is inlined into the menu's state machine, so this wraps LevelUpMenu::Update and fakes the cursor-selected

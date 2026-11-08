@@ -18,7 +18,6 @@ class LockHooks
 {
   public:
     LockHooks();
-    ~LockHooks();
     LockHooks(const LockHooks &) = delete;
     LockHooks &operator=(const LockHooks &) = delete;
 

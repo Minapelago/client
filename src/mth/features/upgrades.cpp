@@ -170,10 +170,4 @@ bool install_newfile_kit_suppressor(std::function<bool()> should_suppress)
     return true;
 }
 
-void remove_newfile_kit_suppressor()
-{
-    g_kit_hook.reset();
-    g_kit_suppress = nullptr;
-}
-
 } // namespace mth

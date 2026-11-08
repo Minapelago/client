@@ -162,13 +162,6 @@ SaveTakeover::SaveTakeover(ApSaveBundleStore &store, IdentityFn identity) : stor
         pal::logf(pal::LogLevel::Warn, "takeover: input hooks unavailable; a held confirm can still reach the file-select menu");
 }
 
-SaveTakeover::~SaveTakeover()
-{
-    mod::remove_input_suppress_hooks();
-    g_save_request_hook.reset();
-    g_save_request_fn = nullptr;
-}
-
 std::filesystem::path mod_save_dir()
 {
     return pal::log_dir() / "saves";

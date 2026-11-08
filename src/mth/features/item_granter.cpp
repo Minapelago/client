@@ -98,17 +98,6 @@ ItemGranter::ItemGranter(std::function<bool(int)> is_ap_location, std::function<
     mod::install_items_on_pickup_hook(&on_items_pickup);
 }
 
-ItemGranter::~ItemGranter()
-{
-    mod::remove_items_on_pickup_hook();
-    mod::remove_items_on_pickup_done_hook();
-    g_call_on_pickup_done = nullptr;
-    g_pending.clear();
-    g_is_ap_location = nullptr;
-    g_report_collected = nullptr;
-    g_train_pass_machine_blocked = false;
-}
-
 bool ItemGranter::grant(int item_type, int receipt)
 {
     // Require hook + Player* before accepting; return false to retry next tick.
