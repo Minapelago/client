@@ -20,13 +20,10 @@ class LoginWindow
     void draw(bool login_open);
 
   private:
-    void prefill_once(); // pull the remembered server/slot the first time the window is drawn
-
     App &app_;
     std::array<char, 256> server_{}; // "host:port"
     std::array<char, 128> slot_{};
     std::array<char, 128> password_{};
-    bool prefilled_{false};
 };
 
 } // namespace mth

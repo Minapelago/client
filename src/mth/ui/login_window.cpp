@@ -10,30 +10,18 @@
 namespace mth
 {
 
+// App loads login_prefs_ in its init list, before it builds the overlay that owns this window, so the remembered target can be copied in here.
 LoginWindow::LoginWindow(App &app) : app_(app)
 {
-}
-
-// Deferred out of the ctor: the overlay is built during App construction, before App can answer. Fills only empty fields, so it never clobbers input.
-void LoginWindow::prefill_once()
-{
-    if (prefilled_)
-        return;
-    prefilled_ = true;
-
     const SavedLogin saved = app_.saved_login();
-    if (server_[0] == '\0')
-        std::snprintf(server_.data(), server_.size(), "%s", saved.server.c_str());
-    if (slot_[0] == '\0')
-        std::snprintf(slot_.data(), slot_.size(), "%s", saved.slot.c_str());
+    std::snprintf(server_.data(), server_.size(), "%s", saved.server.c_str());
+    std::snprintf(slot_.data(), slot_.size(), "%s", saved.slot.c_str());
 }
 
 void LoginWindow::draw(bool login_open)
 {
     if (!login_open)
         return;
-
-    prefill_once();
 
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 29.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Archipelago Connection"))
