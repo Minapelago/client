@@ -304,8 +304,7 @@ void ModifierHooks::set_ossex_start(bool on)
 void ModifierHooks::set_ap_slot(int slot)
 {
     std::lock_guard<std::mutex> lk(mtx_);
-    if (slot >= 0)
-        ap_slot_ = slot; // a recorded slot from a prior session; skip capture
+    ap_slot_ = slot; // -1 re-arms capture for the next seed
 }
 
 int ModifierHooks::captured_ap_slot() const

@@ -33,7 +33,7 @@ class ModifierHooks
     void set_ap_scoped(bool on);
     // slot_data seam: add/remove Landing Done from the AP force-on set (Warp Home is always forced).
     void set_ossex_start(bool on);
-    // AP-game slot persistence (App bridges it to ApSaveState): seeds a recorded slot so capture is skipped, and reads back the slot captured this session.
+    // AP-game slot persistence, bridged to ApSaveState by App. A recorded slot skips capture and -1 captures again; reads back this session's slot.
     void set_ap_slot(int slot);
     [[nodiscard]] int captured_ap_slot() const;
     [[nodiscard]] std::vector<std::string> status_lines() const;
