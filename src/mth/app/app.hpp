@@ -132,7 +132,8 @@ class App
     ApState state_;
     // Declared before hooks_ and session_, which hold references into it.
     ApSaveBundleStore bundle_store_;
-    // AP session. banner_queue_ is the net->render mailbox the coordinator pushes to and the overlay draws from, so it outlives both.
+    // AP session. banner_queue_ is the game->render mailbox: the coordinator and drive_tick push banners on the game thread and the overlay drains them
+    // on the render thread, so it outlives both.
     BannerQueue banner_queue_;
     std::unique_ptr<IApLink> link_;
     std::unique_ptr<ApCoordinator> coordinator_;
