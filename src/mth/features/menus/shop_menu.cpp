@@ -30,7 +30,9 @@ void *(*g_orig_shop_get)(std::uint64_t name_hash) = nullptr; // Shop::Get(uint64
 void *repl_shop_get(std::uint64_t name_hash)
 {
     void *def = g_orig_shop_get != nullptr ? g_orig_shop_get(name_hash) : nullptr;
-    if (def != nullptr && g_shop_flatten_cb != nullptr && g_shop_flatten_cb())
+    // The save thread also looks shops up while it clears or upgrades a slot. OpenShop reads the bit from the def its own Shop::Get returned, so setting it
+    // on game-thread calls is enough.
+    if (def != nullptr && mod::on_game_thread() && g_shop_flatten_cb != nullptr && g_shop_flatten_cb())
     {
         auto *flags = &pal::at<std::uint32_t>(def, kShopFlagsOff);
         *flags = apply_flatten_flag(*flags, true);

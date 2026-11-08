@@ -59,7 +59,9 @@ void repl_save_slot_clear(void *self, bool arg)
 {
     if (g_orig_save_slot_clear)
         g_orig_save_slot_clear(self, arg);
-    if (self == nullptr || !g_kit_suppress || !g_kit_suppress())
+    // The save thread clears stored slots only when an old file it loads has no progress in any of them, and starting a new file clears the chosen slot
+    // again on the game thread, so the suppression only needs to run there.
+    if (self == nullptr || !g_kit_suppress || !mod::on_game_thread() || !g_kit_suppress())
         return;
     pal::logf(pal::LogLevel::Info, "newfile-kit: zeroing default upgrades (health=%#x magic=%#x spark=%#x trinket=%#x)",
               pal::at<std::uint32_t>(self, kHealthUpgOff), pal::at<std::uint32_t>(self, kMagicUpgOff), pal::at<std::uint32_t>(self, kSparkUpgOff),
