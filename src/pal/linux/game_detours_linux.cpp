@@ -70,7 +70,15 @@ int repl_max_level(int a, int b, void *slot)
         return vanilla; // called outside the level-up menu: never restrict
     const int stat = pal::at<int>(g_active_lvlup_menu, kLevelUpMenuStatOff);
     const int capped = g_cap_fn(stat, vanilla);
-    pal::logf(pal::LogLevel::Debug, "levelcap: buy-gate stat=%d vanilla=%d -> cap=%d", stat, vanilla, capped);
+    // UpdateState calls this every frame while the "can't upgrade further" text plays, so log a reading only when it changes.
+    static int last_stat = -1, last_vanilla = -1, last_capped = -1;
+    if (stat != last_stat || vanilla != last_vanilla || capped != last_capped)
+    {
+        last_stat = stat;
+        last_vanilla = vanilla;
+        last_capped = capped;
+        pal::logf(pal::LogLevel::Debug, "levelcap: buy-gate stat=%d vanilla=%d -> cap=%d", stat, vanilla, capped);
+    }
     return capped;
 }
 
