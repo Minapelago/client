@@ -10,8 +10,10 @@ struct MinaModAPI; // MinaModAPI.h is included only in mod_api.cpp
 namespace mod
 {
 
-// Store the live MinaModAPI* (from MinaMod_Init) or a fake (in tests). nullptr clears it. Returns the pointer it replaced.
+// Store the live MinaModAPI* (from MinaMod_Init) or a fake (in tests). nullptr clears it. Returns the pointer it replaced. The loader calls MinaMod_Init
+// on the game thread, so the calling thread is recorded as the one on_game_thread() matches.
 MinaModAPI *set_api(MinaModAPI *api);
+[[nodiscard]] bool on_game_thread();
 
 // False when the game's mod API is unusable, which leaves every named mod hook inert.
 [[nodiscard]] bool api_available();
@@ -29,7 +31,8 @@ int current_game_state();
 // Items::IsItemCollected override via the "IsItemCollected" hook, which also fires from inlined copies. Capacity-upgrade locations (itemTypes 0x44..0x48)
 // share the SaveSlot bitfield apply_upgrades uses as a counter, so a vanilla query reports them collected and boss rose-reward spawns skip (#8).
 // query returns -1 to pass through or 0/1 to force the result. ownership_query is param5, true when the weapon-swap chest asks whether an item is owned
-// and false for location queries; the mth side needs it to keep a received weapon visible to that chest.
+// and false for location queries; the mth side needs it to keep a received weapon visible to that chest. query runs only on the game thread: the save
+// thread also asks while SaveSlot::Upgrade migrates an old save, and gets the vanilla answer.
 using ItemCollectedFn = int (*)(int loc_idx, bool ownership_query);
 bool install_item_collected_hook(ItemCollectedFn query);
 

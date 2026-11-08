@@ -9,6 +9,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -194,6 +195,15 @@ class FakeGame
     {
         destroy_world(gamestate_);
         gamestate_ = new_world(true);
+    }
+
+    // Items::IsItemCollected runs the IsItemCollected hooks first. nullopt means none handled the query, so the game reads the save's own bit.
+    std::optional<bool> mod_item_collected(int loc_idx)
+    {
+        IsItemCollectedCtx ctx{};
+        ctx.index = loc_idx;
+        dispatch("IsItemCollected", &ctx);
+        return ctx.modHandled ? std::optional<bool>(ctx.modRetVal) : std::nullopt;
     }
 
   private:

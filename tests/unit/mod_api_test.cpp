@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -64,6 +66,9 @@ struct WorldHookCalls
     std::vector<void *> destroys;
 };
 WorldHookCalls g_world_calls;
+
+// Locations the client's IsItemCollected override was asked about, standing in for the game-thread state it reads.
+std::vector<int> g_override_queries;
 
 void install_world_hooks()
 {
@@ -221,4 +226,26 @@ TEST_CASE("mod: the World hooks pass on the World they fire for", "[mod][world]"
 
     game.transition();
     REQUIRE(g_world_calls.destroys == std::vector<void *>{level});
+}
+
+// SaveSlot::Upgrade asks from the game's save thread while it migrates an old save. That thread must get the save's own bits and leave the client's
+// game-thread state alone.
+TEST_CASE("mod: an IsItemCollected query off the game thread gets the vanilla answer", "[mod][save]")
+{
+    mth::test::FakeGame game;
+    g_override_queries.clear();
+    REQUIRE(mod::install_item_collected_hook(
+        [](int loc_idx, bool)
+        {
+            g_override_queries.push_back(loc_idx);
+            return 1;
+        }));
+
+    std::optional<bool> from_save_thread{true};
+    std::thread([&] { from_save_thread = game.mod_item_collected(30); }).join();
+    REQUIRE_FALSE(from_save_thread.has_value());
+    REQUIRE(g_override_queries.empty());
+
+    REQUIRE(game.mod_item_collected(30) == true);
+    mod::remove_all_hooks();
 }

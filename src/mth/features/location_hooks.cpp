@@ -448,6 +448,9 @@ std::uint64_t (*g_orig_shop_oos)(void *, void *) = nullptr;
 
 std::uint64_t repl_shop_is_out_of_stock(void *shop_def, void *out_info)
 {
+    // SaveSlot::Upgrade reaches IsOutOfStock on the save thread, whose item queries skip the override anyway, so only the game thread moves the depth.
+    if (!mod::on_game_thread())
+        return g_orig_shop_oos != nullptr ? g_orig_shop_oos(shop_def, out_info) : 0;
     ++g_shop_oos_depth;
     const std::uint64_t r = g_orig_shop_oos != nullptr ? g_orig_shop_oos(shop_def, out_info) : 0;
     --g_shop_oos_depth;

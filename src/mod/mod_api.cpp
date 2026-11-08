@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstring>
+#include <thread>
 #include <utility>
 
 #include "MinaModAPI.h"
@@ -31,6 +32,7 @@ namespace
 constexpr int kSaveSlotCount = 10;
 
 MinaModAPI *g_mod_api = nullptr;
+std::thread::id g_game_thread;
 
 // An entry read past the end of a shorter struct holds whatever static follows the API table, so a non-null pointer may still be garbage.
 template <class Fn> bool usable(Fn fn)
@@ -143,7 +145,9 @@ void is_item_collected_trampoline(void *pctx)
 {
     note_fired(kHookIsItemCollected);
     auto *c = static_cast<mod::IsItemCollectedCtx *>(pctx);
-    if (g_item_collected_cb == nullptr || c == nullptr || c->index < 0)
+    // SaveSlot::Upgrade asks from the save thread about the slot it is migrating. That slot's own bits are the right answer there, and the callback reads
+    // game-thread-only state.
+    if (g_item_collected_cb == nullptr || c == nullptr || c->index < 0 || !mod::on_game_thread())
         return;
     const int ov = g_item_collected_cb(c->index, c->include_early_collected); // -1 pass through, 0/1 force
     if (ov >= 0)
@@ -303,7 +307,13 @@ MinaModAPI *set_api(MinaModAPI *api)
 {
     MinaModAPI *const previous = g_mod_api;
     g_mod_api = api;
+    g_game_thread = std::this_thread::get_id();
     return previous;
+}
+
+bool on_game_thread()
+{
+    return std::this_thread::get_id() == g_game_thread;
 }
 
 bool api_available()
