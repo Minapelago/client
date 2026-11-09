@@ -38,6 +38,9 @@ class ApLink final : public mth::IApLink
     void enable_deathlink(bool on) override;
     void send_death(const std::string &detail) override;
     void report_area(int game_state) override;
+    void watch(const std::vector<std::string> &keys, bool get) override;
+    void unwatch(const std::vector<std::string> &keys) override;
+    void send_ghost(const std::string &key, std::vector<std::int64_t> packet) override;
     [[nodiscard]] std::vector<mth::ApEvent> drain_events() override;
 
   private:

@@ -346,3 +346,74 @@ TEST_CASE("ApLink: LocationChecks and the goal StatusUpdate reach the server as 
         goal_seen = goal_seen || update.at("status") == 30;
     REQUIRE(goal_seen);
 }
+
+TEST_CASE("ApLink: the ghost calls reach the server as SetNotify with Get and a Set carrying the packet", "[net][ap_link]")
+{
+    LinkFixture f;
+    f.server.reply_to("Connect", {connected(1, json::object())});
+    f.connect();
+    f.wait_for<mth::ApConnected>("ApConnected");
+
+    f.link.watch({"MTH_level_0_2", "MTH_level_0_3"}, true);
+    f.link.watch({"MTH_ghost_0_2"}, false);
+    f.link.send_ghost("MTH_ghost_0_1", {1, 40, 7});
+    f.wait_for_sent("Set");
+
+    const json keys = json::array({"MTH_level_0_2", "MTH_level_0_3"});
+    REQUIRE(f.server.received("SetNotify").size() == 2);
+    REQUIRE(f.server.received("SetNotify").at(0).at("keys") == keys);
+    REQUIRE(f.server.received("SetNotify").at(1).at("keys") == json::array({"MTH_ghost_0_2"}));
+    REQUIRE(f.server.received("Get").size() == 1);
+    REQUIRE(f.server.received("Get").at(0).at("keys") == keys);
+    REQUIRE(f.server.received("Set").at(0) ==
+            json{{"cmd", "Set"}, {"key", "MTH_ghost_0_1"}, {"default", 0}, {"want_reply", false}, {"operations", json::array()}, {"g", {1, 40, 7}}});
+}
+
+TEST_CASE("ApLink: Connected names the other Mina slots on our team, and SetReply and Retrieved arrive as ApStored", "[net][ap_link]")
+{
+    LinkFixture f;
+    json c = connected(1, json::object());
+    c["players"] = json::array();
+    c["slot_info"] = json::object();
+    const auto add = [&c](int team, int slot, const char *game)
+    {
+        c["players"].push_back({{"team", team}, {"slot", slot}, {"alias", "P"}, {"name", "P"}});
+        c["slot_info"][std::to_string(slot)] = {{"name", "P"}, {"game", game}, {"type", 1}, {"group_members", json::array()}};
+    };
+    add(0, 1, "Mina The Hollower");
+    add(0, 2, "Mina The Hollower");
+    add(0, 3, "Hylics 2");
+    add(1, 4, "Mina The Hollower");
+    f.server.reply_to("Connect", {c});
+    f.connect();
+    const mth::ApConnected connected_ev = f.wait_for<mth::ApConnected>("ApConnected");
+    REQUIRE(connected_ev.team == 0);
+    REQUIRE(connected_ev.mina_slots == std::vector<int>{2});
+
+    const std::size_t mark = f.events.size();
+    const json reply = {{"cmd", "SetReply"}, {"key", "MTH_ghost_0_2"}, {"value", 0},          {"original_value", 0},
+                        {"slot", 2},         {"default", 0},           {"want_reply", false}, {"operations", json::array()}};
+    json good = reply;
+    good["g"] = {1, 2, 3};
+    json floats = reply;
+    floats["g"] = {1, 2.5, 3};
+    json unstamped = reply;
+    unstamped.erase("slot");
+    f.server.push(good);
+    f.server.push(floats);
+    f.server.push(unstamped);
+    f.server.push({{"cmd", "Retrieved"}, {"keys", {{"MTH_level_0_2", 65539}}}});
+    f.wait_for<mth::ApStored>("the Retrieved entry", 3, mark);
+
+    const auto stored = f.all<mth::ApStored>(mark);
+    REQUIRE(stored.size() == 3);
+    REQUIRE(stored[0]->key == "MTH_ghost_0_2");
+    REQUIRE(stored[0]->slot == 2);
+    REQUIRE(stored[0]->value == 0);
+    REQUIRE(stored[0]->ghost == std::vector<std::int64_t>{1, 2, 3});
+    REQUIRE(stored[1]->slot == 2);
+    REQUIRE(stored[1]->ghost.empty());
+    REQUIRE(stored[2]->key == "MTH_level_0_2");
+    REQUIRE(stored[2]->slot == -1);
+    REQUIRE(stored[2]->value == 65539);
+}

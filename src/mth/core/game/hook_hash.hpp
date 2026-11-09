@@ -7,8 +7,8 @@
 namespace mth::hookhash
 {
 
-// Jenkins lookup3 hashlittle2 with the loader's seeds (pc=0x0d, pb=0x25), returning pc | (pb << 32). RunHooks dispatches on this, inlined at each
-// site as a movabs immediate; it derives from the hook name, so it anchors the enclosing function.
+// Jenkins lookup3 hashlittle2, by default with the loader's seeds (pc=0x0d, pb=0x25), returning pc | (pb << 32). RunHooks dispatches on this, inlined
+// at each site as a movabs immediate; it derives from the hook name, so it anchors the enclosing function.
 
 constexpr std::uint32_t rot(std::uint32_t x, int k) noexcept
 {
@@ -68,10 +68,10 @@ constexpr std::uint32_t word_at(std::string_view s, std::size_t i) noexcept
            (static_cast<std::uint32_t>(static_cast<unsigned char>(s[i + 2])) << 16) | (static_cast<std::uint32_t>(static_cast<unsigned char>(s[i + 3])) << 24);
 }
 
-[[nodiscard]] constexpr std::uint64_t hash64(std::string_view name) noexcept
+[[nodiscard]] constexpr std::uint64_t hash64(std::string_view name, std::uint32_t pc = 0x0dU, std::uint32_t pb = 0x25U) noexcept
 {
-    const auto seed = static_cast<std::uint32_t>(0xdeadbeefU + name.size() + 0x0dU);
-    Abc v{seed, seed, seed + 0x25U};
+    const auto seed = static_cast<std::uint32_t>(0xdeadbeefU + name.size() + pc);
+    Abc v{seed, seed, seed + pb};
 
     std::size_t off = 0;
     std::size_t left = name.size();
@@ -102,6 +102,12 @@ constexpr std::uint32_t word_at(std::string_view s, std::size_t i) noexcept
     }
 
     return static_cast<std::uint64_t>(v.c) | (static_cast<std::uint64_t>(v.b) << 32);
+}
+
+// The engine's string hash: hashlittle seeded with 1337, which is hash64 with pc 1337 and pb 0. ycCutterAnimCache keys sheets by it (Linux 0x1f7329).
+[[nodiscard]] constexpr std::uint32_t engine_hash(std::string_view s) noexcept
+{
+    return static_cast<std::uint32_t>(hash64(s, 1337U, 0U));
 }
 
 } // namespace mth::hookhash
