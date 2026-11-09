@@ -39,9 +39,9 @@ class HookManager
     // Seed boundary: drop the lock removals seeded from one connection's items and the captured AP-game slot so neither reaches the next save, lift any
     // running trap and drop any latched death.
     void clear_session_state();
-    void drain();                          // World::Update pre-hook window
-    void on_world_update_end(void *world); // menu-world scene walk for the save takeover
-    void on_world_destroy();               // the gamestate World is going away: drop handles into it
+    void drain(void *world, float step_seconds); // World::Update pre-hook window
+    void on_world_update_end(void *world);       // menu-world scene walk for the save takeover
+    void on_world_destroy();                     // the gamestate World is going away: drop handles into it
     void append_status_lines(std::vector<std::string> &out) const;
 
   private:

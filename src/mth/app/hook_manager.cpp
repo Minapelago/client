@@ -140,7 +140,7 @@ void HookManager::clear_session_state()
     death_hooks_.reset();
 }
 
-void HookManager::drain()
+void HookManager::drain(void *world, float step_seconds)
 {
     lock_hooks_.seed_removed_locks();
     lock_hooks_.sweep(); // open already-spawned KeyBlock / KeyBlockChain locks and kear-locked chests

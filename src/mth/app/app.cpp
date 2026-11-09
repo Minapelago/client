@@ -47,7 +47,7 @@ void repl_game_fixed_update()
 // The native World hooks also fire for the popup, dialogue, prompt and overlay Worlds. The consumers past the liveness note count polls or walk menus
 // once per call, so they run only for the gamestate World. "WorldUpdate" delivers the spawn window at the top of World::Update, so there is no original
 // to forward.
-void world_update_notify(void *world)
+void world_update_notify(void *world, float step_seconds)
 {
     mth::App *app = g_app;
     if (app == nullptr)
@@ -57,7 +57,7 @@ void world_update_notify(void *world)
     const bool gamestate = mth::layout::is_gamestate_world(world);
     app->gate_note_worldupdate(gamestate);
     if (gamestate)
-        app->drain_grants();
+        app->on_world_update(world, step_seconds);
 }
 
 void world_update_end_notify(void *world)
@@ -223,9 +223,9 @@ void App::drive_tick()
     }
 }
 
-void App::drain_grants()
+void App::on_world_update(void *world, float step_seconds)
 {
-    hooks_->drain();
+    hooks_->drain(world, step_seconds);
     granter_->drain();
 }
 

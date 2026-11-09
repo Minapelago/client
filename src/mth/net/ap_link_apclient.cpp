@@ -80,14 +80,7 @@ void ApLink::send_locations(const std::vector<std::int64_t> &location_ids)
             if (!client_ || location_ids.empty())
                 return;
             std::list<int64_t> ids(location_ids.begin(), location_ids.end());
-            try
-            {
-                client_->LocationChecks(ids);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: LocationChecks failed: %s", e.what());
-            }
+            client_->LocationChecks(ids);
         });
 }
 
@@ -99,15 +92,8 @@ void ApLink::scout_locations(const std::vector<std::int64_t> &location_ids)
             if (!client_ || location_ids.empty())
                 return;
             std::list<int64_t> ids(location_ids.begin(), location_ids.end());
-            try
-            {
-                // create_as_hint=2: free hints for the scouted shop contents; the server dedups re-scouted locations.
-                client_->LocationScouts(ids, 2);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: LocationScouts failed: %s", e.what());
-            }
+            // create_as_hint=2: free hints for the scouted shop contents; the server dedups re-scouted locations.
+            client_->LocationScouts(ids, 2);
         });
 }
 
@@ -116,16 +102,8 @@ void ApLink::set_goal()
     enqueue(
         [this]
         {
-            if (!client_)
-                return;
-            try
-            {
+            if (client_)
                 client_->StatusUpdate(APClient::ClientStatus::GOAL);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: StatusUpdate(GOAL) failed: %s", e.what());
-            }
         });
 }
 
@@ -140,17 +118,10 @@ void ApLink::enable_deathlink(bool on)
         {
             if (!client_)
                 return;
-            try
-            {
-                std::list<std::string> tags;
-                if (effective)
-                    tags.push_back("DeathLink");
-                client_->ConnectUpdate(false, kItemHandling, true, tags);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: ConnectUpdate failed: %s", e.what());
-            }
+            std::list<std::string> tags;
+            if (effective)
+                tags.push_back("DeathLink");
+            client_->ConnectUpdate(false, kItemHandling, true, tags);
         });
 }
 
@@ -167,20 +138,13 @@ void ApLink::send_death(const std::string &detail)
             const std::string cause = mth::net::deathlink_cause(slot_name_, detail);
             nlohmann::json data = nlohmann::json::parse(mth::net::make_deathlink_payload(slot_name_, cause, now));
             std::list<std::string> tags{"DeathLink"};
-            try
+            // Bounce returns false while the link is still coming up; a refused send later throws, and run() logs it.
+            if (!client_->Bounce(data, {}, {}, tags))
             {
-                // Bounce returns false while the link is still coming up. Past that the write result is lost: apclientpp drops wswrap's asio error.
-                if (!client_->Bounce(data, {}, {}, tags))
-                {
-                    pal::logf(pal::LogLevel::Warn, "deathlink: bounce refused (link not ready); death not sent");
-                    return;
-                }
-                pal::logf(pal::LogLevel::Info, "deathlink: sent bounce (cause=%s)", cause.c_str());
+                pal::logf(pal::LogLevel::Warn, "deathlink: bounce refused (link not ready); death not sent");
+                return;
             }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "deathlink: Bounce failed: %s", e.what());
-            }
+            pal::logf(pal::LogLevel::Info, "deathlink: sent bounce (cause=%s)", cause.c_str());
         });
 }
 
@@ -191,18 +155,10 @@ void ApLink::report_area(int game_state)
         {
             if (!client_)
                 return;
-            try
-            {
-                APClient::DataStorageOperation op;
-                op.operation = "replace";
-                op.value = game_state;
-                const std::string key = "MTH_level_" + std::to_string(client_->get_team_number()) + "_" + std::to_string(client_->get_player_number());
-                client_->Set(key, 0, false, {op});
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: area Set failed: %s", e.what());
-            }
+            APClient::DataStorageOperation op;
+            op.operation = "replace";
+            op.value = game_state;
+            client_->Set(mth::datastore_key("level", client_->get_team_number(), client_->get_player_number()), 0, false, {op});
         });
 }
 
@@ -221,7 +177,16 @@ void ApLink::run()
                 cmd = std::move(commands_.front());
                 commands_.pop();
             }
-            cmd();
+            // websocketpp's send throws while a connection closes, up to 5 s after a pong timeout that apclientpp has not noticed yet. An escape
+            // from here would terminate the game; the poll below sees the drop.
+            try
+            {
+                cmd();
+            }
+            catch (const std::exception &e)
+            {
+                pal::logf(pal::LogLevel::Warn, "ApLink: command failed: %s", e.what());
+            }
         }
 
         if (client_)

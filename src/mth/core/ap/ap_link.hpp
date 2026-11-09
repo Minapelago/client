@@ -2,12 +2,19 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "mth/core/ap/ap_events.hpp"
 
 namespace mth
 {
+
+// MTH_<kind>_<team>_<slot>: "level" holds the slot's room (Universal Tracker reads it too).
+[[nodiscard]] inline std::string datastore_key(std::string_view kind, int team, int slot)
+{
+    return "MTH_" + std::string(kind) + "_" + std::to_string(team) + "_" + std::to_string(slot);
+}
 
 // Transport seam: outbound calls enqueue work; inbound traffic surfaces as ApEvents.
 class IApLink
@@ -28,7 +35,7 @@ class IApLink
     // `detail` is the predicate only; the implementation prefixes our slot name.
     virtual void send_death(const std::string &detail) = 0;
 
-    // Publish the current room/area id to AP data storage (key MTH_level_<team>_<slot>).
+    // Publish the current room/area id to our own "level" datastore_key.
     virtual void report_area(int game_state) = 0;
 
     [[nodiscard]] virtual std::vector<ApEvent> drain_events() = 0;

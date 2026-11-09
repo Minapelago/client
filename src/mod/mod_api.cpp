@@ -166,7 +166,7 @@ void world_update_trampoline(void *pctx)
     note_fired(kHookWorldUpdate);
     auto *c = static_cast<WorldUpdateCtx *>(pctx);
     if (g_world_update_cb != nullptr)
-        g_world_update_cb(c != nullptr ? c->world : nullptr);
+        g_world_update_cb(c != nullptr ? c->world : nullptr, c != nullptr ? c->elapsed : 0.0f);
 }
 
 mod::WorldUpdateEndFn g_world_update_end_cb = nullptr;

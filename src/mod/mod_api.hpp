@@ -38,8 +38,8 @@ bool install_item_collected_hook(ItemCollectedFn query);
 
 // "WorldUpdate" hook at the top of World::Update, the spawn window where grants and lock seeds must run to avoid update-queue hangs. It fires once for
 // each running World, including the popup, dialogue and overlay Worlds, so callers filter on world. on_pre runs on the game thread; install returns false
-// without the modding API.
-using WorldUpdatePreFn = void (*)(void *world);
+// without the modding API. step_seconds is Game::FixedUpdate's 1 / s_targetFPS, passed through unchanged (Linux 0xcdbcc5, 0xf11963).
+using WorldUpdatePreFn = void (*)(void *world, float step_seconds);
 bool install_world_update_hook(WorldUpdatePreFn on_pre);
 
 // "WorldUpdateEnd" hook after the other systems have run. The ctx's World* is the only route to a menu world's scene graph, since PlayerGetWorld() is null
