@@ -90,6 +90,8 @@ class App
     void probe_switches();
     // offline test: drive the Mirrors End switches with no AP session. It skips the bound-save check on the durable write, so use a scratch save.
     void set_mirror_switch_override(bool on);
+    // dev: toggle the ghost echo of the local player, sent through the server.
+    void toggle_ghost_echo();
 
     // The overlay reads status() every frame and `gate enforce` calls set_enforcing(), both on the render thread.
     SafetyGate gate_;

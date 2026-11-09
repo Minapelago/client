@@ -14,6 +14,8 @@ inline constexpr const char *game_fixed_update = "_ZN4Game11FixedUpdateEv"; // G
 // mod hook.
 inline constexpr const char *on_pickup_done = "_ZN5Items12OnPickupDoneEiiP6PlayerRK6ycVec3iijb";
 inline constexpr const char *process_sdl_event = "_Z15ProcessSDLEventR9SDL_Event"; // ProcessSDLEvent(SDL_Event&)
+// AnimEffect::Init(ycStringRef anim, ycStringRef seq, ycPaletteTexture*) builds the effect's GameAnim, which MinaModAPI cannot create.
+inline constexpr const char *anim_effect_init = "_ZN10AnimEffect4InitE11ycStringRefS0_P16ycPaletteTexture";
 
 // s_rItems: 195-entry item table (stride 0x68, kind at +0x28).
 inline constexpr const char *s_r_items = "_ZN12_GLOBAL__N_18s_rItemsE";

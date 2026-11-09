@@ -30,7 +30,7 @@
 namespace mth
 {
 
-HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
+HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle, IApLink &link,
                          std::function<void(const std::string &)> send_death, std::function<void *()> get_player)
     : rando_(rando), get_player_(get_player), location_hooks_(rando, &scout), boss_tracker_(rando), goal_tracker_(rando),
       death_hooks_(std::move(send_death), std::move(get_player)), ability_hooks_([&state](std::int64_t id) { return state.has_received(id); }),
@@ -45,7 +45,8 @@ HookManager::HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &sco
               vendor_lockout_ = false;
               location_hooks_.reset_native_bits();
           }),
-      status_menu_caps_(level_cap_hooks_), save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); })
+      status_menu_caps_(level_cap_hooks_), save_takeover_(bundle, [&state] { return std::make_pair(state.seed(), std::to_string(state.player_slot())); }),
+      ghost_players_(link)
 {
     install_pawn_shop_hook([this, &state] { return vendor_locked(state); });
     install_fountain_lamp_hook();
@@ -148,6 +149,7 @@ void HookManager::drain(void *world, float step_seconds)
     ability_hooks_.enforce_burrow_tick(get_player_ ? get_player_() : nullptr);
     sewer_cat_gate_.tick();   // self-gated on the vendor lockout; walks nothing when it is clear
     intro_chest_gate_.tick(); // self-gated on the armed flag; walks nothing when it is clear
+    ghost_players_.tick(world, step_seconds);
 }
 
 void HookManager::on_world_update_end(void *world)
@@ -165,6 +167,7 @@ void HookManager::on_world_destroy()
     intro_chest_gate_.on_world_destroy();
     status_menu_caps_.on_world_destroy();
     mirror_switches_on_world_destroy(); // the managed switches died with the world
+    ghost_players_.on_world_destroy();
 }
 
 void HookManager::append_status_lines(std::vector<std::string> &out) const

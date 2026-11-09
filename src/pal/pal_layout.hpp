@@ -43,6 +43,13 @@ inline constexpr std::uint8_t kSetupBoxesPatched = 0xFF;
 // MSVC folds SpringBellows::CollideWith into a single body, which the exported symbol reaches.
 inline constexpr bool kHasSpringListenerBody = false;
 
+// GameAnim::RecalcWorldTransform reads the AnimParent at +0x1e0 (0x1409890e2) and passes the iso block at +0x208 to IsoAnim::CalcTransform
+// (0x140989369); AnimEffect::Init writes the mode (0x1404af779).
+inline constexpr std::ptrdiff_t kGameAnimParentOff = 0x1e0;   // AnimParent*
+inline constexpr std::ptrdiff_t kGameAnimIsoSortOff = 0x208;  // float, added to the sort y
+inline constexpr std::ptrdiff_t kGameAnimIsoDepthOff = 0x20c; // float, subtracted from the depth
+inline constexpr std::ptrdiff_t kGameAnimIsoModeOff = 0x214;  // int
+
 #else
 
 inline constexpr std::ptrdiff_t kSaveManagerApplySlotOff = 0x08; // apply-path slot (garbage on build 9cd1468c)
@@ -69,6 +76,13 @@ inline constexpr std::uint8_t kSetupBoxesPatched = 0x03;
 // GCC emits SpringBellows::CollideWith twice: the exported body and the copy behind the +376 thunk
 // (sym::spring_bellows_collide_listener) that physics dispatches to. Both need the gate (#188).
 inline constexpr bool kHasSpringListenerBody = true;
+
+// GameAnim::RecalcWorldTransform reads the AnimParent at +0x200 (0xce3612) and passes the iso block at +0x1d0 to IsoAnim::CalcTransform
+// (0xce366e); AnimEffect::Init writes the mode (0x787243).
+inline constexpr std::ptrdiff_t kGameAnimParentOff = 0x200;   // AnimParent*
+inline constexpr std::ptrdiff_t kGameAnimIsoSortOff = 0x1d0;  // float, added to the sort y
+inline constexpr std::ptrdiff_t kGameAnimIsoDepthOff = 0x1d4; // float, subtracted from the depth
+inline constexpr std::ptrdiff_t kGameAnimIsoModeOff = 0x1dc;  // int
 
 #endif
 

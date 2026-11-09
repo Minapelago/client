@@ -141,7 +141,9 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             hooks_->death_hooks_.reset();
         },
         // on_session_end: a different (seed, slot) authenticated. It arrives ahead of that connection's ApConnected, the safe point to drop the old session.
-        [this] { clear_session_state(); });
+        [this] { clear_session_state(); },
+        // on_event: ghost players follow connects, disconnects and datastore replies.
+        [this](const ApEvent &ev) { hooks_->ghost_players_.on_ap_event(ev); });
     area_reporter_ = std::make_unique<AreaReporter>(*link_);
     rando_ = std::make_unique<RandoBridge>(*link_, state_);
     granter_.emplace([this](int loc) { return rando_->is_ap_location(loc); }, [this](int loc) { rando_->on_location_collected(loc); });
@@ -157,7 +159,7 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         });
 
     hooks_ = std::make_unique<HookManager>(
-        *rando_, connection_.scouts, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
+        *rando_, connection_.scouts, state_, bundle_store_, *link_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
     {
         overlay_root_ = std::make_unique<OverlayRoot>(*this, banner_queue_);
         pal::overlay_start(overlay_root_.get());
@@ -225,6 +227,8 @@ void App::drive_tick()
 
 void App::on_world_update(void *world, float step_seconds)
 {
+    // The WorldUpdateEnd poll is a step late for ghost players, which need this step's room.
+    room_tracker::poll();
     hooks_->drain(world, step_seconds);
     granter_->drain();
 }

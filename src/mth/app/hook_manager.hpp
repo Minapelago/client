@@ -6,6 +6,7 @@
 
 #include "mth/features/ability_hooks.hpp"
 #include "mth/features/death_hooks.hpp"
+#include "mth/features/ghost_players.hpp"
 #include "mth/features/levelcap_hooks.hpp"
 #include "mth/features/location_hooks.hpp"
 #include "mth/features/lock_hooks.hpp"
@@ -22,6 +23,7 @@ namespace mth
 
 class RandoBridge;
 class ApState;
+class IApLink;
 struct SessionPolicy;
 class ApSaveBundleStore;
 
@@ -29,7 +31,7 @@ class ApSaveBundleStore;
 class HookManager
 {
   public:
-    HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
+    HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle, IApLink &link,
                 std::function<void(const std::string &)> send_death, std::function<void *()> get_player);
 
     HookManager(const HookManager &) = delete;
@@ -68,6 +70,7 @@ class HookManager
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it
     TrapHooks traps_;
+    GhostPlayers ghost_players_; // the console toggles its echo
 };
 
 } // namespace mth

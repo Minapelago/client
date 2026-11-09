@@ -21,6 +21,11 @@ static_assert(offsetof(mod::IsItemCollectedCtx, include_early_collected) == offs
 static_assert(offsetof(mod::IsItemCollectedCtx, mod_handled) == offsetof(::IsItemCollectedCtx, modHandled));
 static_assert(offsetof(mod::IsItemCollectedCtx, mod_ret_val) == offsetof(::IsItemCollectedCtx, modRetVal));
 
+static_assert(sizeof(mod::Transform) == sizeof(MM_Transform));
+static_assert(offsetof(mod::Transform, r) == offsetof(MM_Transform, r));
+static_assert(offsetof(mod::Transform, s) == offsetof(MM_Transform, s));
+static_assert(offsetof(mod::Transform, t) == offsetof(MM_Transform, t));
+
 // The AABB wrappers memcpy MM_AABB as six floats, center.xyz then half-extent.xyz.
 static_assert(sizeof(MM_AABB) == 6 * sizeof(float));
 static_assert(offsetof(MM_AABB, center) == 0);
@@ -906,6 +911,112 @@ bool cheat_manager_is_cheat_applied(int cheat)
     if (!has_appended(&MinaModAPI::CheatManagerIsCheatApplied))
         return false;
     return g_mod_api->CheatManagerIsCheatApplied(cheat, static_cast<std::uint32_t>(-1));
+}
+
+void *spawn_entity(void *parent, std::uint32_t type, const float pos[3], std::int32_t collision_layer)
+{
+    if (parent == nullptr || pos == nullptr || !has(&MinaModAPI::SpawnEntity2))
+        return nullptr;
+    const MM_Vec3 at{pos[0], pos[1], pos[2]};
+    const MM_Vec3 scale{1.0f, 1.0f, 1.0f};
+    return g_mod_api->SpawnEntity2(static_cast<ycEntity *>(parent), type, at, scale, 0.0f, collision_layer, nullptr, nullptr, nullptr);
+}
+
+void *component_parent(void *component)
+{
+    if (component == nullptr || !has(&MinaModAPI::ComponentGetParent))
+        return nullptr;
+    return g_mod_api->ComponentGetParent(static_cast<ycComponent *>(component));
+}
+
+bool entity_world_transform(void *entity, Transform &out)
+{
+    if (entity == nullptr || !has(&MinaModAPI::EntityGetWorldTransform))
+        return false;
+    const MM_Transform t = g_mod_api->EntityGetWorldTransform(static_cast<ycEntity *>(entity));
+    std::memcpy(&out, &t, sizeof(out));
+    return true;
+}
+
+void set_entity_local_transform(void *entity, const Transform &transform)
+{
+    if (entity != nullptr && has(&MinaModAPI::EntitySetLocalTransform))
+        g_mod_api->EntitySetLocalTransform(static_cast<ycEntity *>(entity), reinterpret_cast<const MM_Transform *>(&transform));
+}
+
+bool spawn_anim_api_available()
+{
+    return has(&MinaModAPI::SpawnEntity2) && has(&MinaModAPI::ComponentGetParent) && has(&MinaModAPI::EntityGetWorldTransform) &&
+           has(&MinaModAPI::EntitySetLocalTransform) && has(&MinaModAPI::GameAnimPlay) && has(&MinaModAPI::GameAnimGetSeqName) &&
+           has(&MinaModAPI::GameAnimGetSeqFrameIdx) && has_appended(&MinaModAPI::GameAnimGetNumSeqFrames) &&
+           has_appended(&MinaModAPI::GameAnimSetSeqFrameIdx) && has_appended(&MinaModAPI::GameAnimIsVisible) && has_appended(&MinaModAPI::GameAnimSetVisible) &&
+           has_appended(&MinaModAPI::GameAnimSetMulColor) && has_appended(&MinaModAPI::GameAnimGetLocalTransform) &&
+           has_appended(&MinaModAPI::GameAnimSetLocalTransform);
+}
+
+void game_anim_play(void *anim, const char *seq, std::int32_t loops, float speed, bool force)
+{
+    if (anim != nullptr && seq != nullptr && has(&MinaModAPI::GameAnimPlay))
+        g_mod_api->GameAnimPlay(static_cast<ycComponent *>(anim), seq, loops, speed, force);
+}
+
+std::string_view game_anim_seq_name(void *anim)
+{
+    if (game_anim_num_seq_frames(anim) == 0 || !has(&MinaModAPI::GameAnimGetSeqName))
+        return {};
+    const MM_StringRef name = g_mod_api->GameAnimGetSeqName(static_cast<ycComponent *>(anim));
+    return name.str != nullptr ? std::string_view(name.str, name.len) : std::string_view{};
+}
+
+std::uint32_t game_anim_num_seq_frames(void *anim)
+{
+    if (anim == nullptr || !has_appended(&MinaModAPI::GameAnimGetNumSeqFrames))
+        return 0;
+    return g_mod_api->GameAnimGetNumSeqFrames(static_cast<ycComponent *>(anim));
+}
+
+std::uint32_t game_anim_seq_frame_idx(void *anim)
+{
+    if (anim == nullptr || !has(&MinaModAPI::GameAnimGetSeqFrameIdx))
+        return 0;
+    return g_mod_api->GameAnimGetSeqFrameIdx(static_cast<ycComponent *>(anim));
+}
+
+void game_anim_set_seq_frame_idx(void *anim, std::uint32_t idx)
+{
+    if (anim != nullptr && has_appended(&MinaModAPI::GameAnimSetSeqFrameIdx))
+        g_mod_api->GameAnimSetSeqFrameIdx(static_cast<ycComponent *>(anim), idx);
+}
+
+bool game_anim_is_visible(void *anim)
+{
+    return anim != nullptr && has_appended(&MinaModAPI::GameAnimIsVisible) && g_mod_api->GameAnimIsVisible(static_cast<ycComponent *>(anim));
+}
+
+void game_anim_set_visible(void *anim, bool visible)
+{
+    if (anim != nullptr && has_appended(&MinaModAPI::GameAnimSetVisible))
+        g_mod_api->GameAnimSetVisible(static_cast<ycComponent *>(anim), visible);
+}
+
+void game_anim_set_mul_color(void *anim, std::uint32_t rgba)
+{
+    if (anim != nullptr && has_appended(&MinaModAPI::GameAnimSetMulColor))
+        g_mod_api->GameAnimSetMulColor(static_cast<ycComponent *>(anim), to_mm_color(rgba));
+}
+
+bool game_anim_local_transform(void *anim, Transform &out)
+{
+    if (anim == nullptr || !has_appended(&MinaModAPI::GameAnimGetLocalTransform))
+        return false;
+    g_mod_api->GameAnimGetLocalTransform(static_cast<ycComponent *>(anim), reinterpret_cast<MM_Transform *>(&out));
+    return true;
+}
+
+void set_game_anim_local_transform(void *anim, const Transform &transform)
+{
+    if (anim != nullptr && has_appended(&MinaModAPI::GameAnimSetLocalTransform))
+        g_mod_api->GameAnimSetLocalTransform(static_cast<ycComponent *>(anim), reinterpret_cast<const MM_Transform *>(&transform));
 }
 
 void set_save_write_enabled(bool on)

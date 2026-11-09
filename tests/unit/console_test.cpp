@@ -47,6 +47,7 @@ constexpr VerbRow kVerbs[] = {
     {"savetest", CommandKind::SaveTest},
     {"trap", CommandKind::Trap},
     {"switches", CommandKind::Switches},
+    {"ghost", CommandKind::Ghost},
 };
 
 std::string to_upper(std::string s)
@@ -88,9 +89,9 @@ TEST_CASE("parse_command: every dispatchable kind has a verb, mapped case-insens
         REQUIRE(parse_command(std::string(row.verb) + " 1 2 3").kind == row.kind);
     }
 
-    // Driven off the enum so a kind missing or misspelled in kVerbKinds fails here instead of parsing as Unknown. Switches is the last enumerator;
+    // Driven off the enum so a kind missing or misspelled in kVerbKinds fails here instead of parsing as Unknown. Ghost is the last enumerator;
     // a kind added after it has to move this bound.
-    for (int i = static_cast<int>(CommandKind::Help); i <= static_cast<int>(CommandKind::Switches); ++i)
+    for (int i = static_cast<int>(CommandKind::Help); i <= static_cast<int>(CommandKind::Ghost); ++i)
     {
         const auto kind = static_cast<CommandKind>(i);
         INFO(i);

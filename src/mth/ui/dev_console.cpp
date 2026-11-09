@@ -185,6 +185,7 @@ void DevConsole::run_input()
         println("          gate [enforce on|off]  (AP safety gate; enforced by default, blocks connecting when refused)");
         println("          savetest dump|write|noflush|flush  (save-takeover validation; dev only)");
         println("          switches [on|off]  (log this room's rainbow switches; on|off forces the AP drive, scratch saves only)");
+        println("          ghost  (toggle a ghost of yourself, sent through the AP server while connected; dev test)");
         break;
     case CommandKind::Clear:
         log_.clear();
@@ -327,6 +328,9 @@ void DevConsole::run_input()
             app_.commands_.post([this] { app_.probe_switches(); });
         else
             app_.commands_.post([this, on = parse_on(cmd.args[0])] { app_.set_mirror_switch_override(on); });
+        break;
+    case CommandKind::Ghost:
+        app_.commands_.post([this] { app_.toggle_ghost_echo(); });
         break;
     case CommandKind::SaveTest:
         if (cmd.args.empty())

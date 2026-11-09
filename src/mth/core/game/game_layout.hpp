@@ -127,6 +127,29 @@ inline constexpr int kChainOpenState = 2;                      // state whose Up
 // Kear-locked Chest. Slot resolves via the +0xa8 -> +0x40 -> +0xd0 SpawnPoint name-key chain (no cached slot).
 inline constexpr std::ptrdiff_t kChestLockedFlagOff = 0x265; // u8 (0x101 word): nonzero = needs a kear to open
 
+// GameComponent fields, same on both builds: the main GameAnim, a Player's body (Player::IsBurrowAnim, Linux 0xd81784, Windows 0x1409f45f1), and the
+// collision layer that sets the sprite's depth bias (Linux 0xbe43fa, Windows 0x1408d6fcb).
+inline constexpr std::ptrdiff_t kGameComponentAnimOff = 0x120;
+inline constexpr std::ptrdiff_t kGameComponentCollisionLayerOff = 0x15c; // int
+
+// AnimParent, same on both builds: GameAnim::RecalcWorldTransform composes the transform at +0x78 before the anim's own and adds +0xc0 to its sort y
+// (Linux 0xce369a, 0xce36cc; Windows 0x14098914d, 0x14098918e).
+inline constexpr std::ptrdiff_t kAnimParentTransformOff = 0x78;
+inline constexpr std::ptrdiff_t kAnimParentSortOff = 0xc0; // float
+
+// GameAnim +0x40 -> ycCutterAnim (engine_hash of the sheet path at +0x0) +0x10 -> data, with the sequence count in the top 30 bits of +0x28 and a
+// table at +0x30 of 0x38-byte entries holding the name's engine_hash and char* name. Same on both builds (ycCutterAnimComponent::Play, Linux
+// 0x1f93ea, Windows 0x14009694e; ycCutterAnimCache::AddRef, Linux 0x1f73e3).
+inline constexpr std::ptrdiff_t kCutterAnimOff = 0x40;
+inline constexpr std::ptrdiff_t kCutterAnimNameHashOff = 0x0;
+inline constexpr std::ptrdiff_t kCutterAnimDataOff = 0x10;
+inline constexpr std::ptrdiff_t kCutterAnimSeqCountOff = 0x28;
+inline constexpr unsigned kCutterAnimSeqCountShift = 34;
+inline constexpr std::ptrdiff_t kCutterAnimSeqTableOff = 0x30;
+inline constexpr std::ptrdiff_t kCutterSeqStride = 0x38;
+inline constexpr std::ptrdiff_t kCutterSeqHashOff = 0x0;
+inline constexpr std::ptrdiff_t kCutterSeqNameOff = 0x10;
+
 // Player (deathlink).
 inline constexpr std::ptrdiff_t kPlayerDeathGuardOff = 0x1380; // once-per-death guard byte (0 = fresh)
 inline constexpr std::ptrdiff_t kPlayerStateOff = 0x254;       // StateMachine current state (Player+0x340 + 0x14)

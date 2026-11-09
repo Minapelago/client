@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct MinaModAPI; // MinaModAPI.h is included only in mod_api.cpp
@@ -234,6 +235,38 @@ bool weak_ptr_api_available();
 void *weak_ptr_create(void *component_or_entity);
 void *weak_ptr_get(void *weak);
 void weak_ptr_destroy(void *weak);
+
+// ycTransform as the API passes it: quaternion (x, y, z, w), scale, translation.
+struct Transform
+{
+    float r[4];
+    float s[3];
+    float t[3];
+};
+
+// True when every entity and GameAnim entry below is present.
+bool spawn_anim_api_available();
+
+// SpawnEntity2 with no spawn point or region, so it joins the World's current region and its room-transition cull. Returns the main GameComponent.
+// WorldUpdate pre-hook only.
+void *spawn_entity(void *parent, std::uint32_t type, const float pos[3], std::int32_t collision_layer);
+void *component_parent(void *component); // the component's ycEntity
+bool entity_world_transform(void *entity, Transform &out);
+void set_entity_local_transform(void *entity, const Transform &transform);
+
+// The GameAnim entries do nothing on a non-anim. Play needs a sheet already set: ycCutterAnimComponent::Play reads through it unchecked (Linux 0x1f93ea).
+void game_anim_play(void *anim, const char *seq, std::int32_t loops, float speed, bool force);
+// Empty with no sequence set, which the API entry would dereference as null (Linux 0x552dd7, Windows RVA 0x2cf6a2).
+std::string_view game_anim_seq_name(void *anim);
+std::uint32_t game_anim_num_seq_frames(void *anim); // 0 with no sequence
+std::uint32_t game_anim_seq_frame_idx(void *anim);
+// idx must be below game_anim_num_seq_frames: rendering indexes the frame table with it unchecked.
+void game_anim_set_seq_frame_idx(void *anim, std::uint32_t idx);
+bool game_anim_is_visible(void *anim);
+void game_anim_set_visible(void *anim, bool visible);
+void game_anim_set_mul_color(void *anim, std::uint32_t rgba); // packed like mth::banner_color
+bool game_anim_local_transform(void *anim, Transform &out);
+void set_game_anim_local_transform(void *anim, const Transform &transform);
 
 // True while a menu pauses the live world; World::Update then runs only the pause queue. False with no live world or when the build lacks the accessors.
 bool world_is_paused();
