@@ -115,6 +115,11 @@ void App::set_mirror_switch_override(bool on)
         pal::logf(pal::LogLevel::Info, "console: mirror-switch override off");
 }
 
+void App::toggle_ghost_echo()
+{
+    hooks_->ghost_players_.toggle_echo();
+}
+
 void App::lock_modifiers(bool armed)
 {
     policy_.console_modifiers = true;

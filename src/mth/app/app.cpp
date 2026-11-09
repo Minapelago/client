@@ -47,7 +47,7 @@ void repl_game_fixed_update()
 // The native World hooks also fire for the popup, dialogue, prompt and overlay Worlds. The consumers past the liveness note count polls or walk menus
 // once per call, so they run only for the gamestate World. "WorldUpdate" delivers the spawn window at the top of World::Update, so there is no original
 // to forward.
-void world_update_notify(void *world)
+void world_update_notify(void *world, float step_seconds)
 {
     mth::App *app = g_app;
     if (app == nullptr)
@@ -57,7 +57,7 @@ void world_update_notify(void *world)
     const bool gamestate = mth::layout::is_gamestate_world(world);
     app->gate_note_worldupdate(gamestate);
     if (gamestate)
-        app->drain_grants();
+        app->on_world_update(world, step_seconds);
 }
 
 void world_update_end_notify(void *world)
@@ -141,7 +141,9 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
             hooks_->death_hooks_.reset();
         },
         // on_session_end: a different (seed, slot) authenticated. It arrives ahead of that connection's ApConnected, the safe point to drop the old session.
-        [this] { clear_session_state(); });
+        [this] { clear_session_state(); },
+        // on_event: ghost players follow connects, disconnects and datastore replies.
+        [this](const ApEvent &ev) { hooks_->ghost_players_.on_ap_event(ev); });
     area_reporter_ = std::make_unique<AreaReporter>(*link_);
     rando_ = std::make_unique<RandoBridge>(*link_, state_);
     granter_.emplace([this](int loc) { return rando_->is_ap_location(loc); }, [this](int loc) { rando_->on_location_collected(loc); });
@@ -157,7 +159,7 @@ App::App() : bundle_store_(mod_save_dir(), {pal::log_dir(), mod_save_dir()}), lo
         });
 
     hooks_ = std::make_unique<HookManager>(
-        *rando_, connection_.scouts, state_, bundle_store_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
+        *rando_, connection_.scouts, state_, bundle_store_, *link_, [this](const std::string &detail) { link_->send_death(detail); }, &player_tracker::player);
     {
         overlay_root_ = std::make_unique<OverlayRoot>(*this, banner_queue_);
         pal::overlay_start(overlay_root_.get());
@@ -223,9 +225,11 @@ void App::drive_tick()
     }
 }
 
-void App::drain_grants()
+void App::on_world_update(void *world, float step_seconds)
 {
-    hooks_->drain();
+    // The WorldUpdateEnd poll is a step late for ghost players, which need this step's room.
+    room_tracker::poll();
+    hooks_->drain(world, step_seconds);
     granter_->drain();
 }
 

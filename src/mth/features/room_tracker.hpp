@@ -13,4 +13,7 @@ void poll(); // game thread, per World::Update end
 // because the game reports room 0 for both "no room matched" and the real room 0.
 [[nodiscard]] bool current_screen(std::uint32_t *out);
 
+// The test poll() applies before a reading: the room timer runs, or this build has no timer entry.
+[[nodiscard]] bool settled();
+
 } // namespace mth::room_tracker

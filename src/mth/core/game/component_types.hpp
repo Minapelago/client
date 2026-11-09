@@ -32,6 +32,10 @@ inline constexpr std::uint64_t kStatusMenu = type_id("StatusMenu");
 // The rainbow-platform switch: a combat hittable, not an interactable. The Mirrors End shortcut
 // switches are the five of these that AP grants (#28).
 inline constexpr std::uint64_t kSwitchOre = type_id("SwitchOre");
+// The sprite component the MinaModAPI GameAnim entries check for before touching a component (Linux 0x552c3c).
+inline constexpr std::uint64_t kGameAnim = type_id("GameAnim");
+// The parent node GameAnim+0x200 (Linux) points at on a Player's anims.
+inline constexpr std::uint64_t kAnimParent = type_id("AnimParent");
 
 static_assert(kYcEntity == 0x8a1d0d54bd371fe0ULL, "ycEntity::GetTypeId()");
 static_assert(kTicketMachine == 0xca27866425643ac0ULL, "TicketMachine::GetTypeId()");
@@ -42,5 +46,7 @@ static_assert(kCheckpointChest == 0xf14d539e533485feULL, "CheckpointChest::GetTy
 static_assert(kWeaponsChestMenu == 0x7e089555de4a516eULL, "WeaponsChestMenu::GetTypeId()");
 static_assert(kStatusMenu == 0x2307b8c44d4fcc25ULL, "StatusMenu::GetTypeId()");
 static_assert(kSwitchOre == 0x73e113b5d8b2f1b4ULL, "SwitchOre::GetTypeId()");
+static_assert(kGameAnim == 0xecb6d01c7c35e6eaULL, "GameAnim::GetTypeId()");
+static_assert(kAnimParent == 0xaa558127b485c469ULL, "AnimParent::GetTypeId()");
 
 } // namespace mth::rtti

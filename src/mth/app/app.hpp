@@ -59,10 +59,10 @@ class App
     App(const App &) = delete;
     App &operator=(const App &) = delete;
 
-    void drive_tick();                     // called each fixed update
-    void drain_grants();                   // called from the World::Update pre-hook
-    void on_world_update_end(void *world); // called after World::Update
-    void on_world_destroy();               // called on World teardown; drops the cached Player*
+    void drive_tick();                                     // called each fixed update
+    void on_world_update(void *world, float step_seconds); // called from the World::Update pre-hook; drains grants
+    void on_world_update_end(void *world);                 // called after World::Update
+    void on_world_destroy();                               // called on World teardown; drops the cached Player*
     // Called on every native WorldUpdate; proves the mod-hook path is live and, for a gamestate World, that the World flag still reads.
     void gate_note_worldupdate(bool gamestate_world);
 
@@ -90,6 +90,8 @@ class App
     void probe_switches();
     // offline test: drive the Mirrors End switches with no AP session. It skips the bound-save check on the durable write, so use a scratch save.
     void set_mirror_switch_override(bool on);
+    // dev: toggle the ghost echo of the local player, sent through the server.
+    void toggle_ghost_echo();
 
     // The overlay reads status() every frame and `gate enforce` calls set_enforcing(), both on the render thread.
     SafetyGate gate_;

@@ -28,7 +28,7 @@ void poll()
     // RoomManager::BeginRoomTransition zeroes the room timer, then recomputes the index from the camera's bound list and stores 0 on no match (0 is also a real
     // room). Every transition state keeps the timer frozen, so a positive timer means the room is settled. Fails open without the entry. Known hole:
     // Player::UpdateResurrectur rewrites the index without zeroing the timer.
-    if (mod::room_time_api_available() && !(mod::room_time() > 0.0f))
+    if (!settled())
         return;
 
     const int room = mod::room_index();
@@ -41,6 +41,11 @@ void poll()
     g_screen = screen;
     g_have_screen = true;
     pal::logf(pal::LogLevel::Info, "area: gamestate %d room %d -> screen 0x%x", gs, room, screen);
+}
+
+bool settled()
+{
+    return !mod::room_time_api_available() || mod::room_time() > 0.0f;
 }
 
 bool current_screen(std::uint32_t *out)

@@ -73,7 +73,7 @@ std::vector<int> g_override_queries;
 void install_world_hooks()
 {
     g_world_calls = {};
-    REQUIRE(mod::install_world_update_hook([](void *world) { g_world_calls.updates.push_back(world); }));
+    REQUIRE(mod::install_world_update_hook([](void *world, float) { g_world_calls.updates.push_back(world); }));
     REQUIRE(mod::install_world_update_end_hook([](void *world) { g_world_calls.ends.push_back(world); }));
     REQUIRE(mod::install_world_destroy_hook([](void *world) { g_world_calls.destroys.push_back(world); }));
 }

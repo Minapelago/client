@@ -24,6 +24,10 @@ class FakeApLink final : public mth::IApLink
     bool deathlink_enabled = false;
     std::vector<std::string> sent_deaths;
     std::vector<int> reported_areas;
+    std::vector<std::string> watched;
+    std::vector<std::string> fetched; // watched with a Get
+    std::vector<std::string> unwatched;
+    std::vector<std::pair<std::string, std::vector<std::int64_t>>> ghost_sets;
 
     void connect(const std::string &server, const std::string &slot, const std::string &password) override
     {
@@ -66,6 +70,20 @@ class FakeApLink final : public mth::IApLink
     void report_area(int game_state) override
     {
         reported_areas.push_back(game_state);
+    }
+    void watch(const std::vector<std::string> &keys, bool get) override
+    {
+        watched.insert(watched.end(), keys.begin(), keys.end());
+        if (get)
+            fetched.insert(fetched.end(), keys.begin(), keys.end());
+    }
+    void unwatch(const std::vector<std::string> &keys) override
+    {
+        unwatched.insert(unwatched.end(), keys.begin(), keys.end());
+    }
+    void send_ghost(const std::string &key, std::vector<std::int64_t> packet) override
+    {
+        ghost_sets.emplace_back(key, std::move(packet));
     }
     [[nodiscard]] std::vector<mth::ApEvent> drain_events() override
     {

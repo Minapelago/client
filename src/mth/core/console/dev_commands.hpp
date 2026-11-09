@@ -27,7 +27,8 @@ enum class CommandKind
     LitLamps,  // args: [lamp indices 0..5 | off] (force Ossex fountain lamps lit; offline test)
     SaveTest,  // args: dump|write|noflush|flush (save-takeover validation; dev only)
     Trap,      // args: [modifier idx, (optional) seconds] (fire an AP trap by hand; offline test)
-    Switches   // args: [] (log every rainbow switch in the live scene; #28 probe)
+    Switches,  // args: [] (log every rainbow switch in the live scene; #28 probe)
+    Ghost      // args: [] (toggle the ghost echo of the local player; dev only)
 };
 
 struct ParsedCommand

@@ -32,6 +32,10 @@
   {
    "name": "_ZN6Player8OnBounceEv",
    "kind": "Code"
+  },
+  {
+   "name": "_ZN10AnimEffect4InitE11ycStringRefS0_P16ycPaletteTexture",
+   "kind": "Code"
   }
  ],
  "windows": {
@@ -62,6 +66,9 @@
   },
   "_ZN6Player8OnBounceEv": {
    "rva": 10575808
+  },
+  "_ZN10AnimEffect4InitE11ycStringRefS0_P16ycPaletteTexture": {
+   "rva": 4912720
   }
  },
  "linux": {
@@ -70,6 +77,9 @@
   },
   "_ZN6Player8OnBounceEv": {
    "rva": 14149168
+  },
+  "_ZN10AnimEffect4InitE11ycStringRefS0_P16ycPaletteTexture": {
+   "rva": 7893392
   }
  }
 }

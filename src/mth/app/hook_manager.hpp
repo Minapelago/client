@@ -6,6 +6,7 @@
 
 #include "mth/features/ability_hooks.hpp"
 #include "mth/features/death_hooks.hpp"
+#include "mth/features/ghost_players.hpp"
 #include "mth/features/levelcap_hooks.hpp"
 #include "mth/features/location_hooks.hpp"
 #include "mth/features/lock_hooks.hpp"
@@ -22,6 +23,7 @@ namespace mth
 
 class RandoBridge;
 class ApState;
+class IApLink;
 struct SessionPolicy;
 class ApSaveBundleStore;
 
@@ -29,7 +31,7 @@ class ApSaveBundleStore;
 class HookManager
 {
   public:
-    HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle,
+    HookManager(RandoBridge &rando, const std::map<int, ScoutInfo> &scout, ApState &state, ApSaveBundleStore &bundle, IApLink &link,
                 std::function<void(const std::string &)> send_death, std::function<void *()> get_player);
 
     HookManager(const HookManager &) = delete;
@@ -39,9 +41,9 @@ class HookManager
     // Seed boundary: drop the lock removals seeded from one connection's items and the captured AP-game slot so neither reaches the next save, lift any
     // running trap and drop any latched death.
     void clear_session_state();
-    void drain();                          // World::Update pre-hook window
-    void on_world_update_end(void *world); // menu-world scene walk for the save takeover
-    void on_world_destroy();               // the gamestate World is going away: drop handles into it
+    void drain(void *world, float step_seconds); // World::Update pre-hook window
+    void on_world_update_end(void *world);       // menu-world scene walk for the save takeover
+    void on_world_destroy();                     // the gamestate World is going away: drop handles into it
     void append_status_lines(std::vector<std::string> &out) const;
 
   private:
@@ -68,6 +70,7 @@ class HookManager
     StatusMenuCaps status_menu_caps_; // holds level_cap_hooks_
     SaveTakeover save_takeover_;      // the title gate's StartGame detour calls it
     TrapHooks traps_;
+    GhostPlayers ghost_players_; // the console toggles its echo
 };
 
 } // namespace mth

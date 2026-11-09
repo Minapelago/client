@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -56,6 +57,8 @@ struct ApConnected
     std::vector<std::int64_t> checked_locations;
     std::vector<std::int64_t> missing_locations;
     SlotDataConfig config{}; // everything read out of slot_data (deathlink already force-off adjusted)
+    int team{-1};
+    std::vector<int> mina_slots; // other slots on our team playing this game
 };
 struct ApItemReceived
 {
@@ -97,6 +100,15 @@ struct ApScoutInfo
     std::vector<ScoutInfo> locations;
 };
 
+// One key of a datastore SetReply or Retrieved. Untrusted: any client in the room can Set any key.
+struct ApStored
+{
+    std::string key;
+    int slot{-1};                      // the setter the server stamped; -1 for a Retrieved entry
+    std::optional<std::int64_t> value; // when it is an integer
+    std::vector<std::int64_t> ghost;   // the extra field "g" when it is an int array of at most kMaxWireInts
+};
+
 // The server authenticated a different (seed, player_slot) than this process was on. Emitted just before that connection's ApConnected so the old
 // session drops first. Not emitted on a same seed+slot reconnect.
 struct ApSessionEnded
@@ -104,6 +116,6 @@ struct ApSessionEnded
 };
 
 using ApEvent = std::variant<ApConnected, ApConnecting, ApItemReceived, ApLocationsChecked, ApDisconnected, ApConnectionRefused, ApStatusChanged,
-                             ApDeathReceived, ApPrintBroadcast, ApScoutInfo, ApSessionEnded>;
+                             ApDeathReceived, ApPrintBroadcast, ApScoutInfo, ApSessionEnded, ApStored>;
 
 } // namespace mth

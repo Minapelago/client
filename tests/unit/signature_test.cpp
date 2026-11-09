@@ -184,6 +184,10 @@ static_assert(hash64("ycControllerUpdate") == 0x7cc4f96a2b42b94aULL);
 // The set also covers the hash's 12-byte block seam: "GameInit" (8) and "GameShutdown" (12) take the
 // byte-wise tail alone, while "GameStateTransition" (19) takes one whole block plus a tail.
 
+// lookup3's published hashlittle vectors, which engine_hash relies on through the pc seed.
+static_assert(static_cast<std::uint32_t>(hash64("Four score and seven years ago", 0U, 0U)) == 0x17770551U);
+static_assert(static_cast<std::uint32_t>(hash64("Four score and seven years ago", 1U, 0U)) == 0xcd628161U);
+
 TEST_CASE("hook_hash separates names that differ slightly", "[hookhash]")
 {
     REQUIRE(hash64("ItemsOnPickup") != hash64("ItemsOnPickupDone"));

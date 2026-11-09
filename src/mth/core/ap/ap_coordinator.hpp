@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "mth/core/ap/ap_events.hpp"
+
 namespace mth
 {
 
@@ -18,10 +20,10 @@ class ApCoordinator
   public:
     // Callbacks run on the game thread from tick(). on_session_reset: an ApConnected or ApDisconnected was drained (e.g. clear the scout cache).
     // on_session_end: the link reports a different (seed, slot), just before that connection's ApConnected applies; never on a same seed+slot reconnect.
-    // on_death gets the bounce's source (who died) and cause.
+    // on_death gets the bounce's source (who died) and cause. on_event gets every event after the rest have run.
     ApCoordinator(IApLink &link, ApState &state, std::function<void(const std::string &source, const std::string &cause)> on_death = {},
                   std::function<void(const std::vector<BannerSegment> &)> on_broadcast = {}, std::function<void(const std::vector<ScoutInfo> &)> on_scout = {},
-                  std::function<void()> on_session_reset = {}, std::function<void()> on_session_end = {});
+                  std::function<void()> on_session_reset = {}, std::function<void()> on_session_end = {}, std::function<void(const ApEvent &)> on_event = {});
 
     void tick();
 
@@ -33,6 +35,7 @@ class ApCoordinator
     std::function<void(const std::vector<ScoutInfo> &)> on_scout_;
     std::function<void()> on_session_reset_;
     std::function<void()> on_session_end_;
+    std::function<void(const ApEvent &)> on_event_;
 };
 
 } // namespace mth

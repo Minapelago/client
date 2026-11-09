@@ -13,6 +13,7 @@
 #include "mth/core/ap/ap_ids.hpp" // kLocBase
 #include "mth/core/ap/broadcast.hpp"
 #include "mth/core/ap/connect_target.hpp"
+#include "mth/core/ap/ghost_stream.hpp"
 #include "mth/core/ap/slot_data.hpp"
 #include "mth/net/deathlink.hpp"
 #include "pal/pal_cert.hpp"
@@ -23,6 +24,29 @@ namespace
 constexpr const char *kGameName = "Mina The Hollower"; // client/world contract; must match the apworld's game name
 constexpr int kItemHandling = 0b111;                   // remote + own-world + starting inventory
 constexpr std::chrono::seconds kConnectTimeout{30};
+
+std::optional<std::int64_t> as_int(const nlohmann::json &v)
+{
+    return v.is_number_integer() ? std::optional<std::int64_t>(v.get<std::int64_t>()) : std::nullopt;
+}
+
+// The int array in "g", or empty. The length check comes first so a hostile Set cannot make this thread copy a huge array.
+std::vector<std::int64_t> ghost_packet(const nlohmann::json &cmd)
+{
+    const auto g = cmd.find("g");
+    if (g == cmd.end() || !g->is_array() || g->size() > mth::ghost::kMaxWireInts)
+        return {};
+    std::vector<std::int64_t> out;
+    out.reserve(g->size());
+    for (const nlohmann::json &v : *g)
+    {
+        if (!v.is_number_integer())
+            return {};
+        out.push_back(v.get<std::int64_t>());
+    }
+    return out;
+}
+
 } // namespace
 
 namespace mth::net
@@ -80,14 +104,7 @@ void ApLink::send_locations(const std::vector<std::int64_t> &location_ids)
             if (!client_ || location_ids.empty())
                 return;
             std::list<int64_t> ids(location_ids.begin(), location_ids.end());
-            try
-            {
-                client_->LocationChecks(ids);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: LocationChecks failed: %s", e.what());
-            }
+            client_->LocationChecks(ids);
         });
 }
 
@@ -99,15 +116,8 @@ void ApLink::scout_locations(const std::vector<std::int64_t> &location_ids)
             if (!client_ || location_ids.empty())
                 return;
             std::list<int64_t> ids(location_ids.begin(), location_ids.end());
-            try
-            {
-                // create_as_hint=2: free hints for the scouted shop contents; the server dedups re-scouted locations.
-                client_->LocationScouts(ids, 2);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: LocationScouts failed: %s", e.what());
-            }
+            // create_as_hint=2: free hints for the scouted shop contents; the server dedups re-scouted locations.
+            client_->LocationScouts(ids, 2);
         });
 }
 
@@ -116,16 +126,8 @@ void ApLink::set_goal()
     enqueue(
         [this]
         {
-            if (!client_)
-                return;
-            try
-            {
+            if (client_)
                 client_->StatusUpdate(APClient::ClientStatus::GOAL);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: StatusUpdate(GOAL) failed: %s", e.what());
-            }
         });
 }
 
@@ -140,17 +142,10 @@ void ApLink::enable_deathlink(bool on)
         {
             if (!client_)
                 return;
-            try
-            {
-                std::list<std::string> tags;
-                if (effective)
-                    tags.push_back("DeathLink");
-                client_->ConnectUpdate(false, kItemHandling, true, tags);
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: ConnectUpdate failed: %s", e.what());
-            }
+            std::list<std::string> tags;
+            if (effective)
+                tags.push_back("DeathLink");
+            client_->ConnectUpdate(false, kItemHandling, true, tags);
         });
 }
 
@@ -167,20 +162,13 @@ void ApLink::send_death(const std::string &detail)
             const std::string cause = mth::net::deathlink_cause(slot_name_, detail);
             nlohmann::json data = nlohmann::json::parse(mth::net::make_deathlink_payload(slot_name_, cause, now));
             std::list<std::string> tags{"DeathLink"};
-            try
+            // Bounce returns false while the link is still coming up; a refused send later throws, and run() logs it.
+            if (!client_->Bounce(data, {}, {}, tags))
             {
-                // Bounce returns false while the link is still coming up. Past that the write result is lost: apclientpp drops wswrap's asio error.
-                if (!client_->Bounce(data, {}, {}, tags))
-                {
-                    pal::logf(pal::LogLevel::Warn, "deathlink: bounce refused (link not ready); death not sent");
-                    return;
-                }
-                pal::logf(pal::LogLevel::Info, "deathlink: sent bounce (cause=%s)", cause.c_str());
+                pal::logf(pal::LogLevel::Warn, "deathlink: bounce refused (link not ready); death not sent");
+                return;
             }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "deathlink: Bounce failed: %s", e.what());
-            }
+            pal::logf(pal::LogLevel::Info, "deathlink: sent bounce (cause=%s)", cause.c_str());
         });
 }
 
@@ -191,18 +179,40 @@ void ApLink::report_area(int game_state)
         {
             if (!client_)
                 return;
-            try
-            {
-                APClient::DataStorageOperation op;
-                op.operation = "replace";
-                op.value = game_state;
-                const std::string key = "MTH_level_" + std::to_string(client_->get_team_number()) + "_" + std::to_string(client_->get_player_number());
-                client_->Set(key, 0, false, {op});
-            }
-            catch (const std::exception &e)
-            {
-                pal::logf(pal::LogLevel::Warn, "ApLink: area Set failed: %s", e.what());
-            }
+            APClient::DataStorageOperation op;
+            op.operation = "replace";
+            op.value = game_state;
+            client_->Set(mth::datastore_key("level", client_->get_team_number(), client_->get_player_number()), 0, false, {op});
+        });
+}
+
+void ApLink::watch(const std::vector<std::string> &keys, bool get)
+{
+    enqueue(
+        [this, keys, get]
+        {
+            if (!client_)
+                return;
+            const std::list<std::string> list(keys.begin(), keys.end());
+            client_->SetNotify(list);
+            if (get) // SetNotify does not send the current value
+                client_->Get(list);
+        });
+}
+
+void ApLink::unwatch(const std::vector<std::string> &keys)
+{
+    // A stub, waiting on ArchipelagoMW/Archipelago#6029 (SetUnnotify) landing and on apclientpp gaining a way to send it. Until then the server keeps
+    // every subscription for the life of the connection, so they accumulate and the game thread's room check drops what the excess delivers.
+}
+
+void ApLink::send_ghost(const std::string &key, std::vector<std::int64_t> packet)
+{
+    enqueue(
+        [this, key, packet = std::move(packet)]
+        {
+            if (client_)
+                client_->Set(key, 0, false, {}, {{"g", packet}});
         });
 }
 
@@ -221,7 +231,16 @@ void ApLink::run()
                 cmd = std::move(commands_.front());
                 commands_.pop();
             }
-            cmd();
+            // websocketpp's send throws while a connection closes, up to 5 s after a pong timeout that apclientpp has not noticed yet. An escape
+            // from here would terminate the game; the poll below sees the drop.
+            try
+            {
+                cmd();
+            }
+            catch (const std::exception &e)
+            {
+                pal::logf(pal::LogLevel::Warn, "ApLink: command failed: %s", e.what());
+            }
         }
 
         if (client_)
@@ -384,6 +403,13 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                 push_event(mth::ApSessionEnded{});
             }
 
+            // slot_info is filled from this same Connected packet before the handler runs.
+            const int team = client_->get_team_number();
+            std::vector<int> mina_slots;
+            for (const auto &p : client_->get_players())
+                if (p.team == team && p.slot != player_slot && client_->get_player_game(p.slot) == kGameName)
+                    mina_slots.push_back(p.slot);
+
             auto missing = client_->get_missing_locations();
             auto checked = client_->get_checked_locations();
             push_event(mth::ApConnected{.seed = client_->get_seed(),
@@ -391,7 +417,9 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                                         .player_slot = client_->get_player_number(),
                                         .checked_locations = std::vector<std::int64_t>(checked.begin(), checked.end()),
                                         .missing_locations = std::vector<std::int64_t>(missing.begin(), missing.end()),
-                                        .config = std::move(config)});
+                                        .config = std::move(config),
+                                        .team = team,
+                                        .mina_slots = std::move(mina_slots)});
 
             // Publish last: the resend gate keys on is_connected(), so flipping it before ApConnected is drained would flush the previous seed's checks here.
             connected_.store(true);
@@ -455,6 +483,29 @@ void ApLink::setup_handlers(const std::string &slot, const std::string &password
                 out.push_back(std::move(si));
             }
             push_event(mth::ApScoutInfo{std::move(out)});
+        });
+
+    // A stock server stamps the setter on every SetReply, so one without an integer slot is dropped and -1 keeps meaning a Retrieved entry.
+    client_->set_set_reply_handler(
+        [this](const nlohmann::json &cmd)
+        {
+            const auto key = cmd.find("key");
+            const auto slot = cmd.find("slot");
+            if (teardown_pending_ || key == cmd.end() || !key->is_string() || slot == cmd.end() || !slot->is_number_integer())
+                return;
+            const auto value = cmd.find("value");
+            push_event(mth::ApStored{.key = key->get<std::string>(),
+                                     .slot = slot->get<int>(),
+                                     .value = value != cmd.end() ? as_int(*value) : std::nullopt,
+                                     .ghost = ghost_packet(cmd)});
+        });
+    client_->set_retrieved_handler(
+        [this](const std::map<std::string, nlohmann::json> &keys)
+        {
+            if (teardown_pending_)
+                return;
+            for (const auto &[key, value] : keys)
+                push_event(mth::ApStored{.key = key, .value = as_int(value)});
         });
 
     client_->set_bounced_handler(
