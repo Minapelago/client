@@ -14,6 +14,7 @@
 #include "mth/core/ap/ability_ids.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/slot_data.hpp"
+#include "mth/core/game/bone_locations.hpp"
 #include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/modifiers.hpp"
 #include "mth/core/rules/goal.hpp"
@@ -207,7 +208,7 @@ TEST_CASE("ap_ids: the trap segment is 1000 wide from kTrapItemBase", "[contract
     REQUIRE_FALSE(mth::is_trap_item(mth::ap_item_id(9)));
 }
 
-TEST_CASE("every apworld location is a collection slot or a boss slot", "[contract]")
+TEST_CASE("every apworld location is a collection slot, a boss slot or a bone row", "[contract]")
 {
     for (const auto &[name, value] : fixture().at("locations").items())
     {
@@ -215,8 +216,10 @@ TEST_CASE("every apworld location is a collection slot or a boss slot", "[contra
         INFO(name << " = " << id);
         if (id < mth::kBossLocBase)
             CHECK(id < mth::layout::kLocationCount);
-        else
+        else if (id < mth::kBoneLocBase)
             CHECK(id <= mth::boss_location_slot(mth::kMaxBossIndex));
+        else
+            CHECK(id - mth::kBoneLocBase < static_cast<std::int64_t>(mth::bone_rows().size()));
     }
 }
 

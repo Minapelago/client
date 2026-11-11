@@ -11,12 +11,13 @@ namespace mth
 //   ITEM space                          LOCATION space
 //     0  [0..999]     vanilla itemType    0  [0..999]     collection slots (kLocBase + slot)
 //     1  [1000..1999] progressive         1  [1000..1999] boss defeats (kBossLocBase + index)
-//     2  [2000..2499] kear blocks         2+ reserved
+//     2  [2000..2499] kear blocks         2..9 reserved
 //     2  [2500..2999] area kear locks
 //     3  [3000..3999] abilities
 //     4  [4000..4999] blockers
 //     5  [5000..5999] traps
-//     6+ reserved
+//     6+ reserved                         10 [10000..19999] bone spawn points (kBoneLocBase + bone table index)
+//                                         20+ reserved
 
 // Vanilla game items
 // ap item id = kItemBase + game itemType (0..194; 0 = engine "None", reserved).
@@ -423,5 +424,9 @@ inline constexpr int kMaxBossIndex = 0x1C;
 {
     return kBossLocBase + boss_index;
 }
+
+// A bone location id is the row's frozen index in the bone table (bone_locations.hpp) plus the base.
+inline constexpr int kBoneLocBase = 10000;
+inline constexpr int kBoneLocSegmentWidth = 10000; // ids [10000, 20000)
 
 } // namespace mth
