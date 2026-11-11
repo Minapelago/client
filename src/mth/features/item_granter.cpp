@@ -9,6 +9,7 @@
 #include "mth/core/ap/grant_queue.hpp"
 #include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/game_symbols.hpp"
+#include "mth/features/bone_hooks.hpp"
 #include "mth/features/game_table_access.hpp"
 #include "mth/features/player_tracker.hpp"
 #include "pal/pal_log.hpp"
@@ -58,6 +59,15 @@ bool on_items_pickup_done(int slot, int item_type, void *player)
 bool on_items_pickup(int slot, int item_type, void *player)
 {
     mth::player_tracker::note_player(player);
+
+    // Returning true skips Items::OnPickup, so no bones are paid; the native SaveSlot records are already written.
+    if (const int id = mth::bone_hooks::take_grant(slot, item_type); id >= 0 && g_is_ap_location && g_is_ap_location(id))
+    {
+        pal::logf(pal::LogLevel::Info, "outbound: collected AP bone location %d", id);
+        if (g_report_collected)
+            g_report_collected(id);
+        return true;
+    }
 
     // Backstop to TicketMachineGate: reaching here means the prompt suppression missed. Refusing the grant costs the player the donated bones, so it is only
     // the second line of defence.

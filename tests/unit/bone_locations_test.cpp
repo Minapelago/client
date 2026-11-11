@@ -39,3 +39,33 @@ TEST_CASE("find_bone: a spawn-point key finds its row, anything else finds nothi
     CHECK(mth::find_bone(1) == nullptr);
     CHECK(mth::find_bone(~0ull) == nullptr);
 }
+
+TEST_CASE("is_bone_pickup: a bone item type on a pickup with no collection slot", "[bones]")
+{
+    CHECK(mth::is_bone_pickup(-1, 40));
+    CHECK(mth::is_bone_pickup(-1, 41));
+    CHECK(mth::is_bone_pickup(-1, 50));
+    CHECK_FALSE(mth::is_bone_pickup(-1, 39));
+    CHECK_FALSE(mth::is_bone_pickup(-1, 51));
+    // A collected child comes back from Init as this refill, so the respawn gate reads Init's argument.
+    CHECK_FALSE(mth::is_bone_pickup(-1, 37));
+    CHECK_FALSE(mth::is_bone_pickup(12, 41));
+}
+
+TEST_CASE("is_bone_grant: only the payout of the bone pickup in progress", "[bones]")
+{
+    CHECK(mth::is_bone_grant(-1, 41, 41));
+    CHECK(mth::is_bone_grant(-1, 50, 50));
+    CHECK_FALSE(mth::is_bone_grant(12, 41, 41)); // a collection slot's grant
+    CHECK_FALSE(mth::is_bone_grant(-1, 41, 42)); // another pickup's payout
+    CHECK_FALSE(mth::is_bone_grant(-1, 41, -1)); // no bone in progress
+    CHECK_FALSE(mth::is_bone_grant(-1, 37, 37)); // a refill
+}
+
+TEST_CASE("should_destroy_bone: a checked bone the game left alive", "[bones]")
+{
+    CHECK(mth::should_destroy_bone(true, false));
+    CHECK_FALSE(mth::should_destroy_bone(true, true));
+    CHECK_FALSE(mth::should_destroy_bone(false, false));
+    CHECK_FALSE(mth::should_destroy_bone(false, true));
+}

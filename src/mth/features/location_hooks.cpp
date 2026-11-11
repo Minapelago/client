@@ -10,10 +10,13 @@
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/broadcast.hpp"
 #include "mth/core/ap/rando_bridge.hpp"
+#include "mth/core/game/bone_locations.hpp"
 #include "mth/core/game/game_layout.hpp"
 #include "mth/core/game/game_symbols.hpp"
+#include "mth/features/bone_hooks.hpp"
 #include "mth/features/game_table_access.hpp"
 #include "mth/features/menus/shop_menu.hpp"
+#include "mth/features/name_key.hpp"
 #include "pal/pal_game.hpp"
 #include "pal/pal_log.hpp"
 #include "pal/pal_mem.hpp"
@@ -229,8 +232,23 @@ void reset_native_bit_enforcement()
 
 void (*g_orig_pickup_init)(void *, int, int, bool) = nullptr;
 
+// Flags the pickup killed and queues its entity for destruction; false without an entity or world.
+bool queue_destroy_pickup(void *self)
+{
+    void *ent = pal::at<void *>(self, mth::layout::kComponentEntityOff);
+    void *world = ent != nullptr ? pal::at<void *>(ent, mth::layout::kEntityWorldOff) : nullptr;
+    if (ent == nullptr || world == nullptr)
+        return false;
+    pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) |= 1u;
+    mod::queue_destroy_entity(world, ent, false);
+    return true;
+}
+
 void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
 {
+    // Read before the original: a native kill in Init nulls entity+0x40, the spawn point the key hangs off (GameComponent::Kill, Linux 0xcec14b).
+    const mth::BoneRow *bone = g_pickup_offsets_ok && mth::is_bone_pickup(loc_idx, item_type) ? mth::find_bone(mth::component_name_key(self)) : nullptr;
+    mth::bone_hooks::on_pickup_init(self);
     if (g_orig_pickup_init)
         g_orig_pickup_init(self, item_type, loc_idx, flag);
 
@@ -255,6 +273,15 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     if (!g_pickup_offsets_ok || g_bridge == nullptr)
         return;
 
+    if (bone != nullptr)
+    {
+        const int id = mth::bone_location_id(*bone);
+        const bool killed = (pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) & 1u) != 0;
+        if (mth::should_destroy_bone(g_bridge->is_checked(id), killed) && mod::queue_destroy_available() && queue_destroy_pickup(self))
+            pal::logf(pal::LogLevel::Debug, "outbound: already-checked AP bone location %d -> QueueDestroy", id);
+        return;
+    }
+
     // #67: the WeaponMerchant (Legovich) forge spawns the forged-weapon Pickup with loc_idx == the pending weapon index SaveSlot+0xc70. The mod suppresses that
     // grant, so vanilla OnPickupDone's `if(c70==loc) c70=-1` reset never runs and the merchant stays uninteractable. Cleared here, after g_orig_pickup_init
     // built the pickup, because clearing c70 before that spawn freezes with itemType 0.
@@ -270,14 +297,8 @@ void repl_pickup_init(void *self, int item_type, int loc_idx, bool flag)
     // Respawn suppression (fallback): already-checked location; tear down via QueueDestroy.
     if (mod::queue_destroy_available() && g_bridge->is_checked(loc_idx))
     {
-        void *ent = pal::at<void *>(self, mth::layout::kComponentEntityOff);
-        void *world = ent != nullptr ? pal::at<void *>(ent, mth::layout::kEntityWorldOff) : nullptr;
-        if (ent != nullptr && world != nullptr)
-        {
-            pal::at<unsigned>(self, mth::layout::kPickupKilledFlagOff) |= 1u;
-            mod::queue_destroy_entity(world, ent, false);
+        if (queue_destroy_pickup(self))
             pal::logf(pal::LogLevel::Info, "outbound: already-checked AP location locIdx=%d -> QueueDestroy", loc_idx);
-        }
         return;
     }
 
@@ -305,6 +326,7 @@ void on_pickup_collected(void *pickup)
 {
     if (!g_pickup_offsets_ok || g_bridge == nullptr)
         return;
+    mth::bone_hooks::on_pickup(pickup);
     const int loc_idx = pickup_loc_idx(pickup);
     if (loc_idx >= 0)
         pal::logf(pal::LogLevel::Debug, "Pickup::OnPickup locIdx=%d", loc_idx);

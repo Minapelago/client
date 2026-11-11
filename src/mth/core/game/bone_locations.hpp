@@ -25,4 +25,21 @@ struct BoneRow
     return kBoneLocBase + row.index;
 }
 
+inline constexpr int kFirstBoneItemType = 40; // kItemType_Treasure_Smallest
+inline constexpr int kLastBoneItemType = 50;  // BoneDust; 40..50 are all item kind 6
+
+[[nodiscard]] constexpr bool is_bone_pickup(int loc_idx, int item_type) noexcept
+{
+    return loc_idx == -1 && item_type >= kFirstBoneItemType && item_type <= kLastBoneItemType;
+}
+// in_progress_item_type is the marked pickup's live type, -1 for none.
+[[nodiscard]] constexpr bool is_bone_grant(int slot, int item_type, int in_progress_item_type) noexcept
+{
+    return slot == -1 && item_type == in_progress_item_type && is_bone_pickup(-1, item_type);
+}
+[[nodiscard]] constexpr bool should_destroy_bone(bool checked, bool natively_killed) noexcept
+{
+    return checked && !natively_killed;
+}
+
 } // namespace mth

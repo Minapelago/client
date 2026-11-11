@@ -7,6 +7,7 @@
 #include "mth/core/ap/rando_bridge.hpp"
 #include "mth/core/rules/session_policy.hpp"
 #include "mth/features/ability_hooks.hpp"
+#include "mth/features/bone_hooks.hpp"
 #include "mth/features/death_hooks.hpp"
 #include "mth/features/fountain_lamp_hooks.hpp"
 #include "mth/features/item_granter.hpp"
@@ -82,6 +83,7 @@ void HookManager::tick(ApState &state, const SessionPolicy &policy, int save_gam
     location_hooks_.set_kear_gating(authed, authed && state.kear_keys_suppressed());
     location_hooks_.reconcile_kear_keys(); // re-cancel AP kears that a reload restored as usable keys (suppress modes)
     location_hooks_.enforce_native_bits(); // native collected-bit for server-collected durable-bit chests (Collect/coop)
+    bone_hooks::tick();
 
     // slot_data lamps, 0 when not authed. The detour ORs the sticky console override over them.
     set_fountain_slot_mask(authed ? state.config().lit_generator_lamp_mask : 0);
