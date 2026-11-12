@@ -186,6 +186,7 @@ void DevConsole::run_input()
         println("          savetest dump|write|noflush|flush  (save-takeover validation; dev only)");
         println("          switches [on|off]  (log this room's rainbow switches; on|off forces the AP drive, scratch saves only)");
         println("          ghost  (toggle a ghost of yourself, sent through the AP server while connected; dev test)");
+        println("          bonelabels on|off  (label each bone in this room with its AP location id; red = never a location, grey = checked)");
         break;
     case CommandKind::Clear:
         log_.clear();
@@ -331,6 +332,12 @@ void DevConsole::run_input()
         break;
     case CommandKind::Ghost:
         app_.commands_.post([this] { app_.toggle_ghost_echo(); });
+        break;
+    case CommandKind::BoneLabels:
+        if (cmd.args.empty())
+            println("usage: bonelabels on|off");
+        else
+            app_.commands_.post([this, on = parse_on(cmd.args[0])] { app_.set_bone_labels(on); });
         break;
     case CommandKind::SaveTest:
         if (cmd.args.empty())

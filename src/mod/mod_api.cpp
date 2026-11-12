@@ -759,6 +759,42 @@ bool set_text_color(void *text_component, std::uint32_t rgba)
     return true;
 }
 
+void *debug_draw(const char *layer)
+{
+    return layer != nullptr && has(&MinaModAPI::GetDebugDraw) ? g_mod_api->GetDebugDraw(layer) : nullptr;
+}
+
+bool debug_draw_load_font()
+{
+    if (!has(&MinaModAPI::CreateFileRef) || !has(&MinaModAPI::FileRefWaitForLoaded))
+        return false;
+    // Never destroyed: ycDrawUtil::Text resolves the font by name on each call, and releasing the last ref could unload the file.
+    ycFileRefBase *ref = g_mod_api->CreateFileRef("debugdraw.font.yc");
+    return ref != nullptr && g_mod_api->FileRefWaitForLoaded(ref);
+}
+
+void debug_draw_text(void *dd, const char *text, const float pos[3], float size, std::uint32_t rgba)
+{
+    if (dd != nullptr && text != nullptr && pos != nullptr && has(&MinaModAPI::DebugDrawText))
+        g_mod_api->DebugDrawText(static_cast<ycDrawUtil *>(dd), text, to_mm_color(rgba), MM_Vec3{pos[0], pos[1], pos[2]}, size);
+}
+
+void debug_draw_rect(void *dd, const float center[3], float w, float h, std::uint32_t rgba)
+{
+    if (dd != nullptr && center != nullptr && has(&MinaModAPI::DebugDrawRect))
+        g_mod_api->DebugDrawRect(static_cast<ycDrawUtil *>(dd), MM_Vec3{center[0], center[1], center[2]}, w, h, to_mm_color(rgba), true);
+}
+
+bool level_to_world(float x, float y, float out[2])
+{
+    if (out == nullptr || !has(&MinaModAPI::SpawnPointSpawnPointTransformPos))
+        return false;
+    const MM_Vec2 v = g_mod_api->SpawnPointSpawnPointTransformPos(MM_Vec2{x, y});
+    out[0] = v.x;
+    out[1] = v.y;
+    return true;
+}
+
 bool palette_api_available()
 {
     return has_appended(&MinaModAPI::ClonePalette) && has_appended(&MinaModAPI::PaletteSetGroup) && has_appended(&MinaModAPI::PaletteWriteIndex) &&

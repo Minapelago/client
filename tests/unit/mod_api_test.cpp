@@ -249,3 +249,26 @@ TEST_CASE("mod: an IsItemCollected query off the game thread gets the vanilla an
     REQUIRE(game.mod_item_collected(30) == true);
     mod::remove_all_hooks();
 }
+
+TEST_CASE("mod: DebugDraw and level_to_world fail closed without their entries", "[mod]")
+{
+    mth::test::FakeGame game; // its API leaves the DebugDraw, file-ref and spawn-transform entries null
+    const float pos[3] = {1.0f, 2.0f, 0.0f};
+    float out[2] = {7.0f, 7.0f};
+    CHECK(mod::debug_draw("World") == nullptr);
+    CHECK_FALSE(mod::debug_draw_load_font());
+    CHECK_FALSE(mod::level_to_world(10.0f, 20.0f, out));
+    CHECK(out[0] == 7.0f);
+    mod::debug_draw_text(&game, "10000", pos, 0.6f, 0xff50e6ffu);
+    mod::debug_draw_rect(&game, pos, 0.8f, 0.8f, 0xff50e6ffu);
+
+    pal::set_game_text_range(kWholeAddressSpace);
+    game.api.SpawnPointSpawnPointTransformPos = [](MM_Vec2 v) { return MM_Vec2{v.x * 0.1f, -v.y * 0.1f}; };
+    REQUIRE(mod::level_to_world(10.0f, 20.0f, out));
+    CHECK(out[0] == 1.0f);
+    CHECK(out[1] == -2.0f);
+
+    mod::set_api(nullptr);
+    CHECK(mod::debug_draw("World") == nullptr);
+    CHECK_FALSE(mod::level_to_world(10.0f, 20.0f, out));
+}

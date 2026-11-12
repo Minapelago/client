@@ -2,7 +2,9 @@
 
 @PROJECT_NAME@ is MIT licensed; see LICENSE in the folder above. It statically links
 the libraries below, and each directory here holds that library's own licence file,
-copied verbatim from the revision this build used.
+copied verbatim from the revision this build used. The exception is debugdraw-font/,
+which covers data/debugdraw.font.yc, an atlas made from the Inconsolata typeface,
+under the SIL Open Font License 1.1.
 
 Several of these libraries vendor further components of their own. Those are not
 copied here; they are covered by, and traceable from, the upstream project whose

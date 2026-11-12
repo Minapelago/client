@@ -43,6 +43,7 @@ constexpr VerbKind kVerbKinds[] = {
     {"trap", CommandKind::Trap},
     {"switches", CommandKind::Switches},
     {"ghost", CommandKind::Ghost},
+    {"bonelabels", CommandKind::BoneLabels},
 };
 
 CommandKind verb_to_kind(const std::string &lower)

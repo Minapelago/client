@@ -90,7 +90,7 @@ jobs:
         with:
           path: dist
           pattern: mod-*
-      # Each artifact extracts to dist/mod-<platform>-<version>/apclient/ (the binary, mod.yc and the licence files); re-zip per platform so the
+      # Each artifact extracts to dist/mod-<platform>-<version>/apclient/ (the binary, mod.yc, data/ and the licence files); re-zip per platform so the
       # release asset unpacks to an apclient/ drop-in folder. A gate build that stamped another version has no folder for this tag.
       - name: Package drop-in zips
         env:

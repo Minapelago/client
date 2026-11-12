@@ -10,6 +10,7 @@
 #include "mth/core/ap/ability_ids.hpp"
 #include "mth/core/ap/ap_ids.hpp"
 #include "mth/core/ap/ap_link.hpp"
+#include "mth/features/bone_hooks.hpp"
 #include "mth/features/fountain_lamp_hooks.hpp"
 #include "mth/features/mirror_switches.hpp"
 #include "pal/pal_log.hpp"
@@ -118,6 +119,12 @@ void App::set_mirror_switch_override(bool on)
 void App::toggle_ghost_echo()
 {
     hooks_->ghost_players_.toggle_echo();
+}
+
+void App::set_bone_labels(bool on)
+{
+    bone_hooks::set_labels(on);
+    pal::logf(pal::LogLevel::Info, "console: bone labels %s", on ? "on" : "off");
 }
 
 void App::lock_modifiers(bool armed)

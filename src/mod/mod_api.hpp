@@ -144,6 +144,19 @@ bool set_item_collected(int index, bool collected, void *collection, void *slot)
 bool text_color_available();
 bool set_text_color(void *text_component, std::uint32_t rgba);
 
+// DebugDraw, called from a World update hook on the game thread (never the render callback). Layers are "World" (world units, +y up), "Hud",
+// "WorldPersist" and "EngineHUD"; debug_draw() returns null when unavailable. Text draws nothing until debug_draw_load_font() has loaded the mod's own
+// data/debugdraw.font.yc; it blocks until the load finishes. Text extends right and up from pos. The rect is an outline drawn without depth test. rgba
+// is packed like mth::banner_color.
+void *debug_draw(const char *layer);
+bool debug_draw_load_font();
+void debug_draw_text(void *dd, const char *text, const float pos[3], float size, std::uint32_t rgba);
+void debug_draw_rect(void *dd, const float center[3], float w, float h, std::uint32_t rgba);
+
+// Level-file position (pixels, y down) to world units, the transform SpawnManager::CreateSpawnPoint applies: (x, -y) * ycRenderer::s_scale2D (0.1).
+// False when unavailable.
+bool level_to_world(float x, float y, float out[2]);
+
 // ycPaletteTexture. Text is palette-mapped (see mth::layout kText*PaletteOff), so an arbitrary color renders as entry 0 unless written into a cloned
 // palette. Detach the clone with group -1 or it keeps resolving through the shared group chain. rgba is packed like mth::banner_color.
 bool palette_api_available();

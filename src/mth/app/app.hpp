@@ -92,6 +92,8 @@ class App
     void set_mirror_switch_override(bool on);
     // dev: toggle the ghost echo of the local player, sent through the server.
     void toggle_ghost_echo();
+    // dev: label each bone in the room with its location id.
+    void set_bone_labels(bool on);
 
     // The overlay reads status() every frame and `gate enforce` calls set_enforcing(), both on the render thread.
     SafetyGate gate_;

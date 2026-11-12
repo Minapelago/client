@@ -61,7 +61,7 @@ Press **F1** to open an in-game console that mirrors the mod's log and takes typ
 | `connect <server> <slot> [pw]` | Connect to an Archipelago server.   |
 | `disconnect`                   | Disconnect from the server.         |
 
-`help` also lists diagnostic commands (`gate`, `deathlink`, `giveapitem`, `removelock`, `caps`, `ability`, `modifier`, `modifiers`, `litlamps`, `savetest`) used for testing. Normal play needs none of them.
+`help` also lists diagnostic commands (`gate`, `deathlink`, `giveapitem`, `removelock`, `caps`, `ability`, `modifier`, `modifiers`, `litlamps`, `savetest`, `bonelabels`) used for testing. Normal play needs none of them.
 
 ## Features
 

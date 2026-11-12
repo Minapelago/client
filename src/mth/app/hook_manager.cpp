@@ -158,6 +158,7 @@ void HookManager::on_world_update_end(void *world)
 {
     save_takeover_.on_world_update_end(world);
     status_menu_caps_.on_world_update_end(world); // self-throttled; walks nothing on most ticks
+    bone_hooks::draw_labels(rando_);
 }
 
 void HookManager::on_world_destroy()

@@ -124,6 +124,13 @@ add_custom_command(
     DEPENDS "${CMAKE_SOURCE_DIR}/LICENSE"
     VERBATIM
     COMMENT "Staging mods/apclient/LICENSE")
+# DebugDraw text (the bone labels) draws nothing without the mod's own data/debugdraw.font.yc, which comes from the MinaModAPI checkout.
+add_custom_command(
+    OUTPUT "${_mthap_dropin}/data/debugdraw.font.yc"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${minamodapi_SOURCE_DIR}/examples/data/debugdraw.font.yc" "${_mthap_dropin}/data/debugdraw.font.yc"
+    DEPENDS "${minamodapi_SOURCE_DIR}/examples/data/debugdraw.font.yc"
+    VERBATIM
+    COMMENT "Staging mods/apclient/data/debugdraw.font.yc")
 
 # mod.pdb ships beside mod.dll so the crash handler's SymFromAddr resolves frames. MSVC-like frontends only; the MinGW build emits DWARF.
 set(_mthap_pdb "")
@@ -142,5 +149,5 @@ include(Notices)
 mthap_stage_notices("${_mthap_dropin}" _mthap_notices)
 
 add_custom_target(mthap_dropin ALL
-    DEPENDS "${_mthap_dropin}/${_mthap_mod_name}" "${_mthap_dropin}/mod.yc" "${_mthap_dropin}/LICENSE"
+    DEPENDS "${_mthap_dropin}/${_mthap_mod_name}" "${_mthap_dropin}/mod.yc" "${_mthap_dropin}/LICENSE" "${_mthap_dropin}/data/debugdraw.font.yc"
     ${_mthap_pdb} ${_mthap_notices})

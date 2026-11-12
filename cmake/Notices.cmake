@@ -1,13 +1,14 @@
-# Notices.cmake - stage each linked dependency's own licence file into the drop-in.
+# Notices.cmake - stage each linked dependency's own licence file, and the debug font's licence, into the drop-in.
 #
 # One level deep: these are the libraries the mod links against, and what they vendor is reachable from their upstream. Sources are the trees the
 # build already fetched, so each platform stages what it links: Frida-gum on Linux, MinHook on Windows.
 include_guard(GLOBAL)
 
-# Fetched but not linked into the mod, so nothing of theirs ships.
+# Fetched but not linked into the mod. catch2 ships nothing; from minamodapi only data/debugdraw.font.yc ships, and its licence is the typeface's,
+# staged below. MinaModAPI itself is taken to be public domain or MIT-like and has no licence file to stage.
 set(_MTHAP_NOTICE_SKIP
-    catch2      # test binary only
-    minamodapi  # game ABI declarations, no upstream licence file
+    catch2
+    minamodapi
 )
 
 # Stage licence files under <dropin>/third_party_notices/<component>/ and return the staged paths in out_var. They are custom-command outputs, not a
@@ -45,6 +46,9 @@ function(mthap_stage_notices dropin out_var)
         endif()
         _mthap_stage_notice_files("${_dir}" "${_port}" "${_copyright}" _staged)
     endforeach()
+
+    # The bone-label font is an SDF atlas of Inconsolata (OFL-1.1), which requires the licence to travel with it.
+    _mthap_stage_notice_files("${_dir}" "debugdraw-font" "${CMAKE_SOURCE_DIR}/cmake/notices/debugdraw-font/LICENSE.txt" _staged)
 
     if(_missing)
         list(JOIN _missing ", " _missing_text)
