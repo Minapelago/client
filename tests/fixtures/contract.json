@@ -577,6 +577,7 @@
   "goal": 0,
   "kear_rando": 2,
   "max_stat_level": 99,
+  "merciless_deathlink": 1,
   "starting_weapon": 3
  },
  "offsets": {
@@ -609,6 +610,7 @@
     4
    ],
    "max_stat_level": 15,
+   "merciless_deathlink": 0,
    "mirror_switch_rando": 1,
    "ossex_start": true,
    "puff_rando": 1,
@@ -710,6 +712,7 @@
    "kear_rando": 2,
    "lit_generators": [],
    "max_stat_level": 99,
+   "merciless_deathlink": 1,
    "mirror_switch_rando": 0,
    "ossex_start": false,
    "puff_rando": 0,

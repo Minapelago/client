@@ -131,7 +131,7 @@ The client sends standard Archipelago location and item events, so any tracker t
 
 ### What sends deathlinks?
 
-A deathlink is sent when you die with no sparks, i.e. a "Sparkless Demise". Dying with an active spark does not send a deathlink.
+By default, a deathlink is sent when you die with no sparks, i.e. a "Sparkless Demise". Dying with an active spark does not send a deathlink. With the Merciless Death Link option on, every death sends one, sparks or not. Being saved by a Proto Spark never sends a deathlink.
 
 ### How do I get back to Ossex / get to Loner's Landing?
 

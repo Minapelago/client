@@ -66,6 +66,7 @@ TEST_CASE("parse_slot_data: an absent or empty blob yields every default", "[slo
         REQUIRE_FALSE(cfg.carry_rando);
         REQUIRE(cfg.train_pass_cost == mth::kTrainPassCostDefault);
         REQUIRE_FALSE(cfg.deathlink);
+        REQUIRE_FALSE(cfg.merciless_deathlink);
         REQUIRE(cfg.max_stat_level == 99);
         REQUIRE(cfg.goal_config == 0);
         REQUIRE(cfg.goal_generators == 99);
@@ -95,8 +96,9 @@ TEST_CASE("parse_slot_data: a non-object blob does not throw and fails closed on
 
 TEST_CASE("parse_slot_data: the ability flags read as 0/non-0", "[slot_data]")
 {
-    const json data = {{"ossex_start", 1}, {"burrow_rando", 1}, {"swim_rando", 0}, {"rope_rando", 1}, {"puff_rando", 0},        {"spring_rando", 1},
-                       {"carry_rando", 1}, {"train_rando", 0},  {"death_link", 1}, {"wallet_cap", 1}, {"train_pass_cost", 250}, {"mirror_switch_rando", 1}};
+    const json data = {{"ossex_start", 1},       {"burrow_rando", 1},        {"swim_rando", 0},         {"rope_rando", 1}, {"puff_rando", 0},
+                       {"spring_rando", 1},      {"carry_rando", 1},         {"train_rando", 0},        {"death_link", 1}, {"wallet_cap", 1},
+                       {"train_pass_cost", 250}, {"mirror_switch_rando", 1}, {"merciless_deathlink", 1}};
     const mth::SlotDataConfig cfg = mth::parse_slot_data(data);
 
     REQUIRE(cfg.ossex_start);
@@ -108,6 +110,7 @@ TEST_CASE("parse_slot_data: the ability flags read as 0/non-0", "[slot_data]")
     REQUIRE(cfg.carry_rando);
     REQUIRE_FALSE(cfg.train_rando);
     REQUIRE(cfg.deathlink);
+    REQUIRE(cfg.merciless_deathlink);
     REQUIRE(cfg.wallet_cap);
     REQUIRE(cfg.train_pass_cost == 250);
     REQUIRE(cfg.mirror_switch_rando);

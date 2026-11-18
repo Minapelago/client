@@ -57,6 +57,7 @@ SlotDataConfig parse_slot_data(const nlohmann::json &data)
     // vanilla 10000 is a grind for a check whose reward is elsewhere in the multiworld (#162).
     cfg.train_pass_cost = obj ? data.value("train_pass_cost", kTrainPassCostDefault) : kTrainPassCostDefault;
     cfg.deathlink = obj && data.value("death_link", 0) != 0;
+    cfg.merciless_deathlink = obj && data.value("merciless_deathlink", 0) != 0;
     cfg.max_stat_level = clamp_max_stat_level(obj ? data.value("max_stat_level", 99) : 99);
     cfg.goal_config = obj ? data.value("goal_config", 0) : 0;
     cfg.goal_generators = obj ? data.value("goal_generators", 99) : 99;

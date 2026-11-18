@@ -223,7 +223,8 @@ void *player_component();
 bool health_api_available();
 float player_health();
 
-// Current Spark (the sub-weapon meter); deathlink broadcasts only a sparkless death. Without the getter, available() is false and player_spark() is 0.
+// Current Spark (the sub-weapon meter); deathlink broadcasts only a sparkless death unless the seed is merciless. Without the getter, available() is false and
+// player_spark() is 0.
 bool spark_api_available();
 int player_spark();
 

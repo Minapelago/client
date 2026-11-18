@@ -128,6 +128,7 @@ void HookManager::tick(ApState &state, const SessionPolicy &policy, int save_gam
 
     lock_hooks_.seed_kear_blocks(state);
 
+    death_hooks_.set_merciless(state.config().merciless_deathlink);
     death_hooks_.poll(); // edge-detect a local death for deathlink (send_death gates on deathlink enabled)
 
     save_takeover_.tick(); // self-gates on its own step; no-ops in the terminal ones

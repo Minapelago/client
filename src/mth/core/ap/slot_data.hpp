@@ -41,6 +41,7 @@ struct SlotDataConfig
     bool train_rando{true};
     int train_pass_cost{kTrainPassCostDefault};              // "train_pass_cost": bones the station machine asks for
     bool deathlink{false};                                   // "death_link": bounce/receive deaths over the AP link
+    bool merciless_deathlink{false};                         // "merciless_deathlink": every death bounces, not just a sparkless one
     int max_stat_level{99};                                  // "max_stat_level": per-stat level ceiling (clamped 10..99; 99 = game's absolute max)
     int goal_config{0};                                      // "goal_config": 0=finish, 1=generators, 2=bosses
     int goal_generators{99};                                 // "goal_generators": generators needed (default unreachable)

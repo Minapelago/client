@@ -31,6 +31,11 @@ class DeathHooks
     void poll();  // game-thread, per-tick: detect a fresh local death edge and broadcast it
     void kill();  // game-thread: apply an inbound death, or latch it for retry if it cannot land yet
     void reset(); // drop the latched inbound and held outbound deaths of the ending session
+    // slot_data "merciless_deathlink": broadcast deaths with sparks banked too. A Proto Spark save still never reaches the death screen, so it stays quiet.
+    void set_merciless(bool on)
+    {
+        merciless_ = on;
+    }
 
   private:
     bool gameplay_advanced();       // did the world's gameplay queues run this tick
@@ -42,6 +47,7 @@ class DeathHooks
     std::function<void(const std::string &)> on_local_death_;
     std::function<void *()> get_player_;
     int last_alive_spark_{0}; // spark sampled on the last alive tick; the death drop zeroes the live value before the edge
+    bool merciless_{false};
     RoomClock room_clock_;
     bool room_clock_stalled_{false}; // last tick froze with the world unpaused (a transition)
     int pending_kill_ticks_{0};      // gameplay ticks left to land a received death that could not be applied yet

@@ -24,6 +24,7 @@ NON_DEFAULT_OPTIONS = {
     "kear_rando": 2,
     "astral_switches": 0,
     "death_link": 1,
+    "merciless_deathlink": 1,
 }
 
 

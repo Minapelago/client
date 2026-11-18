@@ -73,6 +73,28 @@ TEST_CASE("deathlink: a death the player is revived from is not broadcast", "[de
     REQUIRE(d.game.log == Log{"died", "revived"});
 }
 
+TEST_CASE("deathlink: merciless broadcasts a death with sparks banked, but not a Proto Spark save", "[deathlink][outbound]")
+{
+    Deathlink d;
+    d.hooks.set_merciless(true);
+    d.game.sparks = 3;
+    d.game.play_for(0.5);
+
+    SECTION("a death")
+    {
+        d.game.die_locally();
+        d.game.play_for(10.0);
+        REQUIRE(d.game.log == kBroadcastDeathRun);
+    }
+    SECTION("a Proto Spark save")
+    {
+        d.game.proto_spark = true;
+        d.game.die_locally();
+        d.game.play_for(20.0);
+        REQUIRE(d.game.log == Log{"died", "revived"});
+    }
+}
+
 // Echo storm (#125): the player reads alive for a while after PlayerDie, and those ticks must not lift the suppression armed for this death.
 TEST_CASE("deathlink: a death taken from an inbound deathlink is not echoed back", "[deathlink][echo]")
 {

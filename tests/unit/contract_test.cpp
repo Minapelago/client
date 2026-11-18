@@ -84,7 +84,7 @@ std::vector<std::int64_t> all_area_kears()
 const std::set<std::string> kClientSlotKeys = {
     "ossex_start", "kear_rando",  "burrow_rando",        "swim_rando",     "rope_rando",        "puff_rando",        "spring_rando",
     "carry_rando", "train_rando", "train_pass_cost",     "death_link",     "max_stat_level",    "goal_config",       "goal_generators",
-    "goal_bosses", "wallet_cap",  "mirror_switch_rando", "lit_generators", "broken_generators", "removed_locations",
+    "goal_bosses", "wallet_cap",  "mirror_switch_rando", "lit_generators", "broken_generators", "removed_locations", "merciless_deathlink",
 };
 } // namespace
 
@@ -387,6 +387,7 @@ TEST_CASE("parse_slot_data maps the apworld's real slot_data blobs", "[contract]
         CHECK(cfg.train_rando == (blob.value("train_rando", 1) != 0));
         CHECK(cfg.train_pass_cost == blob.value("train_pass_cost", mth::kTrainPassCostDefault));
         CHECK(cfg.deathlink == (blob.at("death_link").get<int>() != 0));
+        CHECK(cfg.merciless_deathlink == (blob.at("merciless_deathlink").get<int>() != 0));
         CHECK(cfg.max_stat_level == blob.at("max_stat_level").get<int>());
         CHECK(cfg.goal_config == blob.at("goal_config").get<int>());
         CHECK(cfg.goal_generators == blob.at("goal_generators").get<int>());

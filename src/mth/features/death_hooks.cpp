@@ -84,8 +84,8 @@ void DeathHooks::poll()
         pal::logf(pal::LogLevel::Info, "deathlink: local death suppressed (echo of a received deathlink)");
     if (fresh_local_death && on_local_death_)
     {
-        // Only broadcast a sparkless demise (0 sparks at death, per the pre-death snapshot).
-        if (last_alive_spark_ > 0)
+        // Only broadcast a sparkless demise (0 sparks at death, per the pre-death snapshot), unless the seed is merciless.
+        if (!merciless_ && last_alive_spark_ > 0)
         {
             pal::logf(pal::LogLevel::Info, "deathlink: local death suppressed (had %d spark(s); not sparkless)", last_alive_spark_);
             return;
@@ -94,7 +94,7 @@ void DeathHooks::poll()
     }
 }
 
-// Holds a sparkless death until the death screen confirms it. A Proto Spark save runs the same death sequence and only revives in place at the tail, so nothing
+// Holds a local death until the death screen confirms it. A Proto Spark save runs the same death sequence and only revives in place at the tail, so nothing
 // readable at the death edge separates the two without a raw Player offset.
 void DeathHooks::drive_pending_broadcast()
 {
@@ -104,7 +104,7 @@ void DeathHooks::drive_pending_broadcast()
     if (gs == kGameStateDeath || gs < 0) // no gamestate to read means no confirmation is ever coming: send it
     {
         pending_broadcast_ticks_ = 0;
-        pal::logf(pal::LogLevel::Info, "deathlink: sparkless local death confirmed -> broadcasting");
+        pal::logf(pal::LogLevel::Info, "deathlink: local death confirmed -> broadcasting");
         // One detail for every death until the death path can distinguish them.
         on_local_death_("had a skill issue");
         return;
