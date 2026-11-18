@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.3.0](https://github.com/Minapelago/client/compare/v1.2.2...v1.3.0) (2026-11-18)
+
+
+### Features
+
+* add merciless deathlink option ([33de340](https://github.com/Minapelago/client/commit/33de340e47ebc13e54b6d3cf025fd566ab66b329))
+* draw other Mina players in the same room as ghosts ([#242](https://github.com/Minapelago/client/issues/242)) ([23e5b5e](https://github.com/Minapelago/client/commit/23e5b5e33654b872bbebdbef62a2f84832f38c5d))
+* generate the bone location table from the world inventory ([a4abc0b](https://github.com/Minapelago/client/commit/a4abc0b1dda7e91cb586879347bcb72f4ce88c24))
+* label bone spawn points with their location ids ([99caa7a](https://github.com/Minapelago/client/commit/99caa7a14d72e775b49d4ce097bccaa4cfe6a018))
+* report bone pickups as AP locations ([7a6d662](https://github.com/Minapelago/client/commit/7a6d662902b0178a78df387c3c50ffd5dd62547a))
+
+
+### Bug fixes
+
+* construct the client on the game thread ([b3f8bc1](https://github.com/Minapelago/client/commit/b3f8bc11ebadd71013fa0158730459ff9e72df22))
+* give the save thread the vanilla IsItemCollected answer ([213c35f](https://github.com/Minapelago/client/commit/213c35fb1a3bcecbd9363a617c3521e53f45b014))
+* keep the save thread out of the kit and shop flatten detours ([932db66](https://github.com/Minapelago/client/commit/932db667a46646591e142b199d4a9548a3f4cc5b))
+* log the level cap buy-gate reading only when it changes ([b04fd61](https://github.com/Minapelago/client/commit/b04fd61da9657a3faf53e4c880b5353899f5a837))
+* reset the AP-game slot when the seed changes ([03768cf](https://github.com/Minapelago/client/commit/03768cf59ebdc7d51b5479f5b1300526035d0ff8))
+* run console commands on the game thread ([cd1c4ad](https://github.com/Minapelago/client/commit/cd1c4ad59a63827e6ae909be156ca5cf7484102b))
+* scope world hooks to the gamestate world ([9c48b0d](https://github.com/Minapelago/client/commit/9c48b0de32202307cebaa1ff27a7c2d3c4382d35))
+
+
+### Internals
+
+* drop synchronization the game-thread move made redundant ([8932f6c](https://github.com/Minapelago/client/commit/8932f6ce0f6f72674c3bb3df7f199e147fda87bb))
+* drop teardown code that never runs ([d8c121a](https://github.com/Minapelago/client/commit/d8c121af93bb0d1c218a9b441de690a51a8b8a8f))
+* group app state by session and connection lifetime ([9745b6e](https://github.com/Minapelago/client/commit/9745b6e5a5ba5b1affe7a1ce447847151301dafc))
+* prefill the login window when it is built ([922a178](https://github.com/Minapelago/client/commit/922a178640ea13c2fc7268c434240ba4c27068c6))
+
+
+### Documentation
+
+* say the banner queue carries game-thread pushes ([e3f6a7c](https://github.com/Minapelago/client/commit/e3f6a7c790409aa8dedbc44740dcbd402c82518a))
+
 ## [1.2.2](https://github.com/Minapelago/client/compare/v1.2.1...v1.2.2) (2026-11-07)
 
 
